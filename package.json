@@ -1,7 +1,7 @@
-{
+﻿{
     "name":  "antigravity-auth",
     "version":  "1.6.0",
-    "description":  "Google Antigravity OAuth plugin for OpenCode and Claude Code — multi-account rotation, quota management, proxy support",
+    "description":  "Google Antigravity OAuth plugin for OpenCode and Claude Code â€” multi-account rotation, quota management, proxy support",
     "main":  "dist/index.js",
     "types":  "dist/index.d.ts",
     "type":  "module",
