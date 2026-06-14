@@ -26,6 +26,11 @@ export function laneFor(model) {
   return isGeminiCliModel(model) ? "gemini-cli" : "gemini-antigravity";
 }
 
+// model id -> upstream header style (bare gemini-* use the gemini-cli style)
+export function headerStyleFor(model) {
+  return isGeminiCliModel(model) ? "gemini-cli" : "antigravity";
+}
+
 export function parseRateLimitReason(reason, message, status) {
   if (status === 529 || status === 503) return "MODEL_CAPACITY_EXHAUSTED";
   if (status === 500) return "SERVER_ERROR";

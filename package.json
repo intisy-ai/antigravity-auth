@@ -1,54 +1,124 @@
 {
-    "name":  "antigravity-auth",
-    "version":  "1.6.0",
-    "description":  "Google Antigravity OAuth plugin for OpenCode and Claude Code â€” multi-account rotation, quota management, proxy support",
-    "main":  "dist/index.js",
-    "types":  "dist/index.d.ts",
-    "type":  "module",
-    "license":  "MIT",
-    "author":  "intisy",
-    "repository":  {
-                       "type":  "git",
-                       "url":  "git+https://github.com/intisy/antigravity-auth.git"
-                   },
-    "keywords":  [
-                     "opencode",
-                     "claude",
-                     "antigravity",
-                     "google",
-                     "oauth",
-                     "gemini",
-                     "plugin",
-                     "auth"
-                 ],
-    "engines":  {
-                    "node":  "\u003e=20.0.0"
-                },
-    "files":  [
-                  "dist/",
-                  "README.md",
-                  "LICENSE"
-              ],
-    "scripts":  {
-    "build": "tsc -p tsconfig.json || exit 0",
-                    "typecheck":  "tsc --noEmit",
-                    "test":  "vitest run",
-                    "prepublishOnly":  "npm run build"
-                },
-    "dependencies":  {
-                         "@openauthjs/openauth":  "^0.4.3",
-                         "@opencode-ai/plugin":  "^0.15.30",
-                         "proper-lockfile":  "^4.1.2",
-                         "xdg-basedir":  "^5.1.0",
-                         "zod":  "^4.0.0"
-                     },
-    "devDependencies":  {
-                            "@types/node":  "^25.9.1",
-                            "@types/proper-lockfile":  "^4.1.4",
-                            "typescript":  "^5.0.0",
-                            "vitest":  "^4.1.7"
-                        },
-    "peerDependencies":  {
-                             "typescript":  "^5"
-                         }
+  "name": "antigravity-auth",
+  "version": "1.6.0",
+  "description": "Google Antigravity provider for OpenCode and Claude Code, built on core-auth — multi-account rotation, quota management, proxy support",
+  "main": "dist/index.js",
+  "type": "module",
+  "license": "MIT",
+  "author": "intisy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/intisy/antigravity-auth.git"
+  },
+  "keywords": [
+    "opencode",
+    "claude",
+    "antigravity",
+    "google",
+    "oauth",
+    "gemini",
+    "core-auth",
+    "provider"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "claudeHub": {
+    "authProviders": [
+      {
+        "name": "antigravity",
+        "handler": "dist/handler.js",
+        "models": [
+          {
+            "id": "antigravity-auto",
+            "name": "Antigravity Auto"
+          },
+          {
+            "id": "antigravity-auto-best",
+            "name": "Antigravity Auto (Best)"
+          },
+          {
+            "id": "antigravity-auto-high",
+            "name": "Antigravity Auto (High)"
+          },
+          {
+            "id": "antigravity-auto-balanced",
+            "name": "Antigravity Auto (Balanced)"
+          },
+          {
+            "id": "antigravity-auto-fastest",
+            "name": "Antigravity Auto (Fastest)"
+          },
+          {
+            "id": "antigravity-gemini-3.1-pro",
+            "name": "Gemini 3.1 Pro (Antigravity)"
+          },
+          {
+            "id": "antigravity-gemini-3-flash",
+            "name": "Gemini 3 Flash (Antigravity)"
+          },
+          {
+            "id": "antigravity-claude-sonnet-4-6",
+            "name": "Claude Sonnet 4.6 (Antigravity)"
+          },
+          {
+            "id": "antigravity-claude-opus-4-6-thinking",
+            "name": "Claude Opus 4.6 Thinking (Antigravity)"
+          },
+          {
+            "id": "gemini-2.5-flash",
+            "name": "Gemini 2.5 Flash (Gemini CLI)"
+          },
+          {
+            "id": "gemini-2.5-pro",
+            "name": "Gemini 2.5 Pro (Gemini CLI)"
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "name": "Gemini 3 Flash Preview (Gemini CLI)"
+          },
+          {
+            "id": "gemini-3-pro-preview",
+            "name": "Gemini 3 Pro Preview (Gemini CLI)"
+          },
+          {
+            "id": "gemini-3.1-pro-preview",
+            "name": "Gemini 3.1 Pro Preview (Gemini CLI)"
+          },
+          {
+            "id": "gemini-3.1-pro-preview-customtools",
+            "name": "Gemini 3.1 Pro Preview Custom Tools (Gemini CLI)"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "build": "npx tsc --project core-auth/tsconfig.json && node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@openauthjs/openauth": "^0.4.3",
+    "@opencode-ai/plugin": "^0.15.30",
+    "proper-lockfile": "^4.1.2",
+    "xdg-basedir": "^5.1.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.7"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }
