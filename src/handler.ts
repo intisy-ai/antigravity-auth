@@ -5,3 +5,5 @@
 import { driver } from "./driver/index.js";
 
 export const handle = driver.handle;
+// the provider's account controller, for the shared account-management TUI
+export const accounts = driver.accounts;

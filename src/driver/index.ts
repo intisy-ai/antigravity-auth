@@ -14,6 +14,7 @@ import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { runMigration } from "./migrate.js";
 import { login, loginFlow } from "./login.js";
+import { createAntigravityAccounts } from "./accounts-controller.js";
 
 const PROVIDER_ID = "antigravity";
 const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
@@ -151,6 +152,7 @@ export const driver = {
   handle,
   login,
   loginFlow,
+  accounts: createAntigravityAccounts(manager),
 };
 
 export const AntigravityProvider = defineProvider(driver).opencode;
