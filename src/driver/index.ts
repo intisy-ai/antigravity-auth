@@ -12,7 +12,6 @@ import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_ENDPOINT_PROD } from "../co
 import { models } from "./models.js";
 import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
-import { runMigration } from "./migrate.js";
 import { login, loginFlow } from "./login.js";
 import { createAntigravityAccounts } from "./accounts-controller.js";
 
@@ -26,13 +25,6 @@ const manager = new AccountManager(PROVIDER_ID, {
   oauth: oauthConfig(),
   isAvailable: (account) => !(account.meta && account.meta.verificationRequired),
 });
-
-let migrationDone = false;
-function ensureMigrated(configDir) {
-  if (migrationDone || !configDir) return;
-  migrationDone = true;
-  try { runMigration(PROVIDER_ID, configDir); } catch {}
-}
 
 // reconstruct the OAuthAuthDetails the existing project/transform code expects;
 // the legacy refresh string packs the project ids that ensureProjectContext reads.
@@ -83,7 +75,6 @@ function errorResponse(status, message) {
 
 async function handle(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
-  ensureMigrated(ctx && ctx.configDir);
 
   const url = request.url;
   let bodyText;
@@ -152,7 +143,6 @@ export const driver = {
   login,
   loginFlow,
   accounts: createAntigravityAccounts(manager),
-  onLoad: (ctx) => { ensureMigrated(ctx && ctx.configDir); },
 };
 
 export const AntigravityProvider = defineProvider(driver).opencode;
