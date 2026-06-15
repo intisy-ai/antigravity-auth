@@ -1,12 +1,12 @@
 /**
  * Constants used for Antigravity OAuth flows and Cloud Code Assist API integration.
  */
-export const ANTIGRAVITY_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID";
+export const ANTIGRAVITY_CLIENT_ID = process.env.ANTIGRAVITY_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID";
 
 /**
  * Client secret issued for the Antigravity OAuth application.
  */
-export const ANTIGRAVITY_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET";
+export const ANTIGRAVITY_CLIENT_SECRET = process.env.ANTIGRAVITY_CLIENT_SECRET || "YOUR_GOOGLE_CLIENT_SECRET";
 
 /**
  * Scopes required for Antigravity integrations.
