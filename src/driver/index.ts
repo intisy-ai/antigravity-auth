@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager } from "../../core-auth/dist/index.js";
+import { defineProvider, AccountManager, proxyManager } from "../../core-auth/dist/index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse } from "../plugin/request.js";
 import { ensureProjectContext } from "../plugin/project.js";
 import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
@@ -93,6 +93,7 @@ async function handle(request, ctx) {
     if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
 
     const projectId = await resolveProjectId(account, access, log);
+    const proxyUrl = proxyManager.selectForAccount(account.id);
 
     let rateLimited = false;
     for (const endpoint of endpointsFor(headerStyle)) {
@@ -102,10 +103,13 @@ async function handle(request, ctx) {
           fingerprint: account.meta && account.meta.fingerprint,
         });
       } catch (error) { log("prepare failed: " + error); continue; }
+      if (proxyUrl) prepared.init.proxy = proxyUrl;   // Bun fetch honors .proxy
 
       let response;
+      const started = Date.now();
       try { response = await fetch(prepared.request, prepared.init); }
-      catch (error) { log("fetch failed: " + error); continue; }
+      catch (error) { if (proxyUrl) proxyManager.reportResult(proxyUrl, false); log("fetch failed: " + error); continue; }
+      if (proxyUrl) proxyManager.reportResult(proxyUrl, true, Date.now() - started);
 
       if (isRateLimitStatus(response.status)) {
         rateLimited = true;
@@ -114,6 +118,7 @@ async function handle(request, ctx) {
         try { const j = await response.clone().json(); message = j && j.error && j.error.message; reason = j && j.error && (j.error.status || j.error.reason); } catch {}
         const parsed = parseRateLimitReason(reason, message, response.status);
         manager.reportRateLimit(account.id, lane, resetTimeFor(parsed, attempt));
+        if (proxyUrl) proxyManager.reportRateLimit(proxyUrl);   // possible IP rate-limit -> penalize the proxy
         continue;   // next endpoint, then rotate account
       }
 
@@ -144,6 +149,7 @@ export const driver = {
   login,
   loginFlow,
   accounts: createAntigravityAccounts(manager),
+  proxies: true,
 };
 
 export const AntigravityProvider = defineProvider(driver).opencode;
