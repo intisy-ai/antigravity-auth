@@ -5,7 +5,9 @@ const banner = {
   js: "import { createRequire as __coreAuthCreateRequire } from 'module'; const require = __coreAuthCreateRequire(import.meta.url);",
 };
 
-const common = { bundle: true, platform: "node", format: "esm", banner, logLevel: "info" };
+// sync-bridge is an optional dependency loaded at runtime; keep it external so a
+// missing module never breaks the bundle (core-auth no-ops when it is absent)
+const common = { bundle: true, platform: "node", format: "esm", banner, logLevel: "info", external: ["sync-bridge"] };
 
 await build({ ...common, entryPoints: ["src/index.ts"], outfile: "dist/index.js" });
 await build({ ...common, entryPoints: ["src/handler.ts"], outfile: "dist/handler.js" });
