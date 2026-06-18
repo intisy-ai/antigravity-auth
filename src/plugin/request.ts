@@ -877,6 +877,10 @@ export function prepareAntigravityRequest(
 
   headers.set("Authorization", `Bearer ${accessToken}`);
   headers.delete("x-api-key");
+  // @ai-sdk/google sends the (dummy) provider apiKey as x-goog-api-key; it must be
+  // stripped or cloudcode-pa rejects the request with API_KEY_INVALID even though
+  // the OAuth Bearer above is the real credential.
+  headers.delete("x-goog-api-key");
 
   headers.delete("x-goog-user-project");
 
