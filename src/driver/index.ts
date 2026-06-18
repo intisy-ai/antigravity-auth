@@ -95,7 +95,15 @@ async function attemptModel(model, url, init, ctx, log) {
   let lastResponse = null;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const acquired = await manager.acquire(lane);
-    if (!acquired || !acquired.account) return errorResponse(503, "No available antigravity account for lane " + lane);
+    if (!acquired || !acquired.account) {
+      // No account free for this lane — almost always its quota pool is spent.
+      const next = manager.nextAvailableAt(lane);
+      const secs = next ? Math.max(0, Math.round((next - Date.now()) / 1000)) : 0;
+      const msg = secs > 0
+        ? `${lane} quota exhausted — resets in ~${secs}s. Pick another model or use Auto (it falls through to a free pool).`
+        : `No available antigravity account for lane ${lane}.`;
+      return errorResponse(503, msg);
+    }
     const account = acquired.account;
     const access = acquired.access;
     if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
