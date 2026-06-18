@@ -25,6 +25,13 @@ function dbg(message) {
   } catch {}
 }
 
+// A connection-level failure means the request never reached Google, so the auth
+// code is untouched and a proxy-less retry is safe. (Grant/auth errors are NOT
+// matched — those mean the code was consumed and must not be retried.)
+function isConnectError(message) {
+  return /unable to connect|failed to connect|could not connect|fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|EAI_AGAIN|socket|proxy|tunnel|network/i.test(String(message || ""));
+}
+
 // accept either the full redirect URL (code + state) or a bare code pasted alone
 function parsePastedCallback(input) {
   const text = (input || "").trim();
@@ -99,8 +106,19 @@ export async function loginFlow() {
         if (!cb || !cb.code) { dbg("complete: no code -> returning null (0 accounts)"); return null; }
         // a pasted bare code has no state; rebuild it from this flow's own verifier
         const state = cb.state || encodeState({ verifier: authorization.verifier, projectId: authorization.projectId });
-        const result = await exchangeAntigravity(cb.code, state, { proxy });
-        dbg("complete: token exchange -> " + result.type + (result.type !== "success" ? " | error: " + (result.error || "unknown") : " | email: " + (result.email || "?")));
+        let boundProxy = proxy;
+        let result = await exchangeAntigravity(cb.code, state, { proxy });
+        // A dead/unreachable login proxy bricks the token exchange (the request
+        // never reaches Google, so the auth code is NOT consumed). Retry directly
+        // — a non-working proxy provides no isolation anyway — and then DON'T bind
+        // that proxy to the account, so runtime requests don't inherit it either.
+        if (result.type !== "success" && proxy && isConnectError(result.error)) {
+          dbg("complete: proxied exchange could not connect via " + proxy + " — retrying directly");
+          process.stderr.write("antigravity: login proxy " + proxy + " unreachable — retrying token exchange without a proxy.\n");
+          boundProxy = null;
+          result = await exchangeAntigravity(cb.code, state, {});
+        }
+        dbg("complete: token exchange -> " + result.type + (result.type !== "success" ? " | error: " + (result.error || "unknown") : " | email: " + (result.email || "?")) + " | proxy=" + (boundProxy || "direct"));
         if (result.type !== "success") {
           process.stderr.write("antigravity login failed — token exchange error: " + (result.error || "unknown") + "\n");
           return null;
@@ -108,7 +126,7 @@ export async function loginFlow() {
         const account = toCoreAccount(result);
         addAccount(PROVIDER_ID, account);
         dbg("complete: addAccount done id=" + account.id + " -> account should now appear in the list");
-        proxyManager.bindAccountProxy(account.id, proxy);
+        if (boundProxy) proxyManager.bindAccountProxy(account.id, boundProxy);
         return account;
       } catch (error) {
         dbg("complete: THREW " + (error && error.stack || error));
