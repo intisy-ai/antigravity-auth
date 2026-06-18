@@ -162,7 +162,11 @@ async function handle(request, ctx) {
         );
       }
 
-      return response;   // non-retryable upstream error -> surface as-is
+      // Non-ok, non-rate-limit (e.g. 403 "no valid license" from a sandbox
+      // endpoint the account isn't provisioned for): keep the response and try
+      // the next endpoint. Only the last endpoint's error is surfaced.
+      lastResponse = response;
+      continue;
     }
 
     if (!rateLimited) break;

@@ -34,13 +34,16 @@ export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sand
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
 /**
- * Endpoint fallback order (daily → autopush → prod).
- * Shared across request handling and project discovery to mirror CLIProxy behavior.
+ * Endpoint fallback order (prod → daily → autopush).
+ * Prod (cloudcode-pa.googleapis.com) is where regular accounts are licensed; the
+ * daily/autopush sandboxes return 403 "no valid license" (#3501) for non-internal
+ * accounts, so prod is tried first. The handle falls through to the others on a
+ * non-ok status in case an account is only provisioned on a sandbox endpoint.
  */
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
+  ANTIGRAVITY_ENDPOINT_PROD,
   ANTIGRAVITY_ENDPOINT_DAILY,
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
-  ANTIGRAVITY_ENDPOINT_PROD,
 ] as const;
 
 /**
@@ -54,9 +57,9 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
 ] as const;
 
 /**
- * Primary endpoint to use (daily sandbox - same as CLIProxy/Vibeproxy).
+ * Primary endpoint to use (prod - where regular accounts are licensed).
  */
-export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DAILY;
+export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 
 /**
  * Gemini CLI endpoint (production).
