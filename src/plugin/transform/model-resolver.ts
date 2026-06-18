@@ -39,6 +39,14 @@ export const GEMINI_3_THINKING_LEVELS = ["minimal", "low", "medium", "high"] as 
  */
 export const MODEL_ALIASES: Record<string, string> = {
 
+  // "antigravity-auto*" are routing pseudo-models with no real upstream name.
+  // Map them to concrete models the API accepts (verified 200 via
+  // streamGenerateContent); "auto-high"/"auto-low" fall back to "auto" by base name.
+  "auto": "gemini-3.1-pro-low",
+  "auto-best": "gemini-3.1-pro-low",
+  "auto-balanced": "gemini-3-flash",
+  "auto-fastest": "gemini-2.5-flash",
+
   "gemini-3-pro-low": "gemini-3-pro",
   "gemini-3-pro-high": "gemini-3-pro",
   "gemini-3.1-pro-low": "gemini-3.1-pro",
