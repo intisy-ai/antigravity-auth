@@ -15,7 +15,9 @@ import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { login, loginFlow } from "./login.js";
 import { createAntigravityAccounts } from "./accounts-controller.js";
+import { createSessionRecoveryHook } from "../plugin/recovery.js";
 import { getConfigValue, setConfigValue, loadConfig, initRuntimeConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
+import { initializeDebug } from "../plugin/debug.js";
 
 const PROVIDER_ID = "antigravity";
 const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
@@ -28,12 +30,15 @@ const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
 let config;
 try { config = loadConfig(process.cwd()); } catch { config = DEFAULT_CONFIG; }
 initRuntimeConfig(config);   // so getKeepThinking() in the request transform reads keep_thinking
+initializeDebug(config);     // enables the log.debug(...) calls in request/project (debug, debug_tui, log_dir)
 
 // core-auth account engine. The driver availability hook keeps antigravity's
 // "skip accounts pending Google verification" behavior without leaking it into core.
 const manager = new AccountManager(PROVIDER_ID, {
   selection: config.account_selection_strategy || "hybrid",
   oauth: oauthConfig(),
+  // transient-error cooldown (AccountManager.reportError -> calculateBackoffMs)
+  backoff: { baseMs: (config.default_retry_after_seconds || 60) * 1000, maxMs: (config.max_backoff_seconds || 60) * 1000 },
   isAvailable: (account) => !(account.meta && account.meta.verificationRequired),
 });
 
@@ -272,6 +277,13 @@ const settingsGroups = [
     ],
   },
   {
+    title: "Rate limits",
+    fields: [
+      { key: "default_retry_after_seconds", label: "Base retry delay (s)", type: "number", min: 1, max: 300, hint: "Base cooldown after a transient account error; doubles per attempt (AccountManager backoff)." },
+      { key: "max_backoff_seconds", label: "Max backoff (s)", type: "number", min: 5, max: 300, hint: "Caps how long the per-account error backoff can grow." },
+    ],
+  },
+  {
     title: "Claude request handling",
     fields: [
       { key: "keep_thinking", label: "Keep thinking blocks", type: "bool", hint: "Preserve Claude thinking blocks (with signature caching) instead of stripping them." },
@@ -280,8 +292,18 @@ const settingsGroups = [
     ],
   },
   {
+    title: "Session recovery",
+    fields: [
+      { key: "session_recovery", label: "Session recovery", type: "bool", hint: "Auto-recover from tool_result_missing errors (shows a toast when they occur)." },
+      { key: "auto_resume", label: "Auto resume", type: "bool", hint: "Automatically send a continue prompt after a successful recovery." },
+    ],
+  },
+  {
     title: "Debug",
     fields: [
+      { key: "debug", label: "Debug logging", type: "bool", hint: "Enable debug logging to a file." },
+      { key: "debug_tui", label: "Debug in TUI", type: "bool", hint: "Show debug logs in the TUI log panel (independent of file logging)." },
+      { key: "log_dir", label: "Log directory", type: "string", hint: "Custom directory for debug logs." },
       { key: "debug_gemini_payloads", label: "Debug Gemini payloads", type: "bool", hint: "Write the raw payload sent to Gemini models to a debug log file." },
     ],
   },
@@ -300,6 +322,22 @@ export const driver = {
   loginFlow,
   accounts: createAntigravityAccounts(manager),
   proxies: true,
+  // Session recovery: core-auth merges these opencode hooks into the plugin. The
+  // recovery hook (gated by config.session_recovery) auto-recovers tool_result_missing
+  // errors, driven by opencode's message.updated events. Returns no event hook when
+  // recovery is disabled, so it adds zero overhead when off.
+  opencodeHooks: async (input) => {
+    let recovery;
+    try { recovery = createSessionRecoveryHook({ client: input.client, directory: input.directory || input.worktree }, config); } catch { recovery = null; }
+    if (!recovery) return {};
+    return {
+      event: async ({ event }) => {
+        if (event && event.type === "message.updated") {
+          try { await recovery.handleSessionRecovery(event.properties.info); } catch {}
+        }
+      },
+    };
+  },
   settings: {
     groups: settingsGroups,
     get: getConfigValue,
