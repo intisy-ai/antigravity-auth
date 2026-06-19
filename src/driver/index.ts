@@ -248,6 +248,7 @@ export const driver = {
   opencodeNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
   models,
   fetchModels,
+  sorts: ["leaderboard"],   // opt into core's built-in quality sort (manual + recommended are automatic)
   handle,
   login,
   loginFlow,
