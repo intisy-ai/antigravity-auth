@@ -150,9 +150,18 @@ async function attemptModel(model, url, init, ctx, log) {
         rateLimited = true;
         lastResponse = response;
         let reason, message;
-        try { const j = await response.clone().json(); message = j && j.error && j.error.message; reason = j && j.error && (j.error.status || j.error.reason); } catch {}
+        try {
+          let j = await response.clone().json();
+          if (Array.isArray(j)) j = j[0];   // cloudcode-pa returns [{error}] for capacity 429s
+          message = j && j.error && j.error.message;
+          reason = j && j.error && (j.error.status || j.error.reason);
+        } catch {}
         const parsed = parseRateLimitReason(reason, message, response.status);
-        manager.reportRateLimit(account.id, lane, resetTimeFor(parsed, attempt));
+        // honor the server's stated reset ("...reset after 38s") so a short rolling
+        // window (e.g. the Gemini CLI free pool) isn't over-blocked by our backoff.
+        const retryMatch = message && /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i.exec(message);
+        const retryAfterMs = retryMatch ? parseInt(retryMatch[1], 10) * 1000 : 0;
+        manager.reportRateLimit(account.id, lane, resetTimeFor(parsed, attempt, retryAfterMs));
         if (proxyUrl) proxyManager.reportRateLimit(proxyUrl);   // possible IP rate-limit -> penalize the proxy
         continue;   // next endpoint, then rotate account
       }
