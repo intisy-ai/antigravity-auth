@@ -107,7 +107,9 @@ describe("resolveModelWithTier", () => {
 
     it("antigravity-gemini-3-flash-medium gets thinkingLevel from tier", () => {
       const result = resolveModelWithTier("antigravity-gemini-3-flash-medium");
-      expect(result.actualModel).toBe("gemini-3-flash");
+      // full-id ranking keeps the tier suffix in the resolved model (same as the
+      // gemini-3-pro-{low,high} cases above); the tier still drives thinkingLevel.
+      expect(result.actualModel).toBe("gemini-3-flash-medium");
       expect(result.thinkingLevel).toBe("medium");
     });
 
