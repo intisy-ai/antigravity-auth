@@ -1,3 +1,7 @@
 [submodule "core-auth"]
 	path = core-auth
 	url = https://github.com/intisy-ai/core-auth.git
+[submodule "core"]
+	path = core
+	url = https://github.com/intisy-ai/core
+	branch = main

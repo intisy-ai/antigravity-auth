@@ -46,7 +46,9 @@ The driver maps a requested model to a lane (`claude`, `gemini-antigravity`, `ge
   - `cli.ts` — `antigravity login | list | remove`
   - `driver/` — `index.ts` (driver + `handle`), `config.ts`, `lanes.ts`, `migrate.ts`, `models.ts`, `login.ts`
   - `antigravity/oauth.ts`, `plugin/{request,request-helpers,project,transform/*,core/streaming/*,...}.ts` — the reused antigravity transform/request layer
+  - `commands.ts` — cross-app slash-command definitions + their CLI actions
   - `core-auth/` — the core-auth library (git submodule, bundled into the output)
+  - `core/` — shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in
 - `dist/` — bundled `index.js`, `handler.js`, `cli.js` (generated; not committed)
 
 ## Installation
@@ -78,8 +80,8 @@ antigravity login
 
 Config is read from, in order of preference:
 
-1. `~/.config/opencode/config/antigravity-auth.json` (Claude: `~/.claude/config/antigravity-auth.json`)
-2. `~/.config/opencode/antigravity-auth.json` (fallback)
+1. `~/.config/opencode/config/antigravity.json` (Claude: `~/.claude/config/antigravity.json`)
+2. `~/.config/opencode/antigravity.json` (fallback)
 
 ```json
 {
@@ -88,7 +90,22 @@ Config is read from, in order of preference:
 }
 ```
 
-Accounts live in the core-auth store at `<configDir>/config/core-auth-accounts.json`. The OAuth client id/secret are read from `ANTIGRAVITY_CLIENT_ID` / `ANTIGRAVITY_CLIENT_SECRET` (env) when set, falling back to the built-in values.
+Every key is editable from chat via `/antigravity-config` (`list` / `get <key>` / `set <key> <value>`) — see Commands. Accounts live in the core-auth store at `<configDir>/config/core-auth-accounts.json`. The OAuth client id/secret are read from `ANTIGRAVITY_CLIENT_ID` / `ANTIGRAVITY_CLIENT_SECRET` (env) when set, falling back to the built-in values.
+
+## Commands
+
+Deployed automatically to both apps on load (`~/.config/opencode/command/` and `~/.claude/commands/`):
+
+| Command | Description |
+| --- | --- |
+| `/antigravity-config` | View/change any config key in `antigravity.json`: `list`, `get <key>`, `set <key> <value>`. 100% of the config is reachable here. |
+| `/antigravity-accounts` | List signed-in Antigravity accounts and their enabled state. |
+
+## Dependencies
+
+- **`core`** (required) — bundled git submodule (config + logging + commands); no separate install.
+- **`core-auth`** (required) — bundled git submodule (account store + provider framework).
+- **`sync-bridge`** (optional) — if present, the account store is mirrored to the other app; absent, it no-ops.
 
 ## Logging
 
