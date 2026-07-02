@@ -6,6 +6,7 @@
 
 import { defineProvider, AccountManager, proxyManager, getAutoCandidates } from "../../core-auth/dist/index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse, generateSyntheticProjectId } from "../plugin/request.js";
+import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { ensureProjectContext } from "../plugin/project.js";
 import { fetchAvailableModels, buildAntigravityCatalog } from "../plugin/models-fetch.js";
 import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
@@ -214,7 +215,30 @@ function rewriteModelInUrl(url, model) {
   return String(url).replace(/\/models\/[^:/?]+/, "/models/" + model);
 }
 
+// Claude Code sends the Anthropic Messages API (/v1/messages) through the loader
+// proxy; bridge it to the Gemini format cloudcode-pa speaks (and translate the
+// streamed response back). Non-Anthropic (OpenCode/Gemini) requests fall through.
+async function handleAnthropicMessages(request, ctx) {
+  const log = (ctx && ctx.log) || (() => {});
+  let anthropicBody;
+  try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
+  const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
+  const geminiBody = anthropicToGemini(anthropicBody);
+  const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
+  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
+  const geminiRes = await handle(geminiReq, ctx);   // geminiUrl isn't /v1/messages -> normal Gemini path, no recursion
+  if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
+    let detail = "";
+    try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
+    log("anthropic bridge: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
+    return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)) } }), { status: (geminiRes && geminiRes.status) || 502, headers: { "content-type": "application/json" } });
+  }
+  const stream = geminiRes.body.pipeThrough(geminiToAnthropicStream(anthropicBody.model || model));
+  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
+}
+
 async function handle(request, ctx) {
+  if (isAnthropicMessages(request.url)) return handleAnthropicMessages(request, ctx);
   const log = (ctx && ctx.log) || (() => {});
   const url = request.url;
   let bodyText;
