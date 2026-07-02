@@ -29,6 +29,69 @@ function antigravityQuota(account) {
   }));
 }
 
+// cloudcode-pa reports per-model quota; fold models into three display pools.
+function classifyQuotaGroup(modelName) {
+  const lower = String(modelName).toLowerCase();
+  if (lower.includes("claude")) return "Claude";
+  if (!lower.includes("gemini-3")) return null;
+  if (lower.includes("flash")) return "Gemini 3 Flash";
+  return "Gemini 3 Pro";
+}
+
+// Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
+// { <pool>: { remainingFraction, resetTime } } (worst remaining + earliest reset
+// per pool), or null when the call fails / the account reports no quota.
+async function fetchQuotaGroups(manager, id) {
+  const access = await manager.ensureAccess(id);
+  if (!access) return null;
+  const account = manager.list().find((a) => a.id === id);
+  const meta = (account && account.meta) || {};
+  const projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId;
+  // NOTE: do NOT send x-goog-user-project here — fetchAvailableModels 403s ("API not
+  // enabled in project …") when it's present; the project belongs in the body only.
+  const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
+  const proxy = proxyManager.selectForAccount(id);
+  const aborter = new AbortController();
+  const timer = setTimeout(() => aborter.abort(), 20000);
+  let response;
+  try {
+    response = await fetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:fetchAvailableModels", {
+      method: "POST", headers, body: JSON.stringify(projectId ? { project: projectId } : {}), signal: aborter.signal, proxy,
+    });
+  } catch { return null; } finally { clearTimeout(timer); }
+  if (!response.ok) return null;
+  let data;
+  try { data = await response.json(); } catch { return null; }
+  const models = (data && data.models) || {};
+  const groups = {};
+  for (const [modelName, info] of Object.entries(models)) {
+    const group = classifyQuotaGroup(modelName);
+    if (!group || !info || !info.quotaInfo) continue;
+    const remaining = typeof info.quotaInfo.remainingFraction === "number" ? info.quotaInfo.remainingFraction : undefined;
+    const reset = info.quotaInfo.resetTime;
+    const entry = groups[group] || {};
+    if (remaining !== undefined) entry.remainingFraction = entry.remainingFraction === undefined ? remaining : Math.min(entry.remainingFraction, remaining);
+    if (reset) { const t = Date.parse(reset); if (Number.isFinite(t) && (!entry.resetTime || t < Date.parse(entry.resetTime))) entry.resetTime = reset; }
+    groups[group] = entry;
+  }
+  return Object.keys(groups).length ? groups : null;
+}
+
+// Refresh cachedQuota for all enabled accounts (skips accounts refreshed within ttl).
+async function refreshAllQuota(manager, force) {
+  const now = Date.now();
+  const ttl = 60000;
+  for (const account of manager.list()) {
+    if (account.enabled === false) continue;
+    const updatedAt = account.meta && account.meta.cachedQuotaUpdatedAt;
+    if (!force && typeof updatedAt === "number" && now - updatedAt < ttl) continue;
+    try {
+      const groups = await fetchQuotaGroups(manager, account.id);
+      if (groups) manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.cachedQuota = groups; a.meta.cachedQuotaUpdatedAt = Date.now(); });
+    } catch { /* leave stale cache */ }
+  }
+}
+
 async function verify(manager, view) {
   const name = view.email || view.id;
   try {
@@ -68,6 +131,7 @@ export function createAntigravityAccounts(manager) {
   return accountControllerFromManager(manager, {
     status: antigravityStatus,
     quota: antigravityQuota,
+    refreshQuota: () => refreshAllQuota(manager),
     login: async () => {
       const account = await login({ log: (message) => process.stderr.write(message + "\n") });
       return account ? { id: account.id, email: account.email, status: "active", enabled: true } : null;
