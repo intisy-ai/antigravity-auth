@@ -857,6 +857,11 @@ export function prepareAntigravityRequest(
   thinkingRecoveryMessage?: string;
 } {
   const baseInit: RequestInit = { ...init };
+  // Node's undici rejects any body on a GET/HEAD request ("Request with GET/HEAD
+  // method cannot have body") — Bun tolerated it. Strip the body up front so every
+  // pass-through return below (the generateContent POST branch sets its own body).
+  const forwardMethod = String(baseInit.method ?? "").toUpperCase();
+  if (forwardMethod === "GET" || forwardMethod === "HEAD") delete baseInit.body;
   const headers = new Headers(init?.headers ?? {});
   let resolvedProjectId = projectId?.trim() || "";
   let toolDebugMissing = 0;
