@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_CONFIG } from "./config"
-import type { PluginClient } from "./types"
 
-const { ensureGitignoreSyncMock } = vi.hoisted(() => ({
-  ensureGitignoreSyncMock: vi.fn(),
-}))
+// Capture what the logger hands to core's shared writeLog.
+const { writeLogMock } = vi.hoisted(() => ({ writeLogMock: vi.fn() }))
+vi.mock("../../core/src/index.js", () => ({ makeWriteLog: () => writeLogMock }))
 
-vi.mock("./storage", () => ({
-  ensureGitignoreSync: ensureGitignoreSyncMock,
-}))
+// debug.ts touches storage on init; stub it so the test never writes files.
+const { ensureGitignoreSyncMock } = vi.hoisted(() => ({ ensureGitignoreSyncMock: vi.fn() }))
+vi.mock("./storage", () => ({ ensureGitignoreSync: ensureGitignoreSyncMock }))
 
-describe("logger sink routing", () => {
+describe("logger routing (core makeWriteLog)", () => {
   beforeEach(() => {
     vi.resetModules()
+    writeLogMock.mockReset()
     ensureGitignoreSyncMock.mockReset()
   })
 
@@ -21,60 +21,36 @@ describe("logger sink routing", () => {
     initializeDebug(DEFAULT_CONFIG)
   })
 
-  it("routes logs to TUI when debug_tui is enabled without file debug", async () => {
+  it("suppresses debug lines when file debug is disabled", async () => {
     const { initializeDebug } = await import("./debug")
-    const { createLogger, initLogger } = await import("./logger")
+    const { createLogger } = await import("./logger")
 
-    initializeDebug({
-      ...DEFAULT_CONFIG,
-      debug: false,
-      debug_tui: true,
-    })
-
-    const appLog = vi.fn().mockResolvedValue(undefined)
-    const client = {
-      app: {
-        log: appLog,
-      },
-    } as unknown as PluginClient
-
-    initLogger(client)
-
+    initializeDebug({ ...DEFAULT_CONFIG, debug: false, debug_tui: true })
     createLogger("request").debug("thinking-resolution", { status: 429 })
 
-    expect(appLog).toHaveBeenCalledTimes(1)
-    expect(appLog).toHaveBeenCalledWith({
-      body: {
-        service: "antigravity.request",
-        level: "debug",
-        message: "thinking-resolution",
-        extra: { status: 429 },
-      },
-    })
+    expect(writeLogMock).not.toHaveBeenCalled()
   })
 
-  it("does not route to TUI when only file debug is enabled", async () => {
+  it("writes debug lines through core when file debug is enabled", async () => {
     const { initializeDebug } = await import("./debug")
-    const { createLogger, initLogger } = await import("./logger")
+    const { createLogger } = await import("./logger")
 
-    initializeDebug({
-      ...DEFAULT_CONFIG,
-      debug: true,
-      debug_tui: false,
-      log_dir: "/tmp/opencode-antigravity-logger-tests",
-    })
+    initializeDebug({ ...DEFAULT_CONFIG, debug: true, log_dir: "/tmp/opencode-antigravity-logger-tests" })
+    createLogger("request").debug("thinking-resolution", { status: 429 })
 
-    const appLog = vi.fn().mockResolvedValue(undefined)
-    const client = {
-      app: {
-        log: appLog,
-      },
-    } as unknown as PluginClient
+    expect(writeLogMock).toHaveBeenCalledWith('[debug] request: thinking-resolution {"status":429}', false)
+  })
 
-    initLogger(client)
+  it("always writes info/warn/error; error flags isError=true", async () => {
+    const { createLogger } = await import("./logger")
+    const log = createLogger("request")
 
-    createLogger("request").debug("file-only")
+    log.info("started")
+    log.warn("slow")
+    log.error("boom")
 
-    expect(appLog).not.toHaveBeenCalled()
+    expect(writeLogMock).toHaveBeenCalledWith("[info] request: started", false)
+    expect(writeLogMock).toHaveBeenCalledWith("[warn] request: slow", false)
+    expect(writeLogMock).toHaveBeenCalledWith("[error] request: boom", true)
   })
 })
