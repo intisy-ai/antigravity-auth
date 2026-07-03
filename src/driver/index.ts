@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager, getAutoCandidates } from "../../core-auth/dist/index.js";
+import { defineProvider, AccountManager, proxyManager, getAutoCandidates, notify } from "../../core-auth/dist/index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse, generateSyntheticProjectId } from "../plugin/request.js";
 import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { ensureProjectContext } from "../plugin/project.js";
@@ -22,6 +22,7 @@ import { initializeDebug } from "../plugin/debug.js";
 
 const PROVIDER_ID = "antigravity";
 const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
+const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below — account selection
@@ -118,9 +119,15 @@ async function attemptModel(model, url, init, ctx, log) {
       const msg = secs > 0
         ? `${lane} quota exhausted — resets in ~${secs}s. Pick another model or use Auto (it falls through to a free pool).`
         : `No available antigravity account for lane ${lane}.`;
+      notify(secs > 0 ? `Antigravity: all ${lane} accounts rate-limited — free in ~${secs}s` : `Antigravity: no available account for ${lane}`, "warning");
       return errorResponse(503, msg);
     }
     const account = acquired.account;
+    // user-visible notice when rotation actually moves to a different account
+    if (lastAccountByLane[lane] && lastAccountByLane[lane] !== account.id) {
+      notify(`Antigravity: switched to ${account.email || account.id} (${lane})`, "info");
+    }
+    lastAccountByLane[lane] = account.id;
     const access = acquired.access;
     if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
 
