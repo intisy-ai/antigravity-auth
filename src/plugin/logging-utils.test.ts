@@ -6,7 +6,6 @@ import {
   formatBodyPreviewForLog,
   formatErrorForLog,
   truncateTextForLog,
-  writeConsoleLog,
 } from "./logging-utils"
 
 describe("deriveDebugPolicy", () => {
@@ -66,29 +65,5 @@ describe("format helpers", () => {
     expect(formatBodyPreviewForLog("abcdef", 3)).toBe("abc... (truncated 3 chars)")
     expect(formatBodyPreviewForLog(new URLSearchParams({ q: "value" }), 100)).toBe("q=value")
     expect(formatBodyPreviewForLog(new Uint8Array([1, 2]), 100)).toBe("[Uint8Array payload omitted]")
-  })
-})
-
-describe("writeConsoleLog", () => {
-  it("routes to the level-specific console method", () => {
-    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {})
-    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-
-    writeConsoleLog("debug", "dbg")
-    writeConsoleLog("info", "inf")
-    writeConsoleLog("warn", "wrn")
-    writeConsoleLog("error", "err")
-
-    expect(debugSpy).toHaveBeenCalledWith("dbg")
-    expect(infoSpy).toHaveBeenCalledWith("inf")
-    expect(warnSpy).toHaveBeenCalledWith("wrn")
-    expect(errorSpy).toHaveBeenCalledWith("err")
-
-    debugSpy.mockRestore()
-    infoSpy.mockRestore()
-    warnSpy.mockRestore()
-    errorSpy.mockRestore()
   })
 })

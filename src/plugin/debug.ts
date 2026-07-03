@@ -190,10 +190,6 @@ export function isDebugTuiEnabled(): boolean {
   return getDebugState().debugTuiEnabled;
 }
 
-export function getLogFilePath(): string | undefined {
-  return getDebugState().logFilePath;
-}
-
 export interface AntigravityDebugContext {
   id: string;
   streaming: boolean;
@@ -287,17 +283,6 @@ function logDebug(line: string): void {
 function runWithDebugEnabled(action: () => void): void {
   if (!getDebugState().debugEnabled) return;
   action();
-}
-
-/**
- * Logs a toast message to the debug file.
- * This helps correlate what the user saw with debug events.
- */
-export function logToast(message: string, variant: "info" | "warning" | "success" | "error"): void {
-  runWithDebugEnabled(() => {
-    const variantLabel = variant.toUpperCase();
-    logDebug(`[Toast/${variantLabel}] ${message}`);
-  });
 }
 
 /**

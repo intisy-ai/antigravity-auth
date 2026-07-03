@@ -37,7 +37,7 @@ describe("debug sink policy", () => {
   })
 
   it("keeps debug_tui independent from debug in config", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
 
     initializeDebug({
       ...DEFAULT_CONFIG,
@@ -47,22 +47,20 @@ describe("debug sink policy", () => {
 
     expect(isDebugEnabled()).toBe(false)
     expect(isDebugTuiEnabled()).toBe(true)
-    expect(getLogFilePath()).toBeUndefined()
   })
 
   it("keeps debug_tui independent from debug in env fallback", async () => {
     process.env.OPENCODE_ANTIGRAVITY_DEBUG = "0"
     process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI = "1"
 
-    const { isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
 
     expect(isDebugEnabled()).toBe(false)
     expect(isDebugTuiEnabled()).toBe(true)
-    expect(getLogFilePath()).toBeUndefined()
   })
 
   it("keeps file debug enabled without TUI when only debug is true", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
 
     initializeDebug({
       ...DEFAULT_CONFIG,
@@ -73,6 +71,5 @@ describe("debug sink policy", () => {
 
     expect(isDebugEnabled()).toBe(true)
     expect(isDebugTuiEnabled()).toBe(false)
-    expect(getLogFilePath()).toContain("antigravity-debug-")
   })
 })

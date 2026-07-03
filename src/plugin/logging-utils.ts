@@ -1,5 +1,3 @@
-export type LogLevel = "debug" | "info" | "warn" | "error"
-
 export interface DebugPolicyInput {
   configDebug: boolean
   configDebugTui: boolean
@@ -101,21 +99,4 @@ export function formatBodyPreviewForLog(
   }
 
   return `[${body.constructor?.name ?? typeof body} payload omitted]`
-}
-
-export function writeConsoleLog(level: LogLevel, ...args: unknown[]): void {
-  switch (level) {
-    case "debug":
-      console.debug(...args)
-      break
-    case "info":
-      console.info(...args)
-      break
-    case "warn":
-      console.warn(...args)
-      break
-    case "error":
-      console.error(...args)
-      break
-  }
 }

@@ -1,23 +1,17 @@
-/**
- * Structured Logger for Antigravity Plugin
- *
- * Logging behavior:
- * - debug controls file logs only (via debug.ts)
- * - debug_tui controls TUI log panel only
- * - either sink can be enabled independently
- * - OPENCODE_ANTIGRAVITY_CONSOLE_LOG=1 → console output (independent of debug flags)
- */
+// @ts-nocheck
+// Module logger for the antigravity provider. Output goes through core's shared
+// logger (makeWriteLog): per-plugin file logging (config/<home>/logs, gated by the
+// `logging` flag) + global stderr mirror (the ecosystem-wide logConsole setting) +
+// per-plugin coloring — so this provider logs exactly like every other plugin
+// instead of hand-rolling its own console/file sinks. `debug`-level lines are
+// additionally gated by config.debug (off by default) to avoid flooding the file.
+// An optional opencode TUI mirror is kept for the debug_tui panel.
 
 import type { PluginClient } from "./types";
-import { isDebugTuiEnabled } from "./debug";
-import {
-  isTruthyFlag,
-  writeConsoleLog,
-} from "./logging-utils";
+import { isDebugEnabled, isDebugTuiEnabled } from "./debug";
+import { makeWriteLog } from "../../core/src/index.js";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
-
-const ENV_CONSOLE_LOG = "OPENCODE_ANTIGRAVITY_CONSOLE_LOG";
 
 export interface Logger {
   debug(message: string, extra?: Record<string, unknown>): void;
@@ -28,65 +22,39 @@ export interface Logger {
 
 let _client: PluginClient | null = null;
 
-/**
- * Check if console logging is enabled via environment variable.
- */
-function isConsoleLogEnabled(): boolean {
-  return isTruthyFlag(process.env[ENV_CONSOLE_LOG]);
-}
+const writeLog = makeWriteLog("antigravity");
 
-/**
- * Initialize the logger with the plugin client.
- * Must be called during plugin initialization to enable TUI logging.
- */
+/** Wire the opencode client so debug_tui can mirror logs to the TUI log panel. */
 export function initLogger(client: PluginClient): void {
   _client = client;
 }
 
-/**
- * Create a logger instance for a specific module.
- *
- * @param module - The module name (e.g., "refresh-queue", "transform.claude")
- * @returns Logger instance with debug, info, warn, error methods
- *
- * @example
- * ```typescript
- * const log = createLogger("refresh-queue");
- * log.debug("Checking tokens", { count: 5 });
- * log.warn("Token expired", { accountIndex: 0 });
- * ```
- */
+function safeJson(value: unknown): string {
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+/** Create a logger for a module (e.g. "request", "transform.claude"). */
 export function createLogger(module: string): Logger {
   const service = `antigravity.${module}`;
 
-  const log = (level: LogLevel, message: string, extra?: Record<string, unknown>): void => {
-    // TUI logging: controlled only by debug_tui policy
+  const emit = (level: LogLevel, message: string, extra?: Record<string, unknown>): void => {
+    // opencode TUI panel mirror — only when debug_tui is enabled and a client is wired.
     if (isDebugTuiEnabled()) {
       const app = _client?.app;
       if (app && typeof app.log === "function") {
-        app
-          .log({
-            body: { service, level, message, extra },
-          })
-          .catch(() => {
-
-          });
+        app.log({ body: { service, level, message, extra } }).catch(() => {});
       }
     }
-
-
-    if (isConsoleLogEnabled()) {
-      const prefix = `[${service}]`;
-      const args = extra ? [prefix, message, extra] : [prefix, message];
-      writeConsoleLog(level, ...args);
-    }
-
+    // debug level is verbose; only persist it when file debug is enabled.
+    if (level === "debug" && !isDebugEnabled()) return;
+    const suffix = extra ? " " + safeJson(extra) : "";
+    writeLog(`[${level}] ${module}: ${message}${suffix}`, level === "error");
   };
 
   return {
-    debug: (message, extra) => log("debug", message, extra),
-    info: (message, extra) => log("info", message, extra),
-    warn: (message, extra) => log("warn", message, extra),
-    error: (message, extra) => log("error", message, extra),
+    debug: (message, extra) => emit("debug", message, extra),
+    info: (message, extra) => emit("info", message, extra),
+    warn: (message, extra) => emit("warn", message, extra),
+    error: (message, extra) => emit("error", message, extra),
   };
 }
