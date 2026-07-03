@@ -260,6 +260,14 @@ async function handleAnthropicMessages(request, ctx) {
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
   const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
   const geminiRes = await handle(geminiReq, ctx);   // geminiUrl isn't /v1/messages -> normal Gemini path, no recursion
+  // A terminal chatError is already a proper Anthropic error (HTTP 4xx + {error:{message}}).
+  // Pass it straight through — Claude Code parses the status + error.message into a clean
+  // "API Error: <message>". Do NOT run it through the Gemini->Anthropic translator or the
+  // api_error re-wrap below (that double-wrapped it and leaked the raw JSON), and do NOT
+  // turn it into a 200 SSE (Claude then reports "empty/malformed HTTP 200").
+  if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
+    return geminiRes;
+  }
   if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
     let detail = "";
     try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
@@ -301,8 +309,7 @@ async function handle(request, ctx) {
   if (lastResponse && isRateLimitStatus(lastResponse.status)) {
     const reset = soonestQuotaReset();
     const when = reset ? ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.` : "";
-    const wantsStream = /"stream"\s*:\s*true/.test(bodyText || "");
-    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { stream: wantsStream });
+    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`);
   }
   return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
 }
