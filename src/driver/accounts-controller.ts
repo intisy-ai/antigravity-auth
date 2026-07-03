@@ -67,7 +67,12 @@ async function fetchQuotaGroups(manager, id) {
   for (const [modelName, info] of Object.entries(models)) {
     const group = classifyQuotaGroup(modelName);
     if (!group || !info || !info.quotaInfo) continue;
-    const remaining = typeof info.quotaInfo.remainingFraction === "number" ? info.quotaInfo.remainingFraction : undefined;
+    // When a pool is exhausted/rate-limited, cloudcode-pa drops remainingFraction and
+    // returns only resetTime — treat that as 0 remaining so the pool still shows (as
+    // 100% used, resets at X) instead of vanishing from the quota view.
+    const remaining = typeof info.quotaInfo.remainingFraction === "number"
+      ? info.quotaInfo.remainingFraction
+      : (info.quotaInfo.resetTime ? 0 : undefined);
     const reset = info.quotaInfo.resetTime;
     const entry = groups[group] || {};
     if (remaining !== undefined) entry.remainingFraction = entry.remainingFraction === undefined ? remaining : Math.min(entry.remainingFraction, remaining);

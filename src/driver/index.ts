@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager, getAutoCandidates, notify } from "../../core-auth/dist/index.js";
+import { defineProvider, AccountManager, proxyManager, getAutoCandidates, notify, chatError } from "../../core-auth/dist/index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse, generateSyntheticProjectId } from "../plugin/request.js";
 import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { ensureProjectContext } from "../plugin/project.js";
@@ -274,6 +274,15 @@ async function handle(request, ctx) {
     lastResponse = response;
     if (!response || !isRateLimitStatus(response.status)) return response;   // success / non-retryable
     if (candidates.length > 1) log("auto: " + model + " rate-limited (" + response.status + "); trying next candidate");
+  }
+  // Everything is rate-limited. Returning the raw 503 makes the host retry FOREVER, so
+  // surface a TERMINAL error into the chat instead (with the soonest reset) — the user
+  // sees why and can resend later. (Per-model 503s above are kept so Auto can fall through.)
+  if (lastResponse && isRateLimitStatus(lastResponse.status)) {
+    const resets = candidates.map((m) => manager.nextAvailableAt(laneFor(m))).filter((t) => typeof t === "number" && t > Date.now());
+    const next = resets.length ? Math.min.apply(null, resets) : 0;
+    const when = next ? ` Resets in ~${Math.max(1, Math.round((next - Date.now()) / 60000))}m.` : "";
+    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`);
   }
   return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
 }
