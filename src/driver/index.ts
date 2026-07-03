@@ -139,7 +139,10 @@ async function attemptModel(model, url, init, ctx, log) {
       const msg = secs > 0
         ? `${lane} quota exhausted — resets in ~${secs}s. Pick another model or use Auto (it falls through to a free pool).`
         : `No available antigravity account for lane ${lane}.`;
-      notify(secs > 0 ? `Antigravity: all ${lane} accounts rate-limited — free in ~${secs}s` : `Antigravity: no available account for ${lane}`, "warning");
+      // No toast here: the per-lane 503 lets Auto fall through to the next pool, and
+      // the final give-up already surfaces a clean chat error (handle() -> chatError)
+      // with the real quota reset. A toast here would double up and show the short
+      // 429 back-off time (nextAvailableAt), not the actual reset — the wrong number.
       return errorResponse(503, msg);
     }
     const account = acquired.account;

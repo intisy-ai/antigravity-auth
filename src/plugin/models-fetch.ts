@@ -140,7 +140,11 @@ export function buildAntigravityCatalog(payload: FetchAvailableModelsPayload): A
   // group label is what the loader's Providers tab shows verbatim (provider-defined).
   for (const cli of GEMINI_CLI_MODELS) {
     catalog[cli.id] = {
-      name: cli.name,
+      // Suffix the source in the NAME itself: several of these ids also exist in the
+      // antigravity catalog (same underlying Gemini model, different pool/lane), so
+      // without a suffix the name alone would read as antigravity. "(Gemini CLI)"
+      // mirrors the "(Antigravity)" suffix the fetched models carry.
+      name: cli.name + " (Gemini CLI)",
       limit: { context: cli.context, output: cli.output },
       modalities: { input: ["text", "image", "pdf"], output: ["text"] },
       group: "Gemini CLI · separate free pool (not in Auto)",
