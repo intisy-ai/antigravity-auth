@@ -400,6 +400,10 @@ export const driver = {
   models,
   fetchModels,
   sorts: ["leaderboard"],   // opt into core's built-in quality sort (manual is automatic)
+  // Shown under the Quota view: the gemini-cli models are a separate fallback pool
+  // whose quota the antigravity API doesn't expose (fetchAvailableModels 403s under
+  // the CLI header context), so it can't be graphed like the metered pools.
+  quotaNote: "Gemini CLI models use a separate fallback pool. Its quota isn't reported by the API, so it can't be shown here.",
   handle,
   login,
   loginFlow,
