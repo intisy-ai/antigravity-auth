@@ -68,6 +68,19 @@ export function pickVersion(min) {
   return pool[0] || getNewestVersion();
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Per-account delay until the NEXT User-Agent version change, randomized so accounts
+// never update in lockstep — they roll forward gradually. Accounts still on the old
+// hardcoded UA (no stored version) migrate soon but SPREAD across the first week;
+// already-versioned accounts re-drift on a wide 2–5 week window. Independent random
+// per account => their due dates scatter and stay scattered.
+export function nextVersionDriftDelay(hasVersion) {
+  const min = hasVersion ? 14 * DAY_MS : 0;
+  const max = hasVersion ? 35 * DAY_MS : 7 * DAY_MS;
+  return min + Math.floor(Math.random() * (max - min));
+}
+
 // Forward-only pick for an account that already has a version (simulates an IDE
 // auto-update): weighted-newer among versions >= current; never downgrades.
 export function driftVersion(current) {

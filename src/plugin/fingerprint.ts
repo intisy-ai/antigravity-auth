@@ -51,8 +51,11 @@ export interface Fingerprint {
   createdAt: number;
   /** The Antigravity version embedded in userAgent; drifts forward over time. */
   version?: string;
-  /** When `version` was last (re)picked — gates the forward-drift interval. */
+  /** When `version` was last (re)picked (informational). */
   versionPickedAt?: number;
+  /** Per-account randomized epoch ms for the next forward drift — staggers updates
+   *  so accounts never migrate in lockstep. */
+  nextVersionDriftAt?: number;
   /** @deprecated Kept for backward compat with stored fingerprints */
   quotaUser?: string;
 }

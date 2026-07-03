@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getNewestVersion, getVersionList, pickVersion, driftVersion } from "./versions.js";
+import { getNewestVersion, getVersionList, pickVersion, driftVersion, nextVersionDriftDelay } from "./versions.js";
+
+const DAY = 24 * 60 * 60 * 1000;
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
@@ -59,5 +61,28 @@ describe("versions pool", () => {
 
   it("driftVersion with no current falls back to a valid pick", () => {
     expect(driftVersion("")).toMatch(SEMVER);
+  });
+});
+
+describe("nextVersionDriftDelay (staggering)", () => {
+  it("legacy (no version) migrates within the first week", () => {
+    for (let i = 0; i < 200; i++) {
+      const d = nextVersionDriftDelay(false);
+      expect(d).toBeGreaterThanOrEqual(0);
+      expect(d).toBeLessThanOrEqual(7 * DAY);
+    }
+  });
+
+  it("versioned accounts re-drift on a 2–5 week window", () => {
+    for (let i = 0; i < 200; i++) {
+      const d = nextVersionDriftDelay(true);
+      expect(d).toBeGreaterThanOrEqual(14 * DAY);
+      expect(d).toBeLessThanOrEqual(35 * DAY);
+    }
+  });
+
+  it("produces scattered (not identical) delays across accounts", () => {
+    const delays = new Set(Array.from({ length: 50 }, () => nextVersionDriftDelay(true)));
+    expect(delays.size).toBeGreaterThan(40);   // essentially all distinct -> no lockstep
   });
 });
