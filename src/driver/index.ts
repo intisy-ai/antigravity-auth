@@ -24,6 +24,26 @@ const PROVIDER_ID = "antigravity";
 const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
 const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
 
+// Soonest quota-pool reset (epoch ms) among EXHAUSTED pools, from the last-fetched
+// cachedQuota. This is the real "try again" time — the 429 retry-after is a short
+// backoff, not the quota refill (which can be days out). 0 when unknown.
+function soonestQuotaReset() {
+  let soonest = 0;
+  for (const a of manager.list()) {
+    const cq = a.meta && a.meta.cachedQuota;
+    if (!cq) continue;
+    for (const label of Object.keys(cq)) {
+      const q = cq[label];
+      if (!q || !q.resetTime) continue;
+      if (q.remainingFraction === 0 || q.remainingFraction === undefined) {
+        const t = Date.parse(q.resetTime);
+        if (Number.isFinite(t) && (!soonest || t < soonest)) soonest = t;
+      }
+    }
+  }
+  return soonest;
+}
+
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below — account selection
 // (core-auth's engine), the Claude request flags passed into prepareAntigravityRequest,
@@ -279,10 +299,10 @@ async function handle(request, ctx) {
   // surface a TERMINAL error into the chat instead (with the soonest reset) — the user
   // sees why and can resend later. (Per-model 503s above are kept so Auto can fall through.)
   if (lastResponse && isRateLimitStatus(lastResponse.status)) {
-    const resets = candidates.map((m) => manager.nextAvailableAt(laneFor(m))).filter((t) => typeof t === "number" && t > Date.now());
-    const next = resets.length ? Math.min.apply(null, resets) : 0;
-    const when = next ? ` Resets in ~${Math.max(1, Math.round((next - Date.now()) / 60000))}m.` : "";
-    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`);
+    const reset = soonestQuotaReset();
+    const when = reset ? ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.` : "";
+    const wantsStream = /"stream"\s*:\s*true/.test(bodyText || "");
+    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { stream: wantsStream });
   }
   return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
 }
