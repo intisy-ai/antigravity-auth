@@ -7,6 +7,17 @@
 // ── request: Anthropic /v1/messages body -> Gemini generateContent body ──────
 export function anthropicToGemini(body) {
   var contents = [];
+  // Gemini pairs a functionResponse to its functionCall by NAME (not by id), so a
+  // tool_result must carry the tool's NAME — but Anthropic tool_result blocks only
+  // reference the tool_use_id. Pre-map every tool_use id -> name so the tool_result
+  // below can look it up; without this Gemini treats every tool as unanswered and the
+  // model re-runs it forever ("tool responses being lost" loop under Claude Code).
+  var toolNames = {};
+  for (var pm of (body.messages || [])) {
+    if (Array.isArray(pm.content)) for (var pb of pm.content) {
+      if (pb && pb.type === "tool_use" && pb.id) toolNames[pb.id] = pb.name;
+    }
+  }
   for (var msg of (body.messages || [])) {
     var role = msg.role === "assistant" ? "model" : "user";
     var parts = [];
@@ -21,7 +32,8 @@ export function anthropicToGemini(body) {
           var text = typeof c === "string" ? c
             : Array.isArray(c) ? c.map(function(x) { return x && x.text ? x.text : ""; }).join("")
             : c != null ? JSON.stringify(c) : "";
-          parts.push({ functionResponse: { name: block.tool_use_id || "tool", response: { result: text } } });
+          var fnName = toolNames[block.tool_use_id] || block.tool_use_id || "tool";
+          parts.push({ functionResponse: { name: fnName, response: { result: text } } });
         }
         // images and other block types are dropped (cloudcode-pa text path)
       }
