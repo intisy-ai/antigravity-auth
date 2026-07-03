@@ -10,13 +10,50 @@ import { login } from "./login.js";
 
 function out(message) { process.stdout.write(message + "\n"); }
 
+// True only when EVERY known quota pool is exhausted. A pool counts as having
+// capacity when it reports a positive remainingFraction.
+function allPoolsExhausted(cachedQuota) {
+  const pools = Object.values(cachedQuota || {});
+  if (!pools.length) return false;
+  return pools.every((q) => !(q && typeof q.remainingFraction === "number" && q.remainingFraction > 0));
+}
+
+// Status reflects the account's real serving capacity via its quota POOLS, not the
+// per-lane rate-limit backoffs. A single transient lane limit (e.g. the gemini-cli
+// fallback pool, which isn't even a displayed quota pool) must not flag the whole
+// account as rate-limited while Gemini/Claude still have quota. Only when every
+// pool is exhausted is the account truly rate-limited. Falls back to the lane check
+// before the first quota fetch (no cachedQuota yet).
 function antigravityStatus(account, now) {
   if (account.enabled === false) return "disabled";
   if (account.meta && account.meta.verificationRequired) return "verification-required";
   if (typeof account.coolingDownUntil === "number" && account.coolingDownUntil > now) return "cooling-down";
+  const cachedQuota = account.meta && account.meta.cachedQuota;
+  if (cachedQuota && Object.keys(cachedQuota).length) {
+    return allPoolsExhausted(cachedQuota) ? "rate-limited" : "active";
+  }
   const lanes = account.rateLimitResetTimes || {};
   if (Object.values(lanes).some((reset) => typeof reset === "number" && reset > now)) return "rate-limited";
   return "active";
+}
+
+// Usability time for the account row/hint, pool-based to match antigravityStatus:
+// usable NOW when any pool has capacity (or before the first quota fetch, since a
+// per-lane limit still leaves other lanes serving); the soonest pool reset when
+// every pool is exhausted; disabled/cooldown handled as usual.
+function antigravityAvailableAt(account, now) {
+  if (account.enabled === false) return Infinity;
+  if (typeof account.coolingDownUntil === "number" && account.coolingDownUntil > now) return account.coolingDownUntil;
+  const cachedQuota = account.meta && account.meta.cachedQuota;
+  if (cachedQuota && Object.keys(cachedQuota).length && allPoolsExhausted(cachedQuota)) {
+    let soonest = Infinity;
+    for (const q of Object.values(cachedQuota)) {
+      const t = q && q.resetTime ? Date.parse(q.resetTime) : NaN;
+      if (Number.isFinite(t)) soonest = Math.min(soonest, t);
+    }
+    return Number.isFinite(soonest) ? soonest : now;
+  }
+  return now;
 }
 
 function antigravityQuota(account) {
@@ -153,6 +190,7 @@ async function refreshToken(manager, view) {
 export function createAntigravityAccounts(manager) {
   return accountControllerFromManager(manager, {
     status: antigravityStatus,
+    availableAt: antigravityAvailableAt,
     quota: antigravityQuota,
     refreshQuota: (force) => refreshAllQuota(manager, force),
     login: async () => {
