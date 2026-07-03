@@ -29,13 +29,15 @@ function antigravityQuota(account) {
   }));
 }
 
-// cloudcode-pa reports per-model quota; fold models into three display pools.
+// cloudcode-pa reports per-model quota, but the backend meters by FAMILY: every Gemini
+// variant (2.5/3.x, pro/flash/image) shares one quota, Claude shares one, GPT-OSS one.
+// Fold each family into a single pool; skip internal tab_/chat_ models (no real quota).
 function classifyQuotaGroup(modelName) {
   const lower = String(modelName).toLowerCase();
   if (lower.includes("claude")) return "Claude";
-  if (!lower.includes("gemini-3")) return null;
-  if (lower.includes("flash")) return "Gemini 3 Flash";
-  return "Gemini 3 Pro";
+  if (lower.includes("gpt") || lower.includes("oss")) return "GPT-OSS";
+  if (lower.includes("gemini")) return "Gemini";
+  return null;
 }
 
 // Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
