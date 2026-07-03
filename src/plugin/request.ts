@@ -1701,50 +1701,6 @@ export function prepareAntigravityRequest(
   };
 }
 
-export function buildThinkingWarmupBody(
-  bodyText: string | undefined,
-  isClaudeThinking: boolean,
-): string | null {
-  if (!bodyText || !isClaudeThinking) {
-    return null;
-  }
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(bodyText) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-
-  const warmupPrompt = "Warmup request for thinking signature.";
-
-  const updateRequest = (req: Record<string, unknown>) => {
-    req.contents = [{ role: "user", parts: [{ text: warmupPrompt }] }];
-    delete req.tools;
-    delete (req as any).toolConfig;
-
-    const generationConfig = (req.generationConfig ?? {}) as Record<string, unknown>;
-    generationConfig.thinkingConfig = {
-      include_thoughts: true,
-      thinking_budget: DEFAULT_THINKING_BUDGET,
-    };
-    generationConfig.maxOutputTokens = CLAUDE_THINKING_MAX_OUTPUT_TOKENS;
-    req.generationConfig = generationConfig;
-  };
-
-  if (parsed.request && typeof parsed.request === "object") {
-    updateRequest(parsed.request as Record<string, unknown>);
-    const nested = (parsed.request as any).request;
-    if (nested && typeof nested === "object") {
-      updateRequest(nested as Record<string, unknown>);
-    }
-  } else {
-    updateRequest(parsed);
-  }
-
-  return JSON.stringify(parsed);
-}
-
 /**
  * Normalizes Antigravity responses: applies retry headers, extracts cache usage into headers,
  * rewrites preview errors, flattens streaming payloads, and logs debug metadata.

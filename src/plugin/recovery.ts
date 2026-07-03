@@ -318,26 +318,6 @@ export function getRecoveryToastContent(errorType: RecoveryErrorType): {
   };
 }
 
-export function getRecoverySuccessToast(): {
-  title: string;
-  message: string;
-} {
-  return {
-    title: "Session Recovered",
-    message: "Continuing where you left off...",
-  };
-}
-
-export function getRecoveryFailureToast(): {
-  title: string;
-  message: string;
-} {
-  return {
-    title: "Recovery Failed",
-    message: "Please retry or start a new session.",
-  };
-}
-
 // =============================================================================
 
 // =============================================================================

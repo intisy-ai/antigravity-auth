@@ -63,9 +63,6 @@ export interface FingerprintVersion {
   reason: 'initial' | 'regenerated' | 'restored';
 }
 
-/** Maximum number of fingerprint versions to keep per account */
-export const MAX_FINGERPRINT_HISTORY = 5;
-
 export interface FingerprintHeaders {
   "User-Agent": string;
 }
@@ -113,46 +110,6 @@ export function generateFingerprint(): Fingerprint {
 }
 
 /**
- * Collect fingerprint based on actual current system.
- * Uses real OS info instead of randomized values.
- */
-export function collectCurrentFingerprint(): Fingerprint {
-  const platform = os.platform();
-  const arch = os.arch();
-
-  return {
-    deviceId: generateDeviceId(),
-    sessionToken: generateSessionToken(),
-    userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
-    apiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    clientMetadata: {
-      ideType: "ANTIGRAVITY",
-      platform: platformToDisplayName(platform),
-      pluginType: "GEMINI",
-    },
-    createdAt: Date.now(),
-  };
-}
-
-/**
- * Update the version in a fingerprint's userAgent to match the current runtime version.
- * Called after version fetcher resolves so saved fingerprints always carry the latest version.
- * Returns true if the userAgent was changed.
- */
-export function updateFingerprintVersion(fingerprint: Fingerprint): boolean {
-  const currentVersion = getAntigravityVersion();
-  const versionPattern = /^(antigravity\/)([\d.]+)/;
-  const match = fingerprint.userAgent.match(versionPattern);
-
-  if (!match || match[2] === currentVersion) {
-    return false;
-  }
-
-  fingerprint.userAgent = fingerprint.userAgent.replace(versionPattern, `$1${currentVersion}`);
-  return true;
-}
-
-/**
  * Build HTTP headers from a fingerprint object.
  * These headers are used to identify the "device" making API requests.
  */
@@ -183,11 +140,3 @@ export function getSessionFingerprint(): Fingerprint {
   return sessionFingerprint;
 }
 
-/**
- * Regenerate the session fingerprint.
- * Call this to get a fresh identity (e.g., after rate limiting).
- */
-export function regenerateSessionFingerprint(): Fingerprint {
-  sessionFingerprint = generateFingerprint();
-  return sessionFingerprint;
-}

@@ -761,35 +761,6 @@ export async function saveAccounts(storage: AccountStorageV4): Promise<void> {
   });
 }
 
-/**
- * Save accounts storage by replacing the entire file (no merge).
- * Use this for destructive operations like delete where we need to
- * remove accounts that would otherwise be merged back from existing storage.
- */
-export async function saveAccountsReplace(storage: AccountStorageV4): Promise<void> {
-  const path = getStoragePath();
-  const configDir = dirname(path);
-  await fs.mkdir(configDir, { recursive: true });
-  await ensureGitignore(configDir);
-
-  await withFileLock(path, async () => {
-    const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`;
-    const content = JSON.stringify(storage, null, 2);
-
-    try {
-      await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
-      await fs.rename(tempPath, path);
-    } catch (error) {
-      try {
-        await fs.unlink(tempPath);
-      } catch {
-
-      }
-      throw error;
-    }
-  });
-}
-
 async function loadAccountsUnsafe(): Promise<AccountStorageV4 | null> {
   try {
     const path = getStoragePath();
@@ -822,15 +793,4 @@ async function loadAccountsUnsafe(): Promise<AccountStorageV4 | null> {
   }
 }
 
-export async function clearAccounts(): Promise<void> {
-  try {
-    const path = getStoragePath();
-    await fs.unlink(path);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") {
-      log.error("Failed to clear account storage", { error: String(error) });
-    }
-  }
-}
 

@@ -19,7 +19,6 @@ import { z } from "zod";
  * - `hybrid` (default): Deterministic selection based on health score + token bucket + LRU freshness.
  */
 export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'hybrid']);
-export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>;
 
 /**
  * Toast notification scope for controlling which sessions show toasts.
@@ -29,7 +28,6 @@ export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySc
  * - `all`: Show toasts for all sessions including subagents and background tasks.
  */
 export const ToastScopeSchema = z.enum(['root_only', 'all']);
-export type ToastScope = z.infer<typeof ToastScopeSchema>;
 
 /**
  * Scheduling mode for rate limit behavior.
@@ -39,7 +37,6 @@ export type ToastScope = z.infer<typeof ToastScopeSchema>;
  * - `performance_first`: Round-robin distribution for maximum throughput.
  */
 export const SchedulingModeSchema = z.enum(['cache_first', 'balance', 'performance_first']);
-export type SchedulingMode = z.infer<typeof SchedulingModeSchema>;
 
 /**
  * Signature cache configuration for persisting thinking block signatures to disk.

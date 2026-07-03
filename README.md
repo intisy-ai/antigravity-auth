@@ -46,7 +46,7 @@ The driver maps a requested model to a lane (`claude`, `gemini-antigravity`, `ge
   - `index.ts` — OpenCode entry (the core-auth provider plugin)
   - `handler.ts` — Claude Code entry (`handle()` for the claude-code-loader proxy)
   - `cli.ts` — `antigravity login | list | remove`
-  - `driver/` — `index.ts` (driver + `handle`), `config.ts`, `lanes.ts`, `migrate.ts`, `models.ts`, `login.ts`
+  - `driver/` — `index.ts` (driver + `handle`), `config.ts`, `lanes.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`
   - `antigravity/oauth.ts`, `plugin/{request,request-helpers,project,transform/*,core/streaming/*,...}.ts` — the reused antigravity transform/request layer
   - `commands.ts` — cross-app slash-command definitions + their CLI actions
   - `core-auth/` — the core-auth library (git submodule, bundled into the output)

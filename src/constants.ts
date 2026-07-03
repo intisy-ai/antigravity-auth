@@ -74,23 +74,9 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
 export const ANTIGRAVITY_VERSION_FALLBACK = "1.18.3";
-let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
-let versionLocked = false;
+const antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 
 export function getAntigravityVersion(): string { return antigravityVersion; }
-
-/**
- * Set the runtime Antigravity version. Can only be called once (at startup).
- * Subsequent calls are silently ignored to prevent accidental mutation.
- */
-export function setAntigravityVersion(version: string): void {
-  if (versionLocked) return;
-  antigravityVersion = version;
-  versionLocked = true;
-}
-
-/** @deprecated Use getAntigravityVersion() for runtime access. */
-export const ANTIGRAVITY_VERSION = ANTIGRAVITY_VERSION_FALLBACK;
 
 export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string } {
   return {
@@ -99,13 +85,6 @@ export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string
     "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
   };
 }
-
-/** @deprecated Use getAntigravityHeaders() for runtime access. */
-export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${ANTIGRAVITY_VERSION} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
-  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
-} as const;
 
 export const GEMINI_CLI_HEADERS = {
   "User-Agent": "google-api-nodejs-client/9.15.1",
@@ -149,15 +128,6 @@ export function getRandomizedHeaders(style: HeaderStyle, model?: string): Header
 }
 
 export type HeaderStyle = "antigravity" | "gemini-cli";
-
-/**
- * Provider identifier shared between the plugin loader and credential store.
- */
-export const ANTIGRAVITY_PROVIDER_ID = "google";
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * System instruction for Claude tool usage hardening.
@@ -215,44 +185,6 @@ export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
 // ============================================================================
 
 // ============================================================================
-
-/**
- * Model used for Google Search grounding requests.
- * Uses gemini-2.5-flash for fast, cost-effective search operations. (3-flash is always at capacity and doesn't support souce citation).
- */
-export const SEARCH_MODEL = "gemini-2.5-flash";
-
-/**
- * Thinking budget for deep search (more thorough analysis).
- */
-export const SEARCH_THINKING_BUDGET_DEEP = 16384;
-
-/**
- * Thinking budget for fast search (quick results).
- */
-export const SEARCH_THINKING_BUDGET_FAST = 4096;
-
-/**
- * Timeout for search requests in milliseconds (60 seconds).
- */
-export const SEARCH_TIMEOUT_MS = 60000;
-
-/**
- * System instruction for the Google Search tool.
- */
-export const SEARCH_SYSTEM_INSTRUCTION = `You are an expert web search assistant with access to Google Search and URL analysis tools.
-
-Your capabilities:
-- Use google_search to find real-time information from the web
-- Use url_context to fetch and analyze content from specific URLs when provided
-
-Guidelines:
-- Always provide accurate, well-sourced information
-- Cite your sources when presenting facts
-- If analyzing URLs, extract the most relevant information
-- Be concise but comprehensive in your responses
-- If information is uncertain or conflicting, acknowledge it
-- Focus on answering the user's question directly`;
 
 export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
 You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.

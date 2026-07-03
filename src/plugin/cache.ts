@@ -93,22 +93,6 @@ const SIGNATURE_TEXT_HASH_HEX_LEN = 16;
 let diskCache: SignatureCache | null = null;
 
 /**
- * Initialize the disk-based signature cache.
- * Call this from plugin initialization when keep_thinking is enabled.
- */
-export function initDiskSignatureCache(config: SignatureCacheConfig | undefined): SignatureCache | null {
-  diskCache = createSignatureCache(config);
-  return diskCache;
-}
-
-/**
- * Get the disk cache instance (for testing/debugging).
- */
-export function getDiskSignatureCache(): SignatureCache | null {
-  return diskCache;
-}
-
-/**
  * Hashes text content into a stable, Unicode-safe key.
  *
  * Uses SHA-256 over UTF-8 bytes and truncates to keep memory usage bounded.

@@ -116,19 +116,6 @@ function getCacheKey(auth: OAuthAuthDetails): string | undefined {
 }
 
 /**
- * Clears cached project context results and pending promises, globally or for a refresh key.
- */
-export function invalidateProjectContextCache(refresh?: string): void {
-  if (!refresh) {
-    projectContextPendingCache.clear();
-    projectContextResultCache.clear();
-    return;
-  }
-  projectContextPendingCache.delete(refresh);
-  projectContextResultCache.delete(refresh);
-}
-
-/**
  * Loads managed project information for the given access token and optional project.
  */
 export async function loadManagedProject(

@@ -35,11 +35,6 @@ export interface OpencodeModelDefinition extends ProviderModel {
 
 export type OpencodeModelDefinitions = Record<string, OpencodeModelDefinition>;
 
-export const DEFAULT_MODALITIES: ModelModalities = {
-  input: ["text", "image", "pdf"],
-  output: ["text"],
-};
-
 // The catalog is now fetched live per account (plugin/models-fetch.ts) and cached
 // by core-auth. OpenCode/Claude show no antigravity models until the first
 // `oc auth login`; this empty default is the pre-login / fetch-failure fallback.
