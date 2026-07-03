@@ -10,7 +10,7 @@
 
 import * as crypto from "node:crypto";
 import * as os from "node:os";
-import { getAntigravityVersion } from "../constants";
+import { pickVersion } from "./versions";
 
 const OS_VERSIONS: Record<string, string[]> = {
   darwin: ["10.15.7", "11.6.8", "12.6.3", "13.5.2", "14.2.1", "14.5"],
@@ -49,6 +49,10 @@ export interface Fingerprint {
   apiClient: string;
   clientMetadata: ClientMetadata;
   createdAt: number;
+  /** The Antigravity version embedded in userAgent; drifts forward over time. */
+  version?: string;
+  /** When `version` was last (re)picked — gates the forward-drift interval. */
+  versionPickedAt?: number;
   /** @deprecated Kept for backward compat with stored fingerprints */
   quotaUser?: string;
 }
@@ -94,11 +98,12 @@ export function generateFingerprint(): Fingerprint {
   const platform = randomFrom(PLATFORM_CHOICES);
   const arch = randomFrom(ARCHITECTURES);
   const osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
+  const version = pickVersion();   // weighted toward newer real versions
 
   return {
     deviceId: generateDeviceId(),
     sessionToken: generateSessionToken(),
-    userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
+    userAgent: `antigravity/${version} ${platform}/${arch}`,
     apiClient: randomFrom(SDK_CLIENTS),
     clientMetadata: {
       ideType: randomFrom(IDE_TYPES),
@@ -106,6 +111,8 @@ export function generateFingerprint(): Fingerprint {
       pluginType: "GEMINI",
     },
     createdAt: Date.now(),
+    version,
+    versionPickedAt: Date.now(),
   };
 }
 

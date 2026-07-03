@@ -1,6 +1,8 @@
 /**
  * Constants used for Antigravity OAuth flows and Cloud Code Assist API integration.
  */
+import { getNewestVersion } from "./plugin/versions.js";
+
 // Antigravity's single public installed-app OAuth client — the same one for every
 // user (non-confidential per RFC 8252; already public via the opencode-antigravity-auth
 // npm package). Not customizable; there is only ever this one client.
@@ -73,10 +75,10 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "1.18.3";
-const antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
-
-export function getAntigravityVersion(): string { return antigravityVersion; }
+// The newest real released version (from the runtime-refreshed version pool), so
+// the quota/models headers don't advertise a stale hardcoded build. The per-account
+// serving User-Agent is picked separately (weighted) in fingerprint.ts.
+export function getAntigravityVersion(): string { return getNewestVersion(); }
 
 export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string } {
   return {

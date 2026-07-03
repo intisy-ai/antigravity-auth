@@ -9,6 +9,7 @@ import { prepareAntigravityRequest, transformAntigravityResponse, generateSynthe
 import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { ensureProjectContext } from "../plugin/project.js";
 import { fetchAvailableModels, buildAntigravityCatalog } from "../plugin/models-fetch.js";
+import { refreshVersions, driftVersion } from "../plugin/versions.js";
 import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
 import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_ENDPOINT_PROD } from "../constants.js";
 import { models } from "./models.js";
@@ -287,9 +288,44 @@ async function handleAnthropicMessages(request, ctx) {
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
 }
 
+// Bump each account's stored UA version FORWARD when it's stale (>14d since last
+// pick, or never set) — simulating an IDE auto-update. Never downgrades; keeps the
+// device's platform/arch. New accounts already get a weighted version at login.
+const VERSION_DRIFT_MS = 14 * 24 * 60 * 60 * 1000;
+function driftAccountVersions(log) {
+  const now = Date.now();
+  for (const account of manager.list()) {
+    const fp = account.meta && account.meta.fingerprint;
+    if (!fp || !fp.userAgent) continue;
+    if (typeof fp.versionPickedAt === "number" && now - fp.versionPickedAt < VERSION_DRIFT_MS) continue;
+    const current = fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "";
+    const next = driftVersion(current);
+    manager.mutate(account.id, (a) => {
+      const f = a.meta && a.meta.fingerprint;
+      if (!f) return;
+      f.userAgent = String(f.userAgent).replace(/antigravity\/[^ ]+/, "antigravity/" + next);
+      f.version = next;
+      f.versionPickedAt = now;
+    });
+    if (log && next !== current) log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + next);
+  }
+}
+
+// Refresh the version pool from the release feed + drift accounts — triggered from
+// the serving path (throttled), so CLI/command invocations never hit the network.
+// Fire-and-forget; never blocks a request.
+let versionMaintenanceAt = 0;
+function maybeMaintainVersions(log) {
+  const now = Date.now();
+  if (now - versionMaintenanceAt < 6 * 60 * 60 * 1000) return;
+  versionMaintenanceAt = now;
+  refreshVersions(log).then(() => driftAccountVersions(log)).catch(() => {});
+}
+
 async function handle(request, ctx) {
-  if (isAnthropicMessages(request.url)) return handleAnthropicMessages(request, ctx);
   const log = (ctx && ctx.log) || (() => {});
+  maybeMaintainVersions(log);
+  if (isAnthropicMessages(request.url)) return handleAnthropicMessages(request, ctx);
   const url = request.url;
   let bodyText;
   try { bodyText = await request.clone().text(); } catch { bodyText = undefined; }
