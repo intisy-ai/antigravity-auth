@@ -312,13 +312,21 @@ async function handle(request, ctx) {
     if (!response || !isRateLimitStatus(response.status)) return response;   // success / non-retryable
     if (candidates.length > 1) log("auto: " + model + " rate-limited (" + response.status + "); trying next candidate");
   }
-  // Everything is rate-limited. Returning the raw 503 makes the host retry FOREVER, so
-  // surface a TERMINAL error into the chat instead (with the soonest reset) — the user
-  // sees why and can resend later. (Per-model 503s above are kept so Auto can fall through.)
+  // Everything is rate-limited. Two cases:
+  //  - A pool is GENUINELY exhausted (cachedQuota has a 0-remaining pool with a reset):
+  //    a retry can't help until the reset, so surface a TERMINAL error (else the host
+  //    retries forever). soonestQuotaReset() returns the reset only for exhausted pools.
+  //  - No pool is actually exhausted -> this was a transient per-minute burst (a few
+  //    rapid 429s across MAX_ATTEMPTS). A terminal "quota resets X" would be a false
+  //    alarm (the model works again seconds later), so return the retryable status and
+  //    let the host back off and retry.
   if (lastResponse && isRateLimitStatus(lastResponse.status)) {
     const reset = soonestQuotaReset();
-    const when = reset ? ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.` : "";
-    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini" });
+    if (reset) {
+      const when = ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`;
+      return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini" });
+    }
+    return lastResponse;   // transient limit — let the host retry with backoff
   }
   return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
 }

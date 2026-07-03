@@ -29,10 +29,9 @@ function antigravityQuota(account) {
   }));
 }
 
-// cloudcode-pa reports per-model quota, but the backend meters by FAMILY: every Gemini
-// variant (2.5/3.x, pro/flash/image) shares one quota, Claude shares one, GPT-OSS one.
-// Fold each family into a single pool; skip internal tab_/chat_ models (no real quota).
-function classifyQuotaGroup(modelName) {
+// Friendly family name for a model — used ONLY to LABEL a detected pool, never to
+// decide which models share quota. Returns null for internal/unknown models.
+function familyLabel(modelName) {
   const lower = String(modelName).toLowerCase();
   if (lower.includes("claude")) return "Claude";
   if (lower.includes("gpt") || lower.includes("oss")) return "GPT-OSS";
@@ -65,21 +64,38 @@ async function fetchQuotaGroups(manager, id) {
   let data;
   try { data = await response.json(); } catch { return null; }
   const models = (data && data.models) || {};
-  const groups = {};
+
+  // Step 1 — aggregate quota per FAMILY (worst remaining + earliest reset across
+  // that family's models). When a pool is exhausted cloudcode-pa drops
+  // remainingFraction and returns only resetTime — treat that as 0 remaining so the
+  // pool still shows (100% used, resets at X) instead of vanishing.
+  const perFamily = {};
   for (const [modelName, info] of Object.entries(models)) {
-    const group = classifyQuotaGroup(modelName);
-    if (!group || !info || !info.quotaInfo) continue;
-    // When a pool is exhausted/rate-limited, cloudcode-pa drops remainingFraction and
-    // returns only resetTime — treat that as 0 remaining so the pool still shows (as
-    // 100% used, resets at X) instead of vanishing from the quota view.
+    const fam = familyLabel(modelName);
+    if (!fam || !info || !info.quotaInfo) continue;
     const remaining = typeof info.quotaInfo.remainingFraction === "number"
       ? info.quotaInfo.remainingFraction
       : (info.quotaInfo.resetTime ? 0 : undefined);
-    const reset = info.quotaInfo.resetTime;
-    const entry = groups[group] || {};
-    if (remaining !== undefined) entry.remainingFraction = entry.remainingFraction === undefined ? remaining : Math.min(entry.remainingFraction, remaining);
-    if (reset) { const t = Date.parse(reset); if (Number.isFinite(t) && (!entry.resetTime || t < Date.parse(entry.resetTime))) entry.resetTime = reset; }
-    groups[group] = entry;
+    if (remaining === undefined) continue;
+    const reset = info.quotaInfo.resetTime || "";
+    const f = perFamily[fam] || (perFamily[fam] = { remainingFraction: remaining, resetTime: reset });
+    f.remainingFraction = Math.min(f.remainingFraction, remaining);
+    if (reset && (!f.resetTime || Date.parse(reset) < Date.parse(f.resetTime))) f.resetTime = reset;
+  }
+
+  // Step 2 — AUTO-DETECT pools: families whose live quota signature (remaining +
+  // reset) is identical share one backend pool, so merge them into a single pool
+  // labeled by the families it contains ("Claude + GPT-OSS"). No hardcoded pool
+  // map — if two families ever diverge they split back apart on the next refresh.
+  const bySig = {};
+  for (const [fam, q] of Object.entries(perFamily)) {
+    const sig = q.remainingFraction + "|" + q.resetTime;
+    const g = bySig[sig] || (bySig[sig] = { families: [], remainingFraction: q.remainingFraction, resetTime: q.resetTime });
+    g.families.push(fam);
+  }
+  const groups = {};
+  for (const g of Object.values(bySig)) {
+    groups[g.families.sort().join(" + ")] = { remainingFraction: g.remainingFraction, resetTime: g.resetTime };
   }
   return Object.keys(groups).length ? groups : null;
 }
