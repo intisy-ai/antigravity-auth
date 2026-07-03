@@ -125,10 +125,13 @@ async function attemptModel(model, url, init, ctx, log) {
     const account = acquired.account;
     // Tell the user which account is serving — on first use of a lane and whenever it
     // switches. Deduped by last-account-per-lane so repeated same-account requests
-    // don't spam a notification every turn.
+    // don't spam a notification every turn. Message: provider · email (N/total) · pool.
     if (lastAccountByLane[lane] !== account.id) {
-      const verb = lastAccountByLane[lane] ? "switched to" : "using";
-      notify(`Antigravity: ${verb} ${account.email || account.id} (${lane})`, "info");
+      const accts = manager.list();
+      const idx = accts.findIndex((a) => a.id === account.id);
+      const who = account.email || account.id;
+      const pos = idx >= 0 ? `${idx + 1}/${accts.length}` : `?/${accts.length}`;
+      notify(`Antigravity · ${who} (account ${pos}) · pool: ${lane}`, "info");
     }
     lastAccountByLane[lane] = account.id;
     const access = acquired.access;
