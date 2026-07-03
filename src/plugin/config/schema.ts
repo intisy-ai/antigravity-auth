@@ -137,37 +137,6 @@ export const AntigravityConfigSchema = z.object({
   // =========================================================================
   
   /**
-   * Enable automatic session recovery from tool_result_missing errors.
-   * When enabled, shows a toast notification when recoverable errors occur.
-   * 
-   * @default true
-   */
-  session_recovery: z.boolean().default(true),
-  
-  /**
-   * Automatically send a "continue" prompt after successful recovery.
-   * Only applies when session_recovery is enabled.
-   * 
-   * When false: Only shows toast notification, user must manually continue.
-   * When true: Automatically sends "continue" to resume the session.
-   * 
-   * @default false
-   */
-  auto_resume: z.boolean().default(false),
-  
-  /**
-   * Custom text to send when auto-resuming after recovery.
-   * Only used when auto_resume is enabled.
-   * 
-   * @default "continue"
-   */
-  resume_text: z.string().default("continue"),
-  
-  // =========================================================================
-
-  // =========================================================================
-  
-  /**
    * Signature cache configuration for persisting thinking block signatures.
    * Only used when keep_thinking is enabled.
    */
@@ -485,9 +454,6 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   debug_tui: false,
   debug_gemini_payloads: false,
   keep_thinking: false,
-  session_recovery: true,
-  auto_resume: true,
-  resume_text: "continue",
   empty_response_max_attempts: 4,
   empty_response_retry_delay_ms: 2000,
   tool_id_recovery: true,

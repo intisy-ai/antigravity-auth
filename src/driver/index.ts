@@ -16,7 +16,6 @@ import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { login, loginFlow } from "./login.js";
 import { createAntigravityAccounts } from "./accounts-controller.js";
-import { createSessionRecoveryHook } from "../plugin/recovery.js";
 import { getConfigValue, setConfigValue, loadConfig, initRuntimeConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
 
@@ -375,13 +374,6 @@ const settingsGroups = [
     ],
   },
   {
-    title: "Session recovery",
-    fields: [
-      { key: "session_recovery", label: "Session recovery", type: "bool", hint: "Auto-recover from tool_result_missing errors (shows a toast when they occur)." },
-      { key: "auto_resume", label: "Auto resume", type: "bool", hint: "Automatically send a continue prompt after a successful recovery." },
-    ],
-  },
-  {
     title: "Debug",
     fields: [
       { key: "debug", label: "Debug logging", type: "bool", hint: "Enable debug logging to a file." },
@@ -409,22 +401,6 @@ export const driver = {
   loginFlow,
   accounts: createAntigravityAccounts(manager),
   proxies: true,
-  // Session recovery: core-auth merges these opencode hooks into the plugin. The
-  // recovery hook (gated by config.session_recovery) auto-recovers tool_result_missing
-  // errors, driven by opencode's message.updated events. Returns no event hook when
-  // recovery is disabled, so it adds zero overhead when off.
-  opencodeHooks: async (input) => {
-    let recovery;
-    try { recovery = createSessionRecoveryHook({ client: input.client, directory: input.directory || input.worktree }, config); } catch { recovery = null; }
-    if (!recovery) return {};
-    return {
-      event: async ({ event }) => {
-        if (event && event.type === "message.updated") {
-          try { await recovery.handleSessionRecovery(event.properties.info); } catch {}
-        }
-      },
-    };
-  },
   settings: {
     groups: settingsGroups,
     get: getConfigValue,

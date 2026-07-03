@@ -80,9 +80,6 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
   "debug_tui": false,
   "debug_gemini_payloads": false,
   "keep_thinking": false,
-  "session_recovery": true,
-  "auto_resume": true,
-  "resume_text": "continue",
   "empty_response_max_attempts": 4,
   "empty_response_retry_delay_ms": 2000,
   "tool_id_recovery": true,
@@ -141,9 +138,6 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
 | `debug_tui` | `false` |
 | `debug_gemini_payloads` | `false` |
 | `keep_thinking` | `false` |
-| `session_recovery` | `true` |
-| `auto_resume` | `true` |
-| `resume_text` | `"continue"` |
 | `empty_response_max_attempts` | `4` |
 | `empty_response_retry_delay_ms` | `2000` |
 | `tool_id_recovery` | `true` |
