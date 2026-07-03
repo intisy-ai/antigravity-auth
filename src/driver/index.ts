@@ -123,9 +123,12 @@ async function attemptModel(model, url, init, ctx, log) {
       return errorResponse(503, msg);
     }
     const account = acquired.account;
-    // user-visible notice when rotation actually moves to a different account
-    if (lastAccountByLane[lane] && lastAccountByLane[lane] !== account.id) {
-      notify(`Antigravity: switched to ${account.email || account.id} (${lane})`, "info");
+    // Tell the user which account is serving — on first use of a lane and whenever it
+    // switches. Deduped by last-account-per-lane so repeated same-account requests
+    // don't spam a notification every turn.
+    if (lastAccountByLane[lane] !== account.id) {
+      const verb = lastAccountByLane[lane] ? "switched to" : "using";
+      notify(`Antigravity: ${verb} ${account.email || account.id} (${lane})`, "info");
     }
     lastAccountByLane[lane] = account.id;
     const access = acquired.access;
