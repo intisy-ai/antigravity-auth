@@ -4,6 +4,8 @@
 // Claude models (that's the working OpenCode path). This translates the request
 // Anthropic -> Gemini and the response Gemini-SSE -> Anthropic-Messages-SSE.
 
+import { cleanJSONSchemaForAntigravity } from "./request-helpers.js";
+
 // ── request: Anthropic /v1/messages body -> Gemini generateContent body ──────
 export function anthropicToGemini(body) {
   var contents = [];
@@ -61,7 +63,13 @@ export function anthropicToGemini(body) {
     gem.tools = [{
       functionDeclarations: body.tools
         .filter(function(t) { return t && t.name; })
-        .map(function(t) { return { name: t.name, description: t.description || "", parameters: t.input_schema || { type: "object", properties: {} } }; }),
+        .map(function(t) {
+          // Gemini's functionDeclarations reject JSON-Schema keywords ($schema,
+          // propertyNames, additionalProperties, $ref, …). Reuse the same sanitizer
+          // the OpenCode Gemini path uses so tools work under Claude Code too.
+          var params = cleanJSONSchemaForAntigravity(t.input_schema || { type: "object", properties: {} });
+          return { name: t.name, description: t.description || "", parameters: params };
+        }),
     }];
   }
 
