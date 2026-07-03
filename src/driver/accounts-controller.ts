@@ -131,7 +131,7 @@ export function createAntigravityAccounts(manager) {
   return accountControllerFromManager(manager, {
     status: antigravityStatus,
     quota: antigravityQuota,
-    refreshQuota: () => refreshAllQuota(manager),
+    refreshQuota: (force) => refreshAllQuota(manager, force),
     login: async () => {
       const account = await login({ log: (message) => process.stderr.write(message + "\n") });
       return account ? { id: account.id, email: account.email, status: "active", enabled: true } : null;
