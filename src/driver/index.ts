@@ -305,22 +305,28 @@ async function handle(request, ctx) {
   }
 
   let lastResponse = null;
+  let lastModel = null;
   for (const model of candidates) {
+    lastModel = model;
     const candidateUrl = candidates.length > 1 ? rewriteModelInUrl(url, model) : url;
     const response = await attemptModel(model, candidateUrl, init, ctx, log);
     lastResponse = response;
     if (!response || !isRateLimitStatus(response.status)) return response;   // success / non-retryable
     if (candidates.length > 1) log("auto: " + model + " rate-limited (" + response.status + "); trying next candidate");
   }
-  // Everything is rate-limited. Two cases:
-  //  - A pool is GENUINELY exhausted (cachedQuota has a 0-remaining pool with a reset):
-  //    a retry can't help until the reset, so surface a TERMINAL error (else the host
-  //    retries forever). soonestQuotaReset() returns the reset only for exhausted pools.
-  //  - No pool is actually exhausted -> this was a transient per-minute burst (a few
-  //    rapid 429s across MAX_ATTEMPTS). A terminal "quota resets X" would be a false
-  //    alarm (the model works again seconds later), so return the retryable status and
-  //    let the host back off and retry.
+  // Everything is rate-limited — surface a lane-accurate TERMINAL error (else the
+  // host retries forever). The reset shown must belong to the FAILED lane:
   if (lastResponse && isRateLimitStatus(lastResponse.status)) {
+    const lane = laneFor(lastModel || requestedModel);
+    if (lane === "gemini-cli") {
+      // The Gemini CLI free pool has no quota API and its 429 ("exhausted your
+      // capacity on this model") carries no reset — so never show the antigravity
+      // pool's reset date here (that's a different, unrelated quota).
+      return chatError("The Gemini CLI free pool is exhausted for this model. Pick another model or try again later.", { format: "gemini" });
+    }
+    // Antigravity lanes: use the real quota-pool reset when a pool is genuinely
+    // exhausted; otherwise it was a transient burst — return the retryable status
+    // so the host backs off and retries instead of seeing a false "quota resets X".
     const reset = soonestQuotaReset();
     if (reset) {
       const when = ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`;
