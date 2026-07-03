@@ -266,7 +266,14 @@ async function handleAnthropicMessages(request, ctx) {
   // api_error re-wrap below (that double-wrapped it and leaked the raw JSON), and do NOT
   // turn it into a 200 SSE (Claude then reports "empty/malformed HTTP 200").
   if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
-    return geminiRes;
+    // route() produced a Gemini-format terminal error (for opencode). Convert it to the
+    // Anthropic shape so Claude Code renders a clean "API Error: <message>".
+    let msg = "request failed";
+    try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
+    return new Response(
+      JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: msg } }),
+      { status: geminiRes.status || 400, headers: { "content-type": "application/json" } },
+    );
   }
   if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
     let detail = "";
@@ -309,7 +316,7 @@ async function handle(request, ctx) {
   if (lastResponse && isRateLimitStatus(lastResponse.status)) {
     const reset = soonestQuotaReset();
     const when = reset ? ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.` : "";
-    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`);
+    return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini" });
   }
   return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
 }
