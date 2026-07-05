@@ -16,10 +16,6 @@ import { createLogger } from "../logger";
 
 const log = createLogger("config");
 
-// =============================================================================
-
-// =============================================================================
-
 /**
  * Get the config directory path, with the following precedence:
  * 1. OPENCODE_CONFIG_DIR env var (if set)
@@ -61,16 +57,9 @@ export function getUserConfigPath(): string {
   return newPath;
 }
 
-/**
- * Get the project-level config file path.
- */
 export function getProjectConfigPath(directory: string): string {
   return join(directory, ".opencode", "antigravity.json");
 }
-
-// =============================================================================
-
-// =============================================================================
 
 /**
  * Load and parse a config file, returning null if not found or invalid.
@@ -126,10 +115,6 @@ function mergeConfigs(
   };
 }
 
-// =============================================================================
-
-// =============================================================================
-
 /**
  * Load the complete configuration.
  * 
@@ -155,21 +140,6 @@ export function loadConfig(directory: string): AntigravityConfig {
   }
 
   return config;
-}
-
-/**
- * Check if a config file exists at the given path.
- */
-export function configExists(path: string): boolean {
-  return existsSync(path);
-}
-
-/**
- * Get the default logs directory.
- * Uses ~/.config/opencode/logs/ (centralized logs folder).
- */
-export function getDefaultLogsDir(): string {
-  return join(getConfigDir(), "logs");
 }
 
 let runtimeConfig: AntigravityConfig | null = null;

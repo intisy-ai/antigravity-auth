@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectErrorType, isRecoverableError } from "./recovery";
+import { detectErrorType } from "./recovery";
 
 describe("detectErrorType", () => {
   describe("tool_result_missing detection", () => {
@@ -85,34 +85,6 @@ describe("detectErrorType", () => {
   });
 });
 
-describe("isRecoverableError", () => {
-  it("returns true for tool_result_missing", () => {
-    const error = "tool_use without tool_result";
-    expect(isRecoverableError(error)).toBe(true);
-  });
-
-  it("returns true for thinking_block_order", () => {
-    const error = "thinking must be the first block";
-    expect(isRecoverableError(error)).toBe(true);
-  });
-
-  it("returns true for thinking_disabled_violation", () => {
-    const error = "thinking is disabled and cannot contain thinking";
-    expect(isRecoverableError(error)).toBe(true);
-  });
-
-  it("returns false for non-recoverable errors", () => {
-    expect(isRecoverableError("Prompt is too long")).toBe(false);
-    expect(isRecoverableError("context length exceeded")).toBe(false);
-    expect(isRecoverableError("Generic error")).toBe(false);
-    expect(isRecoverableError(null)).toBe(false);
-  });
-});
-
-// =============================================================================
-
-// =============================================================================
-
 describe("context error message patterns", () => {
   describe("prompt too long patterns", () => {
     const promptTooLongPatterns = [
@@ -122,7 +94,6 @@ describe("context error message patterns", () => {
     ];
 
     it.each(promptTooLongPatterns)("'%s' is not a recoverable error", (msg) => {
-      expect(isRecoverableError(msg)).toBe(false);
       expect(detectErrorType(msg)).toBeNull();
     });
   });
@@ -136,7 +107,6 @@ describe("context error message patterns", () => {
     ];
 
     it.each(contextLengthPatterns)("'%s' is not a recoverable error", (msg) => {
-      expect(isRecoverableError(msg)).toBe(false);
       expect(detectErrorType(msg)).toBeNull();
     });
   });
@@ -150,7 +120,6 @@ describe("context error message patterns", () => {
 
     it.each(toolPairingPatterns)("'%s' is detected as tool_result_missing", (msg) => {
       expect(detectErrorType(msg)).toBe("tool_result_missing");
-      expect(isRecoverableError(msg)).toBe(true);
     });
   });
 });

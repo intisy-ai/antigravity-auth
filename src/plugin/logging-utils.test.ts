@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   deriveDebugPolicy,
-  formatAccountContextLabel,
-  formatAccountLabel,
-  formatBodyPreviewForLog,
   formatErrorForLog,
   truncateTextForLog,
 } from "./logging-utils"
@@ -19,7 +16,6 @@ describe("deriveDebugPolicy", () => {
 
     expect(policy.debugEnabled).toBe(false)
     expect(policy.debugTuiEnabled).toBe(false)
-    expect(policy.verboseEnabled).toBe(false)
     expect(policy.debugLevel).toBe(0)
   })
 
@@ -33,19 +29,11 @@ describe("deriveDebugPolicy", () => {
 
     expect(policy.debugEnabled).toBe(true)
     expect(policy.debugTuiEnabled).toBe(false)
-    expect(policy.verboseEnabled).toBe(true)
     expect(policy.debugLevel).toBe(2)
   })
 })
 
 describe("format helpers", () => {
-  it("formats account labels consistently", () => {
-    expect(formatAccountLabel("person@example.com", 4)).toBe("person@example.com")
-    expect(formatAccountLabel(undefined, 1)).toBe("Account 2")
-    expect(formatAccountContextLabel(undefined, -1)).toBe("All accounts")
-    expect(formatAccountContextLabel(undefined, 0)).toBe("Account 1")
-  })
-
   it("formats errors defensively", () => {
     expect(formatErrorForLog(new Error("boom"))).toContain("boom")
     expect(formatErrorForLog({ code: 401 })).toBe('{"code":401}')
@@ -59,11 +47,5 @@ describe("format helpers", () => {
     const longText = "x".repeat(12)
     expect(truncateTextForLog(longText, 5)).toBe("xxxxx... (truncated 7 chars)")
     expect(truncateTextForLog("short", 10)).toBe("short")
-  })
-
-  it("formats body previews safely", () => {
-    expect(formatBodyPreviewForLog("abcdef", 3)).toBe("abc... (truncated 3 chars)")
-    expect(formatBodyPreviewForLog(new URLSearchParams({ q: "value" }), 100)).toBe("q=value")
-    expect(formatBodyPreviewForLog(new Uint8Array([1, 2]), 100)).toBe("[Uint8Array payload omitted]")
   })
 })

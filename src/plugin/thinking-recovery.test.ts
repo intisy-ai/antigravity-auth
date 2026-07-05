@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeConversationState,
   closeToolLoopForThinking,
-  hasPossibleCompactedThinking,
   looksLikeCompactedThinkingTurn,
   needsThinkingRecovery,
 } from "./thinking-recovery";
@@ -278,44 +277,5 @@ describe("looksLikeCompactedThinkingTurn", () => {
   it("returns true for bare function call with no preceding text (looks compacted)", () => {
     const msg = modelWithToolCall("search");
     expect(looksLikeCompactedThinkingTurn(msg)).toBe(true);
-  });
-});
-
-// ─── hasPossibleCompactedThinking ────────────────────────────────────────────
-
-describe("hasPossibleCompactedThinking", () => {
-  it("returns false for empty contents", () => {
-    expect(hasPossibleCompactedThinking([], 0)).toBe(false);
-  });
-
-  it("returns false for invalid turnStartIdx", () => {
-    expect(hasPossibleCompactedThinking([modelMsg("hi")], -1)).toBe(false);
-  });
-
-  it("returns false when no model messages look compacted", () => {
-    const contents = [userMsg("go"), modelWithThinkingAndToolCall(), toolResultMsg()];
-    expect(hasPossibleCompactedThinking(contents, 1)).toBe(false);
-  });
-
-  it("returns true when a model message in turn looks compacted", () => {
-    const contents = [
-      userMsg("go"),
-      modelWithToolCall("search"),
-      toolResultMsg("search"),
-    ];
-    expect(hasPossibleCompactedThinking(contents, 1)).toBe(true);
-  });
-
-  it("ignores model messages before turnStartIdx", () => {
-    const contents = [
-      userMsg("first turn"),
-      modelWithToolCall("old"),
-      toolResultMsg("old"),
-      userMsg("second turn"),
-      modelWithThinkingAndToolCall("new"),
-      toolResultMsg("new"),
-    ];
-
-    expect(hasPossibleCompactedThinking(contents, 4)).toBe(false);
   });
 });

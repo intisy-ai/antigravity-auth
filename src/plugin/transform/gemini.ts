@@ -571,10 +571,6 @@ export function wrapToolsAsFunctionDeclarations(payload: RequestPayload): WrapTo
   };
 }
 
-// ============================================================================
-
-// ============================================================================
-
 interface ContentTurn {
   role: string;
   parts: any[];

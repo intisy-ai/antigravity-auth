@@ -5,9 +5,6 @@ import { homedir } from "node:os";
 import type { AntigravityConfig } from "./config";
 import {
   deriveDebugPolicy,
-  formatAccountContextLabel,
-  formatAccountLabel,
-  formatBodyPreviewForLog,
   formatErrorForLog,
   isTruthyFlag,
   truncateTextForLog,
@@ -19,10 +16,6 @@ const MAX_BODY_LOG_CHARS = 50000;
 
 export const DEBUG_MESSAGE_PREFIX = "[opencode-antigravity-auth debug]";
 
-// =============================================================================
-
-// =============================================================================
-
 interface DebugState {
   debugEnabled: boolean;
   debugTuiEnabled: boolean;
@@ -32,9 +25,6 @@ interface DebugState {
 
 let debugState: DebugState | null = null;
 
-/**
- * Get the OS-specific config directory.
- */
 function getConfigDir(): string {
   const platform = process.platform;
   if (platform === "win32") {
@@ -59,9 +49,6 @@ function getLogsDir(customLogDir?: string): string {
   return logsDir;
 }
 
-/**
- * Builds a timestamped log file path.
- */
 function createLogFilePath(customLogDir?: string): string {
   const logsDir = getLogsDir(customLogDir);
   cleanupOldLogs(logsDir, 25);
@@ -101,9 +88,6 @@ function cleanupOldLogs(logsDir: string, maxFiles: number): void {
   }
 }
 
-/**
- * Creates a log writer function that writes to a file.
- */
 function createLogWriter(filePath?: string): (line: string) => void {
   if (!filePath) {
     return () => {};
@@ -178,10 +162,6 @@ function getDebugState(): DebugState {
   return debugState;
 }
 
-// =============================================================================
-
-// =============================================================================
-
 export function isDebugEnabled(): boolean {
   return getDebugState().debugEnabled;
 }
@@ -215,9 +195,6 @@ interface AntigravityDebugResponseMeta {
 
 let requestCounter = 0;
 
-/**
- * Logs response details for a previously started debug trace.
- */
 export function logAntigravityDebugResponse(
   context: AntigravityDebugContext | null | undefined,
   response: Response,
@@ -253,9 +230,6 @@ export function logAntigravityDebugResponse(
   }
 }
 
-/**
- * Obscures sensitive headers and returns a plain object for logging.
- */
 function maskHeaders(headers?: HeadersInit | Headers): Record<string, string> {
   if (!headers) {
     return {};
@@ -273,9 +247,6 @@ function maskHeaders(headers?: HeadersInit | Headers): Record<string, string> {
   return result;
 }
 
-/**
- * Writes a single debug line using the configured writer.
- */
 function logDebug(line: string): void {
   getDebugState().logWriter(line);
 }
@@ -285,9 +256,6 @@ function runWithDebugEnabled(action: () => void): void {
   action();
 }
 
-/**
- * Logs cache hit/miss information from response usage metadata.
- */
 export function logCacheStats(
   model: string,
   cacheReadTokens: number,

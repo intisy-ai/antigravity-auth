@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Signature cache for persisting thinking block signatures to disk.
  * 
  * Features (based on LLM-API-Key-Proxy's ProviderCache):
@@ -16,10 +16,6 @@ import { homedir } from "node:os";
 import { tmpdir } from "node:os";
 import type { SignatureCacheConfig } from "../config";
 import { ensureGitignoreSync } from "../storage";
-
-// =============================================================================
-
-// =============================================================================
 
 interface CacheEntry {
   value: string;
@@ -65,10 +61,6 @@ export interface ThinkingCacheData {
   toolIds?: string[];
 }
 
-// =============================================================================
-
-// =============================================================================
-
 function getConfigDir(): string {
   const platform = process.platform;
   if (platform === "win32") {
@@ -82,10 +74,6 @@ function getCacheFilePath(): string {
   const configSubDir = join(getConfigDir(), "config");
   return join(configSubDir, "antigravity-signature-cache.json");
 }
-
-// =============================================================================
-
-// =============================================================================
 
 export class SignatureCache {
 
@@ -123,10 +111,6 @@ export class SignatureCache {
       this.startBackgroundTasks();
     }
   }
-
-  // ===========================================================================
-
-  // ===========================================================================
 
   /**
    * Generate a cache key from sessionId and modelId.
@@ -182,10 +166,6 @@ export class SignatureCache {
     const age = Date.now() - entry.timestamp;
     return age <= this.memoryTtlMs;
   }
-
-  // ===========================================================================
-
-  // ===========================================================================
 
   /**
    * Store full thinking content with signature.
@@ -285,10 +265,6 @@ export class SignatureCache {
       this.saveToDisk();
     }
   }
-
-  // ===========================================================================
-
-  // ===========================================================================
 
   /**
    * Load cache from disk file with TTL validation.
@@ -416,10 +392,6 @@ export class SignatureCache {
     }
   }
 
-  // ===========================================================================
-
-  // ===========================================================================
-
   /**
    * Start background write and cleanup timers.
    */
@@ -455,10 +427,6 @@ export class SignatureCache {
 
   }
 }
-
-// =============================================================================
-
-// =============================================================================
 
 /**
  * Create a signature cache with the given configuration.

@@ -175,19 +175,11 @@ export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass tr
  */
 export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * System instruction for Antigravity requests.
  * This is injected into requests to match CLIProxyAPI v6.6.89 behavior.
  * The instruction provides identity and guidelines for the Antigravity agent.
  */
-// ============================================================================
-
-// ============================================================================
-
 export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
 You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
 **Absolute paths only**

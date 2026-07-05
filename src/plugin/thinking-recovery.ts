@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Thinking Recovery Module
  *
  * Minimal implementation for recovering from corrupted thinking state.
@@ -8,10 +8,6 @@
  * Philosophy: "Let it crash and start again" - Instead of trying to fix corrupted state,
  * we abandon the corrupted turn and let Claude generate fresh thinking.
  */
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * Conversation state for thinking mode analysis
@@ -30,10 +26,6 @@ export interface ConversationState {
   /** Whether last model msg has tool calls */
   lastModelHasToolCalls: boolean;
 }
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * Checks if a message part is a thinking/reasoning block.
@@ -111,10 +103,6 @@ function messageHasToolCalls(msg: any): boolean {
   return false;
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Analyzes conversation state to detect tool use loops and thinking mode issues.
  *
@@ -176,10 +164,6 @@ export function analyzeConversationState(contents: any[]): ConversationState {
 
   return state;
 }
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * Strips all thinking blocks from messages.
@@ -305,10 +289,6 @@ export function needsThinkingRecovery(state: ConversationState): boolean {
   return state.inToolLoop && !state.turnHasThinking;
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Detects if a message looks like it was compacted from a thinking-enabled turn.
  * 
@@ -368,27 +348,4 @@ export function looksLikeCompactedThinkingTurn(msg: any): boolean {
 
 
   return !hasTextBeforeFunctionCall;
-}
-
-/**
- * Checks if any message in the current turn looks like it was compacted.
- * 
- * @param contents - Full conversation contents
- * @param turnStartIdx - Index of the first model message in current turn
- * @returns true if any model message in the turn looks compacted
- */
-export function hasPossibleCompactedThinking(
-  contents: any[],
-  turnStartIdx: number,
-): boolean {
-  if (!Array.isArray(contents) || turnStartIdx < 0) return false;
-
-  for (let i = turnStartIdx; i < contents.length; i++) {
-    const msg = contents[i];
-    if (msg?.role === "model" && looksLikeCompactedThinkingTurn(msg)) {
-      return true;
-    }
-  }
-
-  return false;
 }

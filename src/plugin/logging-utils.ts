@@ -9,7 +9,6 @@ export interface DebugPolicy {
   debugLevel: number
   debugEnabled: boolean
   debugTuiEnabled: boolean
-  verboseEnabled: boolean
 }
 
 export function isTruthyFlag(flag?: string): boolean {
@@ -31,29 +30,13 @@ export function deriveDebugPolicy(input: DebugPolicyInput): DebugPolicy {
       : 1
     : parseDebugLevel(envDebugFlag)
   const debugEnabled = debugLevel >= 1
-  const verboseEnabled = debugLevel >= 2
   const debugTuiEnabled = debugEnabled && (input.configDebugTui || isTruthyFlag(input.envDebugTuiFlag))
 
   return {
     debugLevel,
     debugEnabled,
     debugTuiEnabled,
-    verboseEnabled,
   }
-}
-
-export function formatAccountLabel(email: string | undefined, accountIndex: number): string {
-  return email || `Account ${accountIndex + 1}`
-}
-
-export function formatAccountContextLabel(email: string | undefined, accountIndex: number): string {
-  if (email) {
-    return email
-  }
-  if (accountIndex >= 0) {
-    return `Account ${accountIndex + 1}`
-  }
-  return "All accounts"
 }
 
 export function formatErrorForLog(error: unknown): string {
@@ -72,31 +55,4 @@ export function truncateTextForLog(text: string, maxChars: number): string {
     return text
   }
   return `${text.slice(0, maxChars)}... (truncated ${text.length - maxChars} chars)`
-}
-
-export function formatBodyPreviewForLog(
-  body: BodyInit | null | undefined,
-  maxChars: number,
-): string | undefined {
-  if (body == null) {
-    return undefined
-  }
-
-  if (typeof body === "string") {
-    return truncateTextForLog(body, maxChars)
-  }
-
-  if (body instanceof URLSearchParams) {
-    return truncateTextForLog(body.toString(), maxChars)
-  }
-
-  if (typeof Blob !== "undefined" && body instanceof Blob) {
-    return `[Blob size=${body.size}]`
-  }
-
-  if (typeof FormData !== "undefined" && body instanceof FormData) {
-    return "[FormData payload omitted]"
-  }
-
-  return `[${body.constructor?.name ?? typeof body} payload omitted]`
 }

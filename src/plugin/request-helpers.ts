@@ -1,4 +1,4 @@
-import { getKeepThinking } from "./config";
+﻿import { getKeepThinking } from "./config";
 import { createLogger } from "./logger";
 import { cacheSignature } from "./cache";
 import {
@@ -11,12 +11,7 @@ import type { GoogleSearchConfig } from "./transform/types";
 
 const log = createLogger("request-helpers");
 
-const ANTIGRAVITY_PREVIEW_LINK = "https://goo.gle/enable-preview-features"; // TODO: Update to Antigravity link if available
-
-// ============================================================================
-
-// Ported from CLIProxyAPI's CleanJSONSchemaForAntigravity (gemini_schema.go)
-// ============================================================================
+const ANTIGRAVITY_PREVIEW_LINK = "https://goo.gle/enable-preview-features";
 
 /**
  * Unsupported constraint keywords that should be moved to description hints.
@@ -683,10 +678,6 @@ export function cleanJSONSchemaForAntigravity(schema: any): any {
 
   return result;
 }
-
-// ============================================================================
-
-// ============================================================================
 
 export interface AntigravityApiError {
   code?: number;
@@ -1699,10 +1690,6 @@ function isAntigravityModel(target?: string): boolean {
   return /antigravity/i.test(target) || /opus/i.test(target) || /claude/i.test(target);
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Checks if a JSON response body represents an empty response.
  * 
@@ -1846,10 +1833,6 @@ export function isMeaningfulSseLine(line: string): boolean {
   }
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Recursively parses JSON strings in nested data structures.
  * 
@@ -1991,10 +1974,6 @@ export function recursivelyParseJsonStrings(
 
   return obj;
 }
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * Groups function calls with their responses, handling ID mismatches.
@@ -2185,10 +2164,6 @@ export function fixToolResponseGrouping(contents: any[]): any[] {
   return newContents;
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Find orphaned tool_use IDs (tool_use without matching tool_result).
  * Works on Claude format messages.
@@ -2367,10 +2342,6 @@ export function validateAndFixClaudeToolPairing(messages: any[]): any[] {
   return removeOrphanedToolUse(fixed, orphanIds);
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Formats a type hint for a property schema.
  * Port of LLM-API-Key-Proxy's _format_type_hint()
@@ -2533,10 +2504,6 @@ export function injectToolHardeningInstruction(
   }
 }
 
-// ============================================================================
-
-// ============================================================================
-
 /**
  * Assigns IDs to functionCall parts and returns the pending call IDs by name.
  * This is the first pass of tool ID assignment.
@@ -2674,10 +2641,6 @@ export function applyToolPairingFixes(
 
   return { contentsFixed, messagesFixed };
 }
-
-// ============================================================================
-
-// ============================================================================
 
 /**
  * Creates a synthetic Claude SSE streaming response with error content.

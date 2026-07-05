@@ -68,8 +68,3 @@ export function detectErrorType(error: unknown): RecoveryErrorType {
 
   return null;
 }
-
-/** Check if an error is recoverable. */
-export function isRecoverableError(error: unknown): boolean {
-  return detectErrorType(error) !== null;
-}
