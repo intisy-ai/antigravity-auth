@@ -17,7 +17,7 @@ import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { login, loginFlow } from "./login.js";
 import { createAntigravityAccounts } from "./accounts-controller.js";
-import { getConfigValue, setConfigValue, loadConfig, initRuntimeConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
+import { getConfigValue, setConfigValue, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
 
 const PROVIDER_ID = "antigravity";
@@ -47,11 +47,10 @@ function soonestQuotaReset() {
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below — account selection
 // (core-auth's engine), the Claude request flags passed into prepareAntigravityRequest,
-// and keep_thinking (read by the request transform via getKeepThinking). The other
+// and keep_thinking (read fresh by the request transform via getKeepThinking). The other
 // historical AntigravityConfig keys have no consumer here, so the settings UI omits them.
 let config;
-try { config = loadConfig(process.cwd()); } catch { config = DEFAULT_CONFIG; }
-initRuntimeConfig(config);   // so getKeepThinking() in the request transform reads keep_thinking
+try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 initializeDebug(config);     // enables the log.debug(...) calls in request/project (debug, debug_tui, log_dir)
 
 // core-auth account engine. The driver availability hook keeps antigravity's

@@ -1,6 +1,4 @@
 export {
-  AntigravityConfigSchema,
-  SignatureCacheConfigSchema,
   DEFAULT_CONFIG,
   type AntigravityConfig,
   type SignatureCacheConfig,
@@ -8,7 +6,6 @@ export {
 
 export {
   loadConfig,
-  initRuntimeConfig,
   getKeepThinking,
 } from "./loader";
 
