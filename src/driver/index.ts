@@ -367,7 +367,7 @@ async function handle(request, ctx) {
       // The Gemini CLI free pool has no quota API and its 429 ("exhausted your
       // capacity on this model") carries no reset — so never show the antigravity
       // pool's reset date here (that's a different, unrelated quota).
-      return chatError("The Gemini CLI free pool is exhausted for this model. Pick another model or try again later.", { format: "gemini" });
+      return chatError("The Gemini CLI free pool is exhausted for this model. Pick another model or try again later.", { format: "gemini", rateLimited: true });
     }
     // Antigravity lanes: use the real quota-pool reset when a pool is genuinely
     // exhausted; otherwise it was a transient burst — return the retryable status
@@ -375,7 +375,7 @@ async function handle(request, ctx) {
     const reset = soonestQuotaReset();
     if (reset) {
       const when = ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`;
-      return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini" });
+      return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini", rateLimited: true, retryAfterMs: reset - Date.now() });
     }
     return lastResponse;   // transient limit — let the host retry with backoff
   }
