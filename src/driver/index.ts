@@ -145,17 +145,11 @@ async function attemptModel(model, url, init, ctx, log) {
       return errorResponse(503, msg);
     }
     const account = acquired.account;
-    // Tell the user which account is serving — on first use of a lane and whenever it
-    // switches. Deduped by last-account-per-lane so repeated same-account requests
-    // don't spam a notification every turn. Message: provider · email (N/total) · pool.
-    if (lastAccountByLane[lane] !== account.id) {
-      const accts = manager.list();
-      const idx = accts.findIndex((a) => a.id === account.id);
-      const who = account.email || account.id;
-      const pos = idx >= 0 ? `${idx + 1}/${accts.length}` : `?/${accts.length}`;
-      notify(`Antigravity · ${who} (account ${pos}) · pool: ${lane}`, "info");
-    }
-    lastAccountByLane[lane] = account.id;
+    // (No per-acquire notification: when accounts rotate on rate-limit the handler
+    // switches accounts repeatedly within a single request, which flooded the Stop-hook
+    // notification drain with "Antigravity · … (account N/total) · pool" lines. Account
+    // rotation is routine; only genuine problems — e.g. all accounts exhausted — surface
+    // to the user, via the final chatError.)
     const access = acquired.access;
     if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
 
