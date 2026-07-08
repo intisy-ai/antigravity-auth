@@ -66,8 +66,7 @@ function antigravityQuota(account) {
   }));
 }
 
-// Friendly family name for a model — used ONLY to LABEL a detected pool, never to
-// decide which models share quota. Returns null for internal/unknown models.
+// Friendly family name for a model. Returns null for internal/unknown models.
 function familyLabel(modelName) {
   const lower = String(modelName).toLowerCase();
   if (lower.includes("claude")) return "Claude";
@@ -75,6 +74,10 @@ function familyLabel(modelName) {
   if (lower.includes("gemini")) return "Gemini";
   return null;
 }
+
+// Which backend quota pool each family draws from. Claude + GPT-OSS share one pool;
+// Gemini is separate. A family not listed here gets its own pool (label = family).
+const POOL_OF_FAMILY = { "Claude": "Claude + GPT-OSS", "GPT-OSS": "Claude + GPT-OSS", "Gemini": "Gemini" };
 
 // Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
 // { <pool>: { remainingFraction, resetTime } } (worst remaining + earliest reset
@@ -120,19 +123,17 @@ async function fetchQuotaGroups(manager, id) {
     if (reset && (!f.resetTime || Date.parse(reset) < Date.parse(f.resetTime))) f.resetTime = reset;
   }
 
-  // Step 2 — AUTO-DETECT pools: families whose live quota signature (remaining +
-  // reset) is identical share one backend pool, so merge them into a single pool
-  // labeled by the families it contains ("Claude + GPT-OSS"). No hardcoded pool
-  // map — if two families ever diverge they split back apart on the next refresh.
-  const bySig = {};
-  for (const [fam, q] of Object.entries(perFamily)) {
-    const sig = q.remainingFraction + "|" + q.resetTime;
-    const g = bySig[sig] || (bySig[sig] = { families: [], remainingFraction: q.remainingFraction, resetTime: q.resetTime });
-    g.families.push(fam);
-  }
+  // Step 2 — group families into their REAL backend quota pools. Claude and GPT-OSS
+  // share one pool (confirmed by observation: they always move together); Gemini is
+  // its own pool. A fixed grouping keeps distinct pools distinct even at full quota,
+  // where a signature-based auto-merge can't tell them apart (all read 100% remaining
+  // with no reset yet) and would wrongly collapse everything into one bar.
   const groups = {};
-  for (const g of Object.values(bySig)) {
-    groups[g.families.sort().join(" + ")] = { remainingFraction: g.remainingFraction, resetTime: g.resetTime };
+  for (const [fam, q] of Object.entries(perFamily)) {
+    const pool = POOL_OF_FAMILY[fam] || fam;
+    const g = groups[pool] || (groups[pool] = { remainingFraction: q.remainingFraction, resetTime: q.resetTime });
+    g.remainingFraction = Math.min(g.remainingFraction, q.remainingFraction);
+    if (q.resetTime && (!g.resetTime || Date.parse(q.resetTime) < Date.parse(g.resetTime))) g.resetTime = q.resetTime;
   }
   return Object.keys(groups).length ? groups : null;
 }
