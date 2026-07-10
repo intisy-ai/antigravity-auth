@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager, getAutoCandidates, notify, chatError } from "../../core-auth/dist/index.js";
+import { defineProvider, AccountManager, proxyManager, getAutoCandidates, readModelCache, notify, chatError } from "../../core-auth/dist/index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse, generateSyntheticProjectId } from "../plugin/request.js";
 import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { ensureProjectContext } from "../plugin/project.js";
@@ -244,6 +244,53 @@ function rewriteModelInUrl(url, model) {
   return String(url).replace(/\/models\/[^:/?]+/, "/models/" + model);
 }
 
+// ---- Effort variants ---------------------------------------------------------
+// models-fetch collapses per-effort backend models (gemini-3.5-flash-extra-low /
+// -low / gemini-3-flash-agent = one "Gemini 3.5 Flash" at minimal/medium/high)
+// into ONE catalog entry whose variants[level].model names the concrete backend
+// id. At request time the requested thinking level picks the variant.
+
+// Requested thinking level from the request body: opencode sends
+// providerOptions.google.{thinkingLevel|thinkingConfig}; the Claude Code bridge
+// emits generationConfig.thinkingConfig (mapped from /effort).
+function requestedThinkingLevel(bodyText) {
+  try {
+    const parsed = JSON.parse(bodyText || "{}");
+    const req = parsed.request && typeof parsed.request === "object" ? parsed.request : parsed;
+    const google = req.providerOptions && req.providerOptions.google;
+    if (google && typeof google.thinkingLevel === "string") return google.thinkingLevel;
+    const tc = (google && google.thinkingConfig) || (req.generationConfig && req.generationConfig.thinkingConfig);
+    if (tc && typeof tc.thinkingLevel === "string") return tc.thinkingLevel;
+    if (tc && typeof tc.thinkingBudget === "number") {
+      return tc.thinkingBudget <= 8192 ? "low" : tc.thinkingBudget <= 16384 ? "medium" : "high";
+    }
+  } catch {}
+  return null;
+}
+
+const LEVEL_ORDER = ["minimal", "low", "medium", "high"];
+
+function resolveEffortVariant(modelId, bodyText, log) {
+  let entry;
+  try { const cache = readModelCache(PROVIDER_ID); entry = cache && cache.models && cache.models[modelId]; } catch {}
+  const variants = entry && entry.variants;
+  if (!variants) return modelId;
+  const level = requestedThinkingLevel(bodyText);
+  if (!level) return modelId;
+  const want = LEVEL_ORDER.indexOf(level);
+  if (want < 0) return modelId;
+  // exact level, else the highest available level not above the request, else lowest
+  const available = Object.entries(variants)
+    .filter(([key, variant]) => variant && variant.model && LEVEL_ORDER.includes(key))
+    .sort(([a], [b]) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b));
+  if (!available.length) return modelId;
+  let chosen = available[0];
+  for (const candidate of available) if (LEVEL_ORDER.indexOf(candidate[0]) <= want) chosen = candidate;
+  const target = chosen[1].model;
+  if (target && target !== modelId && log) log("effort variant: " + modelId + " @ " + level + " -> " + target);
+  return target || modelId;
+}
+
 // Claude Code sends the Anthropic Messages API (/v1/messages) through the loader
 // proxy; bridge it to the Gemini format cloudcode-pa speaks (and translate the
 // streamed response back). Non-Anthropic (OpenCode/Gemini) requests fall through.
@@ -346,9 +393,10 @@ async function handle(request, ctx) {
   let lastResponse = null;
   let lastModel = null;
   for (const model of candidates) {
-    lastModel = model;
-    const candidateUrl = candidates.length > 1 ? rewriteModelInUrl(url, model) : url;
-    const response = await attemptModel(model, candidateUrl, init, ctx, log);
+    const effective = resolveEffortVariant(model, bodyText, log);
+    lastModel = effective;
+    const candidateUrl = (effective !== requestedModel || candidates.length > 1) ? rewriteModelInUrl(url, effective) : url;
+    const response = await attemptModel(effective, candidateUrl, init, ctx, log);
     lastResponse = response;
     if (!response || !isRateLimitStatus(response.status)) return response;   // success / non-retryable
     if (candidates.length > 1) log("auto: " + model + " rate-limited (" + response.status + "); trying next candidate");

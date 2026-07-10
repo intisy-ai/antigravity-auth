@@ -9,6 +9,8 @@ export interface ModelThinkingConfig {
 export interface ModelVariant {
   thinkingLevel?: ModelThinkingLevel;
   thinkingConfig?: ModelThinkingConfig;
+  /** Concrete catalog id this variant serves as (effort-variant families). */
+  model?: string;
 }
 
 export interface ModelLimit {

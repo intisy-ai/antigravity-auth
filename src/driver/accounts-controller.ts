@@ -75,14 +75,77 @@ function familyLabel(modelName) {
   return null;
 }
 
-// Which backend quota pool each family draws from. Claude + GPT-OSS share one pool;
-// Gemini is separate. A family not listed here gets its own pool (label = family).
-const POOL_OF_FAMILY = { "Claude": "Claude + GPT-OSS", "GPT-OSS": "Claude + GPT-OSS", "Gemini": "Gemini" };
+// ---- Pool detection (no hardcoded pool map) ---------------------------------
+// Families DEFAULT to separate quota bars. Two families merge into one pool only
+// with strong evidence they share a backend quota: across the persisted refresh
+// history they must always carry identical remaining fractions AND identical
+// reset timestamps, AND show correlated movement (at least one refresh where both
+// moved by the same delta) below full quota. A single same-% snapshot is never
+// enough — that's exactly how distinct pools look when idle/full.
+const QUOTA_HISTORY_LIMIT = 30;
+const QUOTA_EPS = 0.001;
+
+function familiesAlwaysMatch(samples, a, b) {
+  return samples.every((s) => {
+    const fa = s.families[a], fb = s.families[b];
+    return Math.abs(fa.remainingFraction - fb.remainingFraction) < QUOTA_EPS
+      && String(fa.resetTime || "") === String(fb.resetTime || "");
+  });
+}
+
+function correlatedMovement(samples, a, b) {
+  for (let i = 1; i < samples.length; i++) {
+    const dA = samples[i].families[a].remainingFraction - samples[i - 1].families[a].remainingFraction;
+    const dB = samples[i].families[b].remainingFraction - samples[i - 1].families[b].remainingFraction;
+    if (Math.abs(dA) > QUOTA_EPS && Math.abs(dA - dB) < QUOTA_EPS) return true;
+  }
+  return false;
+}
+
+function shouldMergeFamilies(history, a, b) {
+  const samples = history.filter((s) => s && s.families && s.families[a] && s.families[b]);
+  if (samples.length < 3) return false;
+  if (!familiesAlwaysMatch(samples, a, b)) return false;
+  // require real usage observed (a reset timestamp + below-full fraction) so a
+  // full-quota coincidence can never merge distinct pools
+  if (!samples.some((s) => s.families[a].remainingFraction < 1 - QUOTA_EPS && s.families[a].resetTime)) return false;
+  return correlatedMovement(samples, a, b);
+}
+
+// Group the current per-family quota into pools using the history evidence.
+function groupFamilies(perFamily, history) {
+  const fams = Object.keys(perFamily);
+  const parent = {};
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (const fam of fams) parent[fam] = fam;
+  for (let i = 0; i < fams.length; i++) {
+    for (let j = i + 1; j < fams.length; j++) {
+      if (shouldMergeFamilies(history, fams[i], fams[j])) parent[find(fams[j])] = find(fams[i]);
+    }
+  }
+  const members = {};
+  for (const fam of fams) { const root = find(fam); (members[root] = members[root] || []).push(fam); }
+  const groups = {};
+  for (const list of Object.values(members)) {
+    const label = list.sort().join(" + ");
+    let pooled = null;
+    for (const fam of list) {
+      const q = perFamily[fam];
+      if (!pooled) pooled = { remainingFraction: q.remainingFraction, resetTime: q.resetTime };
+      else {
+        pooled.remainingFraction = Math.min(pooled.remainingFraction, q.remainingFraction);
+        if (q.resetTime && (!pooled.resetTime || Date.parse(q.resetTime) < Date.parse(pooled.resetTime))) pooled.resetTime = q.resetTime;
+      }
+    }
+    groups[label] = pooled;
+  }
+  return groups;
+}
 
 // Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
-// { <pool>: { remainingFraction, resetTime } } (worst remaining + earliest reset
-// per pool), or null when the call fails / the account reports no quota.
-async function fetchQuotaGroups(manager, id) {
+// the per-FAMILY aggregate { <family>: { remainingFraction, resetTime } } (worst
+// remaining + earliest reset), or null when the call fails / reports no quota.
+async function fetchQuotaFamilies(manager, id) {
   const access = await manager.ensureAccess(id);
   if (!access) return null;
   const account = manager.list().find((a) => a.id === id);
@@ -123,19 +186,7 @@ async function fetchQuotaGroups(manager, id) {
     if (reset && (!f.resetTime || Date.parse(reset) < Date.parse(f.resetTime))) f.resetTime = reset;
   }
 
-  // Step 2 — group families into their REAL backend quota pools. Claude and GPT-OSS
-  // share one pool (confirmed by observation: they always move together); Gemini is
-  // its own pool. A fixed grouping keeps distinct pools distinct even at full quota,
-  // where a signature-based auto-merge can't tell them apart (all read 100% remaining
-  // with no reset yet) and would wrongly collapse everything into one bar.
-  const groups = {};
-  for (const [fam, q] of Object.entries(perFamily)) {
-    const pool = POOL_OF_FAMILY[fam] || fam;
-    const g = groups[pool] || (groups[pool] = { remainingFraction: q.remainingFraction, resetTime: q.resetTime });
-    g.remainingFraction = Math.min(g.remainingFraction, q.remainingFraction);
-    if (q.resetTime && (!g.resetTime || Date.parse(q.resetTime) < Date.parse(g.resetTime))) g.resetTime = q.resetTime;
-  }
-  return Object.keys(groups).length ? groups : null;
+  return Object.keys(perFamily).length ? perFamily : null;
 }
 
 // Refresh cachedQuota for all enabled accounts (skips accounts refreshed within ttl).
@@ -147,8 +198,17 @@ async function refreshAllQuota(manager, force) {
     const updatedAt = account.meta && account.meta.cachedQuotaUpdatedAt;
     if (!force && typeof updatedAt === "number" && now - updatedAt < ttl) continue;
     try {
-      const groups = await fetchQuotaGroups(manager, account.id);
-      if (groups) manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.cachedQuota = groups; a.meta.cachedQuotaUpdatedAt = Date.now(); });
+      const perFamily = await fetchQuotaFamilies(manager, account.id);
+      if (perFamily) manager.mutate(account.id, (a) => {
+        a.meta = a.meta || {};
+        // persisted refresh history is the merge evidence (see shouldMergeFamilies)
+        const history = Array.isArray(a.meta.quotaHistory) ? a.meta.quotaHistory : [];
+        history.push({ at: Date.now(), families: perFamily });
+        while (history.length > QUOTA_HISTORY_LIMIT) history.shift();
+        a.meta.quotaHistory = history;
+        a.meta.cachedQuota = groupFamilies(perFamily, history);
+        a.meta.cachedQuotaUpdatedAt = Date.now();
+      });
     } catch { /* leave stale cache */ }
   }
 }
@@ -178,7 +238,10 @@ async function verify(manager, view) {
 }
 
 async function verifyAll(manager) {
-  for (const account of manager.list()) await verify(manager, { id: account.id, email: account.email });
+  for (const account of manager.list()) {
+    if (account.enabled === false) { out("- " + (account.email || account.id) + ": skipped (disabled)"); continue; }
+    await verify(manager, { id: account.id, email: account.email });
+  }
   out("Done.");
 }
 

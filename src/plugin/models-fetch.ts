@@ -4,7 +4,7 @@
 // + default all come straight from the API.
 
 import { ANTIGRAVITY_ENDPOINT_FALLBACKS, getAntigravityHeaders } from "../constants";
-import type { OpencodeModelDefinition, OpencodeModelDefinitions } from "./config/models";
+import type { ModelThinkingLevel, OpencodeModelDefinition, OpencodeModelDefinitions } from "./config/models";
 
 const MODEL_ID_PREFIX = "antigravity-";
 
@@ -105,6 +105,22 @@ function buildModelEntry(rawId: string, info: FetchedModelInfo): OpencodeModelDe
   };
 }
 
+// Effort-variant grouping: cloudcode-pa exposes one backend model PER effort level
+// (e.g. gemini-3.5-flash-extra-low / gemini-3.5-flash-low / gemini-3-flash-agent all
+// serve "Gemini 3.5 Flash" at Low / Medium / High). The raw keys are opaque routing
+// ids whose suffixes do NOT match the effort in the displayName — listing them
+// separately read as label↔id mismatches. Each family collapses into ONE catalog
+// entry whose `variants` map an effort level to the concrete backend id; the driver
+// swaps in the variant id at request time from the requested thinking level.
+const EFFORT_TAG = /\s*\((minimal|extra\s?low|low|medium|high)\)\s*$/i;
+
+function effortTagOf(displayName: string): { base: string; level?: string } {
+  const m = displayName.match(EFFORT_TAG);
+  if (!m) return { base: displayName };
+  const tag = m[1]!.toLowerCase().replace(/\s+/g, "-");
+  return { base: displayName.replace(EFFORT_TAG, "").trim(), level: tag === "extra-low" ? "minimal" : tag };
+}
+
 /**
  * Builds the catalog from a fetchAvailableModels payload: the recommended agent
  * models (in order), minus deprecated/image-generation ids. Returns the prefixed
@@ -133,8 +149,32 @@ export function buildAntigravityCatalog(payload: FetchAvailableModelsPayload): A
       high: { thinkingLevel: "high" },
     },
   };
+  // Pass 1 — group ranked models into effort families by displayName base.
+  interface EffortGroup { canonical: string; base: string; members: Array<{ rawId: string; level: string }> }
+  const groups = new Map<string, EffortGroup>();
+  const emitOrder: string[] = [];   // canonical raw id per emitted entry, ranked order
   for (const rawId of ranked) {
-    catalog[MODEL_ID_PREFIX + rawId] = buildModelEntry(rawId, models[rawId]!);
+    const { base, level } = effortTagOf(models[rawId]!.displayName || rawId);
+    if (!level) { emitOrder.push(rawId); continue; }
+    let group = groups.get(base);
+    if (!group) { group = { canonical: rawId, base, members: [] }; groups.set(base, group); emitOrder.push(rawId); }
+    group.members.push({ rawId, level });
+  }
+  // Pass 2 — emit. Single-member families keep their original tagged name; multi-
+  // member families collapse into the canonical (API-preferred) id with variants.
+  const groupOf = new Map<string, EffortGroup>();
+  for (const group of groups.values()) if (group.members.length > 1) groupOf.set(group.canonical, group);
+  for (const rawId of emitOrder) {
+    const entry = buildModelEntry(rawId, models[rawId]!);
+    const group = groupOf.get(rawId);
+    if (group) {
+      entry.name = group.base + " (Antigravity)";
+      entry.variants = Object.fromEntries(group.members.map((member) => [
+        member.level,
+        { thinkingLevel: member.level as ModelThinkingLevel, model: MODEL_ID_PREFIX + member.rawId },
+      ]));
+    }
+    catalog[MODEL_ID_PREFIX + rawId] = entry;
   }
   // Gemini CLI quota pool (bare ids, distinct lane) — a second free pool. The
   // group label is what the loader's Providers tab shows verbatim (provider-defined).
@@ -151,16 +191,22 @@ export function buildAntigravityCatalog(payload: FetchAvailableModelsPayload): A
     };
   }
 
-  const defaultRaw =
-    payload.defaultAgentModelId && ranked.includes(payload.defaultAgentModelId)
-      ? payload.defaultAgentModelId
-      : ranked[0];
+  // The API default may name a hidden family member — map it to its family's
+  // canonical (emitted) id.
+  let defaultRaw = payload.defaultAgentModelId && ranked.includes(payload.defaultAgentModelId)
+    ? payload.defaultAgentModelId
+    : emitOrder[0];
+  if (defaultRaw && !catalog[MODEL_ID_PREFIX + defaultRaw]) {
+    for (const group of groups.values()) {
+      if (group.members.some((member) => member.rawId === defaultRaw)) { defaultRaw = group.canonical; break; }
+    }
+  }
 
   // ranking/default use the FULL catalog ids (same keys as `models` + the request
   // model id) so consumers (loader tab, Auto router) never need a provider prefix.
   return {
     models: catalog,
-    ranking: ranked.map((id) => MODEL_ID_PREFIX + id),
+    ranking: emitOrder.map((id) => MODEL_ID_PREFIX + id),
     defaultModelId: defaultRaw ? MODEL_ID_PREFIX + defaultRaw : undefined,
   };
 }

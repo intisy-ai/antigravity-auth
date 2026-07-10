@@ -57,6 +57,18 @@ export function anthropicToGemini(body) {
   if (body.temperature != null) gc.temperature = body.temperature;
   if (body.top_p != null) gc.topP = body.top_p;
   if (body.stop_sequences && body.stop_sequences.length) gc.stopSequences = body.stop_sequences;
+  // Claude Code's /effort arrives as output_config.effort (low|medium|high|xhigh|max)
+  // alongside thinking:{type:"adaptive"}; older models send thinking.budget_tokens.
+  // Map either onto Gemini thinkingConfig — the request builder's variant resolver
+  // converts the budget per family (Gemini-3 level: ≤8192 low / ≤16384 medium / else
+  // high, incl. the Pro variant-id rewrite; Claude keeps the numeric budget). xhigh
+  // and max exceed what cloudcode-pa can express and clamp to high.
+  var EFFORT_BUDGET = { low: 8192, medium: 16384, high: 32768, xhigh: 32768, max: 32768 };
+  var thinkingOff = body.thinking && body.thinking.type === "disabled";
+  var budget = body.thinking && typeof body.thinking.budget_tokens === "number" ? body.thinking.budget_tokens : null;
+  var effort = body.output_config && body.output_config.effort;
+  if (budget == null && effort && EFFORT_BUDGET[effort]) budget = EFFORT_BUDGET[effort];
+  if (!thinkingOff && budget != null) gc.thinkingConfig = { thinkingBudget: budget };
   if (Object.keys(gc).length) gem.generationConfig = gc;
 
   if (Array.isArray(body.tools) && body.tools.length) {
