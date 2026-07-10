@@ -189,6 +189,23 @@ async function fetchQuotaFamilies(manager, id) {
   return Object.keys(perFamily).length ? perFamily : null;
 }
 
+// Fetch + persist one account's quota (history sample + evidence-grouped pools).
+async function refreshQuotaOne(manager, id) {
+  const perFamily = await fetchQuotaFamilies(manager, id);
+  if (!perFamily) return false;
+  manager.mutate(id, (a) => {
+    a.meta = a.meta || {};
+    // persisted refresh history is the merge evidence (see shouldMergeFamilies)
+    const history = Array.isArray(a.meta.quotaHistory) ? a.meta.quotaHistory : [];
+    history.push({ at: Date.now(), families: perFamily });
+    while (history.length > QUOTA_HISTORY_LIMIT) history.shift();
+    a.meta.quotaHistory = history;
+    a.meta.cachedQuota = groupFamilies(perFamily, history);
+    a.meta.cachedQuotaUpdatedAt = Date.now();
+  });
+  return true;
+}
+
 // Refresh cachedQuota for all enabled accounts (skips accounts refreshed within ttl).
 async function refreshAllQuota(manager, force) {
   const now = Date.now();
@@ -197,19 +214,7 @@ async function refreshAllQuota(manager, force) {
     if (account.enabled === false) continue;
     const updatedAt = account.meta && account.meta.cachedQuotaUpdatedAt;
     if (!force && typeof updatedAt === "number" && now - updatedAt < ttl) continue;
-    try {
-      const perFamily = await fetchQuotaFamilies(manager, account.id);
-      if (perFamily) manager.mutate(account.id, (a) => {
-        a.meta = a.meta || {};
-        // persisted refresh history is the merge evidence (see shouldMergeFamilies)
-        const history = Array.isArray(a.meta.quotaHistory) ? a.meta.quotaHistory : [];
-        history.push({ at: Date.now(), families: perFamily });
-        while (history.length > QUOTA_HISTORY_LIMIT) history.shift();
-        a.meta.quotaHistory = history;
-        a.meta.cachedQuota = groupFamilies(perFamily, history);
-        a.meta.cachedQuotaUpdatedAt = Date.now();
-      });
-    } catch { /* leave stale cache */ }
+    try { await refreshQuotaOne(manager, account.id); } catch { /* leave stale cache */ }
   }
 }
 
@@ -263,6 +268,7 @@ export function createAntigravityAccounts(manager) {
     },
     actions: () => [{ label: "Verify all accounts", run: () => verifyAll(manager) }],
     accountActions: (view) => [
+      { label: "Refresh quota", run: async () => { if (!(await refreshQuotaOne(manager, view.id))) out("✗ quota fetch failed for " + (view.email || view.id)); } },
       { label: "Verify access", run: () => verify(manager, view) },
       { label: "Refresh token", run: () => refreshToken(manager, view) },
     ],
