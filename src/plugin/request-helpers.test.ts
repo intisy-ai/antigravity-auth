@@ -858,6 +858,31 @@ describe("transformThinkingParts", () => {
   });
 });
 
+describe("cleanJSONSchemaForAntigravity — vendor extensions", () => {
+  it("strips x-* extension keywords from a property's schema body", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: {
+        header: { type: "string", "x-mcp-header": "Authorization", "x-foo": 1 },
+        plain: { type: "number" },
+      },
+    });
+    expect(cleaned.properties.header["x-mcp-header"]).toBeUndefined();
+    expect(cleaned.properties.header["x-foo"]).toBeUndefined();
+    expect(cleaned.properties.header.type).toBe("string");
+    expect(cleaned.properties.plain.type).toBe("number");
+  });
+
+  it("keeps a property NAMED x-... (only schema keywords are stripped)", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: { "x-custom": { type: "string" } },
+    });
+    expect(cleaned.properties["x-custom"]).toBeDefined();
+    expect(cleaned.properties["x-custom"].type).toBe("string");
+  });
+});
+
 describe("normalizeThinkingConfig", () => {
   it("returns undefined for non-object input", () => {
     expect(normalizeThinkingConfig(null)).toBeUndefined();

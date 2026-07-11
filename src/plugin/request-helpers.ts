@@ -545,6 +545,13 @@ function removeUnsupportedKeywords(schema: any, insideProperties: boolean = fals
     if (!insideProperties && (UNSUPPORTED_KEYWORDS as readonly string[]).includes(key)) {
       continue;
     }
+    // Vendor-extension keywords (JSON Schema `x-*` convention, e.g. `x-mcp-header`
+    // that MCP tools attach to their parameter schemas) are not valid Gemini Schema
+    // fields — Google 400s with "Unknown name". Only strip inside schema bodies,
+    // never among property NAMES (a real property could be named "x-...").
+    if (!insideProperties && /^x-/i.test(key)) {
+      continue;
+    }
 
     if (typeof value === "object" && value !== null) {
       if (key === "properties") {
