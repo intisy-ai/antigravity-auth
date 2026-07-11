@@ -262,13 +262,13 @@ export function createAntigravityAccounts(manager) {
     availableAt: antigravityAvailableAt,
     quota: antigravityQuota,
     refreshQuota: (force) => refreshAllQuota(manager, force),
+    refreshQuotaOne: async (id) => { if (!(await refreshQuotaOne(manager, id))) throw new Error("quota fetch failed"); },
     login: async () => {
       const account = await login({ log: (message) => process.stderr.write(message + "\n") });
       return account ? { id: account.id, email: account.email, status: "active", enabled: true } : null;
     },
     actions: () => [{ label: "Verify all accounts", run: () => verifyAll(manager) }],
     accountActions: (view) => [
-      { label: "Refresh quota", run: async () => { if (!(await refreshQuotaOne(manager, view.id))) out("✗ quota fetch failed for " + (view.email || view.id)); } },
       { label: "Verify access", run: () => verify(manager, view) },
       { label: "Refresh token", run: () => refreshToken(manager, view) },
     ],

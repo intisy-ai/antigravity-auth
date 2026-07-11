@@ -299,7 +299,7 @@ async function handleAnthropicMessages(request, ctx) {
   let anthropicBody;
   try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
   const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
-  const geminiBody = anthropicToGemini(anthropicBody);
+  const geminiBody = anthropicToGemini(anthropicBody, model);
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
   const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
   const geminiRes = await handle(geminiReq, ctx);   // geminiUrl isn't /v1/messages -> normal Gemini path, no recursion

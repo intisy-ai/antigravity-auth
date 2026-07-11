@@ -7,7 +7,15 @@
 import { cleanJSONSchemaForAntigravity } from "./request-helpers.js";
 
 // ── request: Anthropic /v1/messages body -> Gemini generateContent body ──────
-export function anthropicToGemini(body) {
+// `model` (the served catalog id) gates the /effort -> thinkingConfig mapping:
+// only thinking-capable targets (claude *thinking* variants, gemini-3) get one —
+// a thinkingConfig on e.g. gpt-oss or non-thinking sonnet upsets cloudcode-pa.
+function supportsThinking(model) {
+  const lower = String(model || "").toLowerCase();
+  return lower.includes("thinking") || lower.includes("gemini-3");
+}
+
+export function anthropicToGemini(body, model) {
   var contents = [];
   // Gemini pairs a functionResponse to its functionCall by NAME (not by id), so a
   // tool_result must carry the tool's NAME — but Anthropic tool_result blocks only
@@ -68,7 +76,7 @@ export function anthropicToGemini(body) {
   var budget = body.thinking && typeof body.thinking.budget_tokens === "number" ? body.thinking.budget_tokens : null;
   var effort = body.output_config && body.output_config.effort;
   if (budget == null && effort && EFFORT_BUDGET[effort]) budget = EFFORT_BUDGET[effort];
-  if (!thinkingOff && budget != null) gc.thinkingConfig = { thinkingBudget: budget };
+  if (!thinkingOff && budget != null && supportsThinking(model)) gc.thinkingConfig = { thinkingBudget: budget };
   if (Object.keys(gc).length) gem.generationConfig = gc;
 
   if (Array.isArray(body.tools) && body.tools.length) {
