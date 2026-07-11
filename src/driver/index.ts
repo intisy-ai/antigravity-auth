@@ -226,10 +226,14 @@ async function attemptModel(model, url, init, ctx, log) {
         );
       }
 
-      // Non-ok, non-rate-limit (e.g. 403 "no valid license" from a sandbox
-      // endpoint the account isn't provisioned for): keep the response and try
-      // the next endpoint. Only the last endpoint's error is surfaced.
-      lastResponse = response;
+      // Non-ok, non-rate-limit (e.g. 403 "no valid license" / "staging API not
+      // enabled" from a sandbox endpoint the account isn't provisioned for): keep
+      // it as a fallback, but NEVER let it overwrite a real rate-limit from the
+      // licensed prod endpoint. Otherwise a genuine 429 ("quota reached, resets X")
+      // gets masked by the sandbox's scary-but-irrelevant GCP-project 403, and the
+      // outer handler then treats the 403 as a hard error instead of showing the
+      // proper rate-limit message.
+      if (!lastResponse || !isRateLimitStatus(lastResponse.status)) lastResponse = response;
       continue;
     }
 
