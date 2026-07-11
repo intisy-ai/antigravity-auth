@@ -75,72 +75,10 @@ function familyLabel(modelName) {
   return null;
 }
 
-// ---- Pool detection (no hardcoded pool map) ---------------------------------
-// Families DEFAULT to separate quota bars. Two families merge into one pool only
-// with strong evidence they share a backend quota: across the persisted refresh
-// history they must always carry identical remaining fractions AND identical
-// reset timestamps, AND show correlated movement (at least one refresh where both
-// moved by the same delta) below full quota. A single same-% snapshot is never
-// enough — that's exactly how distinct pools look when idle/full.
-const QUOTA_HISTORY_LIMIT = 30;
-const QUOTA_EPS = 0.001;
-
-function familiesAlwaysMatch(samples, a, b) {
-  return samples.every((s) => {
-    const fa = s.families[a], fb = s.families[b];
-    return Math.abs(fa.remainingFraction - fb.remainingFraction) < QUOTA_EPS
-      && String(fa.resetTime || "") === String(fb.resetTime || "");
-  });
-}
-
-function correlatedMovement(samples, a, b) {
-  for (let i = 1; i < samples.length; i++) {
-    const dA = samples[i].families[a].remainingFraction - samples[i - 1].families[a].remainingFraction;
-    const dB = samples[i].families[b].remainingFraction - samples[i - 1].families[b].remainingFraction;
-    if (Math.abs(dA) > QUOTA_EPS && Math.abs(dA - dB) < QUOTA_EPS) return true;
-  }
-  return false;
-}
-
-function shouldMergeFamilies(history, a, b) {
-  const samples = history.filter((s) => s && s.families && s.families[a] && s.families[b]);
-  if (samples.length < 3) return false;
-  if (!familiesAlwaysMatch(samples, a, b)) return false;
-  // require real usage observed (a reset timestamp + below-full fraction) so a
-  // full-quota coincidence can never merge distinct pools
-  if (!samples.some((s) => s.families[a].remainingFraction < 1 - QUOTA_EPS && s.families[a].resetTime)) return false;
-  return correlatedMovement(samples, a, b);
-}
-
-// Group the current per-family quota into pools using the history evidence.
-function groupFamilies(perFamily, history) {
-  const fams = Object.keys(perFamily);
-  const parent = {};
-  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
-  for (const fam of fams) parent[fam] = fam;
-  for (let i = 0; i < fams.length; i++) {
-    for (let j = i + 1; j < fams.length; j++) {
-      if (shouldMergeFamilies(history, fams[i], fams[j])) parent[find(fams[j])] = find(fams[i]);
-    }
-  }
-  const members = {};
-  for (const fam of fams) { const root = find(fam); (members[root] = members[root] || []).push(fam); }
-  const groups = {};
-  for (const list of Object.values(members)) {
-    const label = list.sort().join(" + ");
-    let pooled = null;
-    for (const fam of list) {
-      const q = perFamily[fam];
-      if (!pooled) pooled = { remainingFraction: q.remainingFraction, resetTime: q.resetTime };
-      else {
-        pooled.remainingFraction = Math.min(pooled.remainingFraction, q.remainingFraction);
-        if (q.resetTime && (!pooled.resetTime || Date.parse(q.resetTime) < Date.parse(pooled.resetTime))) pooled.resetTime = q.resetTime;
-      }
-    }
-    groups[label] = pooled;
-  }
-  return groups;
-}
+// ---- Pool display (no merging, no hardcoded pool map) ------------------------
+// Every detected family (Claude / GPT-OSS / Gemini) is ALWAYS its own quota bar.
+// Even when two families share a backend pool their bars simply move together —
+// per explicit user direction, a merged "Claude + GPT-OSS" label never appears.
 
 // Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
 // the per-FAMILY aggregate { <family>: { remainingFraction, resetTime } } (worst
@@ -189,19 +127,15 @@ async function fetchQuotaFamilies(manager, id) {
   return Object.keys(perFamily).length ? perFamily : null;
 }
 
-// Fetch + persist one account's quota (history sample + evidence-grouped pools).
+// Fetch + persist one account's quota — one bar per family, never merged.
 async function refreshQuotaOne(manager, id) {
   const perFamily = await fetchQuotaFamilies(manager, id);
   if (!perFamily) return false;
   manager.mutate(id, (a) => {
     a.meta = a.meta || {};
-    // persisted refresh history is the merge evidence (see shouldMergeFamilies)
-    const history = Array.isArray(a.meta.quotaHistory) ? a.meta.quotaHistory : [];
-    history.push({ at: Date.now(), families: perFamily });
-    while (history.length > QUOTA_HISTORY_LIMIT) history.shift();
-    a.meta.quotaHistory = history;
-    a.meta.cachedQuota = groupFamilies(perFamily, history);
+    a.meta.cachedQuota = perFamily;
     a.meta.cachedQuotaUpdatedAt = Date.now();
+    delete a.meta.quotaHistory;   // merge-evidence sampling retired with merging
   });
   return true;
 }
