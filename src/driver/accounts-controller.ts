@@ -92,7 +92,7 @@ async function fetchQuotaFamilies(manager, id) {
   // NOTE: do NOT send x-goog-user-project here — fetchAvailableModels 403s ("API not
   // enabled in project …") when it's present; the project belongs in the body only.
   const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
-  const proxy = proxyManager.selectForAccount(id);
+  const proxy = proxyManager.selectForAccount(id, "antigravity");
   const aborter = new AbortController();
   const timer = setTimeout(() => aborter.abort(), 20000);
   let response;
@@ -165,7 +165,7 @@ async function verify(manager, view) {
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });
     const aborter = new AbortController();
     const timer = setTimeout(() => aborter.abort(), 20000);
-    const proxy = proxyManager.selectForAccount(view.id);
+    const proxy = proxyManager.selectForAccount(view.id, "antigravity");
     let response;
     try { response = await fetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:streamGenerateContent?alt=sse", { method: "POST", headers, body, signal: aborter.signal, proxy }); }
     finally { clearTimeout(timer); }
@@ -188,6 +188,14 @@ async function refreshToken(manager, view) {
   const name = view.email || view.id;
   try { out(await manager.refresh(view.id) ? "✓ refreshed " + name : "✗ no OAuth config / refresh token for " + name); }
   catch (error) { out("✗ refresh failed for " + name + ": " + (error && error.message || error)); }
+}
+
+// Quota still remaining? Used to decide a rate-limit is an IP limit (proxy signal),
+// not real account exhaustion. Unknown quota -> false (never blame the proxy).
+export function accountHasQuota(account) {
+  const cq = account && account.meta && account.meta.cachedQuota;
+  if (!cq) return false;
+  return Object.values(cq).some((q) => q && typeof q.remainingFraction === "number" && q.remainingFraction > 0);
 }
 
 export function createAntigravityAccounts(manager) {

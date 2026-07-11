@@ -16,7 +16,7 @@ import { models } from "./models.js";
 import { oauthConfig } from "./config.js";
 import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { login, loginFlow } from "./login.js";
-import { createAntigravityAccounts } from "./accounts-controller.js";
+import { createAntigravityAccounts, accountHasQuota } from "./accounts-controller.js";
 import { getConfigValue, setConfigValue, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
 
@@ -153,7 +153,7 @@ async function attemptModel(model, url, init, ctx, log) {
     const access = acquired.access;
     if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
 
-    const proxyUrl = proxyManager.selectForAccount(account.id);
+    const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
     const projectId = await resolveProjectId(account, access, log, proxyUrl);
 
     let rateLimited = false;
@@ -210,7 +210,10 @@ async function attemptModel(model, url, init, ctx, log) {
         const retryMatch = message && /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i.exec(message);
         const retryAfterMs = retryMatch ? parseInt(retryMatch[1], 10) * 1000 : 0;
         manager.reportRateLimit(account.id, lane, resetTimeFor(parsed, attempt, retryAfterMs));
-        if (proxyUrl) proxyManager.reportRateLimit(proxyUrl);   // possible IP rate-limit -> penalize the proxy
+        if (proxyUrl) {
+          const fresh = manager.list().find((a) => a.id === account.id) || account;
+          proxyManager.reportRateLimit(proxyUrl, { ipSuspected: accountHasQuota(fresh) });
+        }
         continue;   // next endpoint, then rotate account
       }
 
@@ -435,7 +438,7 @@ async function fetchModels(ctx) {
   let access;
   try { access = await manager.ensureAccess(account.id); } catch (error) { log("fetchModels token refresh failed: " + error); return null; }
   if (!access) return null;
-  const proxyUrl = proxyManager.selectForAccount(account.id);
+  const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
   const projectId = await resolveProjectId(account, access, log, proxyUrl);
   const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
   if (!payload) return null;
