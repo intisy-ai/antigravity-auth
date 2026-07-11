@@ -101,7 +101,7 @@ function toCoreAccount(result) {
 export async function loginFlow() {
   // bind a proxy to this new account up front so the token exchange + project
   // discovery never touch Google from the server's own IP
-  const proxy = proxyManager.pickForLogin();
+  const proxy = proxyManager.pickForLogin("antigravity");
   const authorization = await authorizeAntigravity();
   const listener = await startOAuthListener(ANTIGRAVITY_REDIRECT_URI, { timeoutMs: LOGIN_TIMEOUT_MS });
   let settled = false;
