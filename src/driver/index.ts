@@ -316,10 +316,23 @@ async function handleAnthropicMessages(request, ctx) {
   // api_error re-wrap below (that double-wrapped it and leaked the raw JSON), and do NOT
   // turn it into a 200 SSE (Claude then reports "empty/malformed HTTP 200").
   if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
-    // route() produced a Gemini-format terminal error (for opencode). Convert it to the
-    // Anthropic shape so Claude Code renders a clean "API Error: <message>".
+    // route() produced a Gemini-format terminal error. Convert it to the Anthropic shape.
     let msg = "request failed";
     try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
+    // A RATE-LIMIT must keep its signal on the way out: the loader proxy only advances
+    // a tier's fallback chain (e.g. opus: antigravity -> claude-code) and only renders
+    // Claude's native rate-limit UI when it sees a 429 or the x-hub-rate-limited header.
+    // Dropping them (as before) made a rate-limit read as a terminal 400 — no fallback,
+    // no native message, just a raw provider error in the chat.
+    if (geminiRes.headers.get("x-hub-rate-limited") === "1") {
+      const rlHeaders = { "content-type": "application/json", "x-hub-rate-limited": "1" };
+      const ra = geminiRes.headers.get("x-hub-retry-after-ms");
+      if (ra) rlHeaders["x-hub-retry-after-ms"] = ra;
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: msg } }),
+        { status: 429, headers: rlHeaders },
+      );
+    }
     return new Response(
       JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: msg } }),
       { status: geminiRes.status || 400, headers: { "content-type": "application/json" } },
