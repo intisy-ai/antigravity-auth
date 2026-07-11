@@ -131,6 +131,44 @@ function addEnumHints(schema: any): any {
 }
 
 /**
+ * Phase 1c-2: Normalizes enums for Gemini. Gemini's functionDeclarations Schema
+ * allows `enum` ONLY as an array of strings on a STRING-typed property. A boolean/
+ * number enum (e.g. `enum: [true]`) or an enum on a non-string type is rejected with
+ * "Invalid value ... (TYPE_STRING)". Keep string enums (forcing type:"string"); for
+ * any other enum, DROP it but preserve the allowed values in the description so the
+ * model still sees them (the native type is kept, so the model returns the right type).
+ */
+function normalizeEnums(schema: any): any {
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map(item => normalizeEnums(item));
+  }
+
+  let result: any = {};
+  for (const [key, value] of Object.entries(schema)) {
+    result[key] = key === "enum" ? value : normalizeEnums(value);
+  }
+
+  if (Array.isArray(result.enum)) {
+    const allStrings = result.enum.length > 0 && result.enum.every((v: any) => typeof v === "string");
+    if (allStrings && (result.type === undefined || result.type === "string")) {
+      result.type = "string";   // enum is valid only on a STRING-typed property
+    } else {
+      const vals = result.enum.map((v: any) => String(v)).join(", ");
+      if (!(typeof result.description === "string" && result.description.includes("Allowed: " + vals))) {
+        result = appendDescriptionHint(result, `Allowed: ${vals}`);
+      }
+      delete result.enum;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Phase 1d: Adds additionalProperties hints.
  * { additionalProperties: false } → adds "(No extra properties allowed)" to description
  */
@@ -668,6 +706,7 @@ export function cleanJSONSchemaForAntigravity(schema: any): any {
   result = convertRefsToHints(result);
   result = convertConstToEnum(result);
   result = addEnumHints(result);
+  result = normalizeEnums(result);
   result = addAdditionalPropertiesHints(result);
   result = moveConstraintsToDescription(result);
 

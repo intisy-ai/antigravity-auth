@@ -883,6 +883,47 @@ describe("cleanJSONSchemaForAntigravity — vendor extensions", () => {
   });
 });
 
+describe("cleanJSONSchemaForAntigravity — enum normalization", () => {
+  it("drops a boolean enum (Gemini enum is string-only) and keeps the native type", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: { flag: { type: "boolean", enum: [true] } },
+    });
+    expect(cleaned.properties.flag.enum).toBeUndefined();
+    expect(cleaned.properties.flag.type).toBe("boolean");
+    expect(cleaned.properties.flag.description || "").toContain("Allowed: true");
+  });
+
+  it("drops a numeric enum but preserves values in the description", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: { n: { type: "integer", enum: [1, 2, 3] } },
+    });
+    expect(cleaned.properties.n.enum).toBeUndefined();
+    expect(cleaned.properties.n.description || "").toContain("Allowed: 1, 2, 3");
+  });
+
+  it("keeps a string enum and forces type string", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: { mode: { enum: ["a", "b"] } },
+    });
+    expect(cleaned.properties.mode.enum).toEqual(["a", "b"]);
+    expect(cleaned.properties.mode.type).toBe("string");
+  });
+
+  it("handles the reported nested array-items boolean enum without throwing", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      type: "object",
+      properties: {
+        rules: { type: "array", items: { type: "object", properties: { negate: { type: "boolean", enum: [true, false] } } } },
+      },
+    });
+    expect(cleaned.properties.rules.items.properties.negate.enum).toBeUndefined();
+    expect(cleaned.properties.rules.items.properties.negate.type).toBe("boolean");
+  });
+});
+
 describe("normalizeThinkingConfig", () => {
   it("returns undefined for non-object input", () => {
     expect(normalizeThinkingConfig(null)).toBeUndefined();
