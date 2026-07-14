@@ -1,0 +1,32 @@
+rootProject.name = "antigravity-auth-java"
+
+// antigravity-auth's Java side: T7a ports the SAFEST, smallest pure-logic pieces of the TS driver
+// (AntigravityAuth <- src/plugin/auth.ts, AntigravityLanes <- src/driver/lanes.ts,
+// AntigravityVersions <- src/plugin/versions.ts [drift math only], AntigravityCatalog <-
+// src/plugin/models-fetch.ts, AntigravityQuotaParser <- src/driver/accounts-controller.ts) to
+// transpilable Java, needing only the JsonCodec/Clock/Random SPIs. Mirrors claude-code-auth's
+// java/settings.gradle exactly (see F:/Documents/GitHub/javascript/providers/claude-code-auth/
+// java/settings.gradle) -- same aliasing technique for :routing/:teavm.
+//
+// core-proxy is a DIRECT submodule of antigravity-auth (../core-proxy from here, i.e.
+// antigravity-auth/core-proxy) -- not core-auth's own nested copy. :routing is aliased in exactly
+// the way every other provider's java/ module aliases it (project path preserved, just a
+// different projectDir) so the SAME coordinates line up across the ecosystem.
+include ":routing"
+project(":routing").projectDir = file("../core-proxy/java/routing")
+
+// :teavm - core-proxy's own TeaVM js-base (SimpleJsonCodec/etc), aliased in exactly like :routing
+// above so :antigravity-teavm can depend on it with a plain project(":teavm") reference and reuse
+// SimpleJsonCodec rather than duplicate it.
+include ":teavm"
+project(":teavm").projectDir = file("../core-proxy/java/teavm")
+
+// :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/AntigravityCatalog/
+// AntigravityQuotaParser (T7a). Bucket B (handle/fetch/quota-refresh/project-context via
+// HttpClient/Store) and Bucket C (login/TUI/opencode-merge/streaming) stay TS -- out of scope for
+// this module, see ../.superpowers/port-grounding-map.md.
+include ":antigravity-provider"
+
+// :antigravity-teavm - trivial TeaVM JS export surface proving all five T7a classes are
+// TeaVM-transpilable (generateJavaScript). Reuses :teavm's js-base instead of duplicating it.
+include ":antigravity-teavm"

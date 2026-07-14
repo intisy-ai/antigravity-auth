@@ -1,0 +1,4 @@
+# java/ Gradle module (antigravity-provider/antigravity-teavm) -- build output only, never source.
+build/
+*/build/
+.gradle/
