@@ -5,9 +5,11 @@ import io.github.intisy.ai.antigravity.AntigravityCatalog;
 import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
+import io.github.intisy.ai.antigravity.AntigravityResponseParse;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
 import io.github.intisy.ai.antigravity.AntigravityThinkingBlocks;
 import io.github.intisy.ai.antigravity.AntigravityThinkingConfig;
+import io.github.intisy.ai.antigravity.AntigravityToolPairing;
 import io.github.intisy.ai.antigravity.AntigravityVersions;
 import io.github.intisy.ai.antigravity.ClaudeTransforms;
 import io.github.intisy.ai.antigravity.CrossModelSanitizer;
@@ -242,6 +244,108 @@ public final class AntigravityProviderJs {
         JsonCodec json = new SimpleJsonCodec();
         Object response = responseJson != null ? json.parse(responseJson) : null;
         return json.stringify(AntigravityThinkingBlocks.transformThinkingParts(response, IDENTITY_PARSER, DATA_URL_SINK));
+    }
+
+    // ---- AntigravityResponseParse (T7c-3) ---------------------------------------------------------
+
+    /** Exercises {@link AntigravityResponseParse#parseAntigravityApiBody} (cloudcode-pa array shape) via JsonCodec. */
+    @JSExport
+    public static String parseAntigravityApiBody(String rawText) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravityResponseParse.parseAntigravityApiBody(json, rawText));
+    }
+
+    /** Exercises {@link AntigravityResponseParse#extractUsageFromSsePayload} via JsonCodec. */
+    @JSExport
+    public static String extractUsageFromSsePayload(String payload) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravityResponseParse.extractUsageFromSsePayload(json, payload));
+    }
+
+    /** Exercises {@link AntigravityResponseParse#isEmptyResponseBody} via JsonCodec. */
+    @JSExport
+    public static boolean isEmptyResponseBody(String text) {
+        return AntigravityResponseParse.isEmptyResponseBody(new SimpleJsonCodec(), text);
+    }
+
+    /** Exercises {@link AntigravityResponseParse#isMeaningfulSseLine} via JsonCodec. */
+    @JSExport
+    public static boolean isMeaningfulSseLine(String line) {
+        return AntigravityResponseParse.isMeaningfulSseLine(new SimpleJsonCodec(), line);
+    }
+
+    /** Exercises {@link AntigravityResponseParse#recursivelyParseJsonStrings} via JsonCodec. */
+    @JSExport
+    public static String recursivelyParseJsonStrings(String objJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object obj = objJson != null ? json.parse(objJson) : null;
+        return json.stringify(AntigravityResponseParse.recursivelyParseJsonStrings(json, obj));
+    }
+
+    /** Exercises {@link AntigravityResponseParse#rewriteAntigravityPreviewAccessError} via JsonCodec. */
+    @JSExport
+    public static String rewriteAntigravityPreviewAccessError(String bodyJson, int status, String requestedModel) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravityResponseParse.rewriteAntigravityPreviewAccessError(
+                asMap(json.parse(bodyJson)), status, requestedModel));
+    }
+
+    /** Exercises {@link AntigravityResponseParse#createSyntheticErrorResponse} (Clock-sourced id) -> JSON. */
+    @JSExport
+    public static String createSyntheticErrorResponse(String errorMessage, String requestedModel) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityResponseParse.SyntheticResponse res =
+                AntigravityResponseParse.createSyntheticErrorResponse(json, SYSTEM_CLOCK, errorMessage, requestedModel);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("status", (long) res.status);
+        out.put("headers", res.headers);
+        out.put("body", res.body);
+        return json.stringify(out);
+    }
+
+    // ---- AntigravityToolPairing (T7c-3) -----------------------------------------------------------
+
+    /** Exercises {@link AntigravityToolPairing#fixToolResponseGrouping} via JsonCodec. */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String fixToolResponseGrouping(String contentsJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object parsed = contentsJson != null ? json.parse(contentsJson) : null;
+        List<Object> contents = parsed instanceof List ? (List<Object>) parsed : null;
+        return json.stringify(AntigravityToolPairing.fixToolResponseGrouping(contents));
+    }
+
+    /** Exercises {@link AntigravityToolPairing#validateAndFixClaudeToolPairing} via JsonCodec. */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String validateAndFixClaudeToolPairing(String messagesJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object parsed = messagesJson != null ? json.parse(messagesJson) : null;
+        List<Object> messages = parsed instanceof List ? (List<Object>) parsed : null;
+        return json.stringify(AntigravityToolPairing.validateAndFixClaudeToolPairing(messages));
+    }
+
+    /** Exercises {@link AntigravityToolPairing#injectParameterSignatures} via JsonCodec. */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String injectParameterSignatures(String toolsJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object parsed = toolsJson != null ? json.parse(toolsJson) : null;
+        List<Object> tools = parsed instanceof List ? (List<Object>) parsed : null;
+        return json.stringify(AntigravityToolPairing.injectParameterSignatures(json, tools));
+    }
+
+    /** Exercises {@link AntigravityToolPairing#applyToolPairingFixes} (mutates payload) via JsonCodec. */
+    @JSExport
+    public static String applyToolPairingFixes(String payloadJson, boolean isClaude) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> payload = asMap(json.parse(payloadJson));
+        AntigravityToolPairing.PairingFixResult result = AntigravityToolPairing.applyToolPairingFixes(json, payload, isClaude);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("payload", payload);
+        out.put("contentsFixed", result.contentsFixed);
+        out.put("messagesFixed", result.messagesFixed);
+        return json.stringify(out);
     }
 
     @SuppressWarnings("unchecked")
