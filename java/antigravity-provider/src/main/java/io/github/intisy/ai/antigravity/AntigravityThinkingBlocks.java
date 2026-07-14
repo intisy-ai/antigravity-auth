@@ -251,10 +251,14 @@ public final class AntigravityThinkingBlocks {
 
         // Anthropic-style thinking/redacted_thinking blocks
         if ("thinking".equals(part.get("type")) || "redacted_thinking".equals(part.get("type")) || part.containsKey("thinking")) {
+            // TS: `part.thinking ?? part.text` (request-helpers.ts:1101) -- absent OR present-null
+            // `thinking` both nullish-fall to `text` (the undefined/null distinction is irrelevant to
+            // `??`), so the first operand is `part.get("thinking")` (null in both cases). The UNDEFINED
+            // sentinel is kept ONLY on the `text` fallback, whose absent-vs-present-null distinction
+            // still drives the later `thinkingContent !== undefined` emit decision.
             Object raw = JsCoercion.nullish(
-                    part.containsKey("thinking") ? part.get("thinking") : UNDEFINED,
+                    part.get("thinking"),
                     part.containsKey("text") ? part.get("text") : UNDEFINED);
-            // TS: `part.thinking ?? part.text` -- a present-null `thinking` still nullish-falls to text.
             Object thinkingContent = coerceNestedThinking(raw);
             boolean hasContent = thinkingContent instanceof String && !((String) thinkingContent).trim().isEmpty();
             if (!hasContent && !JsCoercion.isTruthy(part.get("signature"))) {

@@ -185,6 +185,26 @@ class AntigravityThinkingBlocksTest {
         assertEquals(expectedTrue, AntigravityThinkingBlocks.filterUnsignedThinkingBlocks(contents2, "sess1", CACHE, true, true));
     }
 
+    // ---- regression: sanitizeThinkingPart `part.thinking ?? part.text` fallback ------------------
+
+    @Test
+    void filterUnsigned_thinkingContentInTextKey_preserved() {
+        // {type:"thinking", text:"ourtext", signature:<validCached>} -- the `thinking` key is ABSENT,
+        // content lives in `text`. sanitizeThinkingPart must fall through to `text` (request-helpers.ts:1101)
+        // and emit thinking:"ourtext". Pre-fix (nullish sentinel bug) dropped the content.
+        List<Object> contents = list(map("role", "model", "parts", list(
+                map("type", "thinking", "text", "ourtext", "signature", SIG60))));
+        assertEquals(list(map("role", "model", "parts", list(
+                        map("type", "thinking", "thinking", "ourtext", "signature", SIG60)))),
+                AntigravityThinkingBlocks.filterUnsignedThinkingBlocks(contents, "sess1", CACHE, false, false));
+
+        List<Object> messages = list(map("role", "assistant", "content", list(
+                map("type", "thinking", "text", "ourtext", "signature", SIG60))));
+        assertEquals(list(map("role", "assistant", "content", list(
+                        map("type", "thinking", "thinking", "ourtext", "signature", SIG60)))),
+                AntigravityThinkingBlocks.filterMessagesThinkingBlocks(messages, "sess1", CACHE, false, false));
+    }
+
     // ---- filterUnsignedThinkingBlocks (Anthropic content[] shape) --------------------------------
 
     @Test
