@@ -3,10 +3,15 @@ package io.github.intisy.ai.js;
 import io.github.intisy.ai.antigravity.AntigravityAuth;
 import io.github.intisy.ai.antigravity.AntigravityCatalog;
 import io.github.intisy.ai.antigravity.AntigravityLanes;
+import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravityVersions;
+import io.github.intisy.ai.antigravity.ClaudeTransforms;
+import io.github.intisy.ai.antigravity.CrossModelSanitizer;
+import io.github.intisy.ai.antigravity.GeminiTransforms;
 import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.JsonCodec;
+import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.Random;
 
 import org.teavm.jso.JSExport;
@@ -36,6 +41,11 @@ public final class AntigravityProviderJs {
     // Fixed 0.5 stand-in for Math.random -- this surface only proves transpilability, not
     // randomness; a deterministic value keeps the exported methods pure/reproducible.
     private static final Random FIXED_RANDOM = () -> 0.5;
+    // No-op Logger stand-in for the TS `console.warn` sites (T7b transform layer); an identity
+    // SchemaCleaner stands in for T7c's cleanJSONSchemaForAntigravity (not yet ported).
+    private static final Logger NOOP_LOGGER = msg -> { };
+    private static final ClaudeTransforms.SchemaCleaner IDENTITY_CLEANER =
+            schema -> schema instanceof java.util.Map ? new java.util.LinkedHashMap<>((java.util.Map<?, ?>) schema) : new java.util.LinkedHashMap<>();
 
     private AntigravityProviderJs() {
     }
@@ -106,5 +116,79 @@ public final class AntigravityProviderJs {
         Object parsed = modelsJson != null ? json.parse(modelsJson) : null;
         Map<String, Object> models = parsed instanceof Map ? (Map<String, Object>) parsed : new java.util.LinkedHashMap<>();
         return json.stringify(AntigravityQuotaParser.aggregateQuotaFamilies(models));
+    }
+
+    // ---- AntigravityModelResolver (T7b) -----------------------------------------------------------
+
+    /** Exercises {@link AntigravityModelResolver#resolveModelWithTier} (JSON out). */
+    @JSExport
+    public static String resolveModelWithTier(String model, boolean cliFirst) {
+        return new SimpleJsonCodec().stringify(AntigravityModelResolver.resolveModelWithTier(model, cliFirst));
+    }
+
+    /** Exercises {@link AntigravityModelResolver#resolveModelForHeaderStyle} (JSON out). */
+    @JSExport
+    public static String resolveModelForHeaderStyle(String model, String headerStyle) {
+        return new SimpleJsonCodec().stringify(AntigravityModelResolver.resolveModelForHeaderStyle(model, headerStyle));
+    }
+
+    // ---- CrossModelSanitizer (T7b) ----------------------------------------------------------------
+
+    /** Exercises {@link CrossModelSanitizer#sanitizeCrossModelPayload} via the JsonCodec SPI. */
+    @JSExport
+    public static String sanitizeCrossModelPayload(String payloadJson, String targetModel) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object payload = payloadJson != null ? json.parse(payloadJson) : null;
+        Map<String, Object> options = new java.util.LinkedHashMap<>();
+        options.put("targetModel", targetModel);
+        CrossModelSanitizer.SanitizationResult result = CrossModelSanitizer.sanitizeCrossModelPayload(payload, options);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("payload", result.payload);
+        out.put("modified", result.modified);
+        out.put("signaturesStripped", result.signaturesStripped);
+        return json.stringify(out);
+    }
+
+    // ---- GeminiTransforms (T7b) -------------------------------------------------------------------
+
+    /** Exercises {@link GeminiTransforms#toGeminiSchema} via the JsonCodec SPI. */
+    @JSExport
+    public static String toGeminiSchema(String schemaJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(GeminiTransforms.toGeminiSchema(schemaJson != null ? json.parse(schemaJson) : null));
+    }
+
+    /** Exercises {@link GeminiTransforms#applyGeminiTransforms} (mutates payload, no-op Logger). */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String applyGeminiTransforms(String payloadJson, String optionsJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> payload = asMap(json.parse(payloadJson));
+        Map<String, Object> options = asMap(json.parse(optionsJson));
+        Map<String, Object> result = GeminiTransforms.applyGeminiTransforms(payload, options, NOOP_LOGGER);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("payload", payload);
+        out.put("result", result);
+        return json.stringify(out);
+    }
+
+    // ---- ClaudeTransforms (T7b) -------------------------------------------------------------------
+
+    /** Exercises {@link ClaudeTransforms#applyClaudeTransforms} (mutates payload, identity cleaner). */
+    @JSExport
+    public static String applyClaudeTransforms(String payloadJson, String optionsJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> payload = asMap(json.parse(payloadJson));
+        Map<String, Object> options = asMap(json.parse(optionsJson));
+        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload, options, IDENTITY_CLEANER);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("payload", payload);
+        out.put("result", result);
+        return json.stringify(out);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object parsed) {
+        return parsed instanceof Map ? (Map<String, Object>) parsed : new java.util.LinkedHashMap<>();
     }
 }
