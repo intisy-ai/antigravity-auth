@@ -587,28 +587,28 @@ public final class GeminiTransforms {
 
     // ---- sanitizeGeminiContents (gemini.ts:684-802) ----------------------------------------------
 
+    // gemini.ts:692-713 -- both the separator decision (`currentText ? "\n\n" : ""`, :698) and the
+    // flushes (:700, :708) key on the ACCUMULATED string's truthiness (non-empty), NOT on having
+    // seen a text part: empty-string text parts accumulate silently and are never flushed alone.
     private static List<Object> mergeTextParts(List<Object> parts) {
         List<Object> merged = new ArrayList<>();
         StringBuilder currentText = new StringBuilder();
-        boolean hasText = false;
 
         for (Object part : parts) {
             if (part instanceof Map && JsCoercion.asMap(part).get("text") instanceof String) {
                 String text = (String) JsCoercion.asMap(part).get("text");
-                if (hasText) currentText.append("\n\n");
+                if (currentText.length() > 0) currentText.append("\n\n");
                 currentText.append(text);
-                hasText = true;
             } else {
-                if (hasText) {
+                if (currentText.length() > 0) {
                     merged.add(textPart(currentText.toString()));
                     currentText.setLength(0);
-                    hasText = false;
                 }
                 merged.add(part);
             }
         }
 
-        if (hasText) {
+        if (currentText.length() > 0) {
             merged.add(textPart(currentText.toString()));
         }
 

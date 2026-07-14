@@ -338,6 +338,47 @@ class GeminiTransformsTest {
     }
 
     @Test
+    void sanitize_emptyStringTextParts_truthinessSemantics() {
+        // TS mergeTextParts keys the separator AND the flush on the ACCUMULATED string's
+        // truthiness (gemini.ts:698/700/708), not on "saw a text part". Fixtures:
+        // sanitizeGeminiContents_emptyText in fixtures.json (reviewer fix round).
+
+        // lone {text:""} turn -> merges to no parts -> turn skipped -> normalized empty ->
+        // input returned as-is.
+        assertEquals(list(map("role", "user", "parts", list(map("text", "")))),
+                GeminiTransforms.sanitizeGeminiContents(list(map("role", "user", "parts", list(map("text", ""))))));
+
+        // {text:""} then {text:"b"} -> "b" (empty accumulator adds NO separator)
+        assertEquals(list(map("role", "user", "parts", list(map("text", "b")))),
+                GeminiTransforms.sanitizeGeminiContents(list(map("role", "user", "parts", list(map("text", ""), map("text", "b"))))));
+
+        // {text:"a"} then {text:""} -> "a\n\n" (truthy accumulator DOES add the separator)
+        assertEquals(list(map("role", "user", "parts", list(map("text", "a\n\n")))),
+                GeminiTransforms.sanitizeGeminiContents(list(map("role", "user", "parts", list(map("text", "a"), map("text", ""))))));
+    }
+
+    @Test
+    void sanitize_turnMergingToEmptyIsSkipped() {
+        // an empty-merging model turn between user turns disappears; the users merge.
+        assertEquals(list(map("role", "user", "parts", list(map("text", "hello\n\nagain")))),
+                GeminiTransforms.sanitizeGeminiContents(list(
+                        map("role", "user", "parts", list(map("text", "hello"))),
+                        map("role", "model", "parts", list(map("text", ""))),
+                        map("role", "user", "parts", list(map("text", "again"))))));
+
+        // {text:""} before a functionCall: the empty accumulator is NOT flushed before the
+        // non-text part -> only the functionCall survives.
+        assertEquals(list(
+                map("role", "user", "parts", list(map("text", "q"))),
+                map("role", "model", "parts", list(map("functionCall", map("name", "f")))),
+                map("role", "user", "parts", list(map("functionResponse", map("name", "f"))))),
+                GeminiTransforms.sanitizeGeminiContents(list(
+                        map("role", "user", "parts", list(map("text", "q"))),
+                        map("role", "model", "parts", list(map("text", ""), map("functionCall", map("name", "f")))),
+                        map("role", "user", "parts", list(map("functionResponse", map("name", "f")))))));
+    }
+
+    @Test
     void sanitize_emptyReturnedAsIs() {
         assertEquals(list(), GeminiTransforms.sanitizeGeminiContents(list()));
         assertEquals(list(map("role", "user", "parts", list())), GeminiTransforms.sanitizeGeminiContents(list(map("role", "user", "parts", list()))));
