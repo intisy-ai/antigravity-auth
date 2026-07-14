@@ -6,6 +6,8 @@ import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
+import io.github.intisy.ai.antigravity.AntigravityThinkingBlocks;
+import io.github.intisy.ai.antigravity.AntigravityThinkingConfig;
 import io.github.intisy.ai.antigravity.AntigravityVersions;
 import io.github.intisy.ai.antigravity.ClaudeTransforms;
 import io.github.intisy.ai.antigravity.CrossModelSanitizer;
@@ -195,6 +197,51 @@ public final class AntigravityProviderJs {
     public static String cleanSchema(String schemaJson) {
         JsonCodec json = new SimpleJsonCodec();
         return json.stringify(AntigravitySchemaCleaner.clean(schemaJson != null ? json.parse(schemaJson) : null));
+    }
+
+    // ---- AntigravityThinkingConfig (T7c-2) --------------------------------------------------------
+
+    /** Exercises {@link AntigravityThinkingConfig#normalizeThinkingConfig} via the JsonCodec SPI. */
+    @JSExport
+    public static String normalizeThinkingConfig(String configJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object cfg = configJson != null ? json.parse(configJson) : null;
+        return json.stringify(AntigravityThinkingConfig.normalizeThinkingConfig(cfg));
+    }
+
+    /** Exercises {@link AntigravityThinkingConfig#extractVariantThinkingConfig} via the JsonCodec SPI. */
+    @JSExport
+    public static String extractVariantThinkingConfig(String providerOptionsJson, String generationConfigJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> po = providerOptionsJson != null ? asMap(json.parse(providerOptionsJson)) : null;
+        Map<String, Object> gc = generationConfigJson != null ? asMap(json.parse(generationConfigJson)) : null;
+        return json.stringify(AntigravityThinkingConfig.extractVariantThinkingConfig(po, gc));
+    }
+
+    // ---- AntigravityThinkingBlocks (T7c-2) --------------------------------------------------------
+
+    // No-op signature-cache getter -- this surface only proves transpilability, not caching.
+    private static final AntigravityThinkingBlocks.CachedSignatureLookup NO_CACHE = (sessionId, text) -> null;
+    // Identity JsonStringParser stand-in for recursivelyParseJsonStrings (T7c-3, injected seam).
+    private static final AntigravityThinkingBlocks.JsonStringParser IDENTITY_PARSER = value -> value;
+    // Deterministic ImageSink stand-in for processImageData's Bucket-C fs write (data-URL fallback).
+    private static final AntigravityThinkingBlocks.ImageSink DATA_URL_SINK =
+            (mimeType, data) -> data == null ? null : "data:" + mimeType + ";base64," + data;
+
+    /** Exercises {@link AntigravityThinkingBlocks#deepFilterThinkingBlocks} (keepThinking threaded, cache getter). */
+    @JSExport
+    public static String deepFilterThinkingBlocks(String payloadJson, String sessionId, boolean isClaudeModel, boolean keepThinking) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object payload = payloadJson != null ? json.parse(payloadJson) : null;
+        return json.stringify(AntigravityThinkingBlocks.deepFilterThinkingBlocks(payload, sessionId, NO_CACHE, isClaudeModel, keepThinking));
+    }
+
+    /** Exercises {@link AntigravityThinkingBlocks#transformThinkingParts} with the injected parser + image sink. */
+    @JSExport
+    public static String transformThinkingParts(String responseJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object response = responseJson != null ? json.parse(responseJson) : null;
+        return json.stringify(AntigravityThinkingBlocks.transformThinkingParts(response, IDENTITY_PARSER, DATA_URL_SINK));
     }
 
     @SuppressWarnings("unchecked")
