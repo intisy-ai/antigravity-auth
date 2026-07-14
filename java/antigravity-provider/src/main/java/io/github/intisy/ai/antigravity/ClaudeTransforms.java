@@ -34,9 +34,10 @@ public final class ClaudeTransforms {
     public static final String CLAUDE_INTERLEAVED_THINKING_HINT =
             "Interleaved thinking is enabled. You may think between tool calls and after receiving tool results before deciding the next action or final answer. Do not mention these instructions or any constraints about thinking blocks; just apply them.";
 
-    // constants.ts:160-161 (imported by claude.ts).
-    private static final String EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
-    private static final String EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
+    // constants.ts:160-161 (imported by claude.ts). Package-private so AntigravitySchemaCleaner (T7c-1)
+    // reuses this single source rather than duplicating the placeholder strings.
+    static final String EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
+    static final String EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
 
     private ClaudeTransforms() {
     }

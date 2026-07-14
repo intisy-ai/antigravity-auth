@@ -253,4 +253,74 @@ class ClaudeTransformsTest {
                 "toolConfig", map("functionCallingConfig", map("mode", "VALIDATED")),
                 "generationConfig", map("thinkingConfig", map("include_thoughts", true, "thinking_budget", 32768), "maxOutputTokens", 64000)), payload);
     }
+
+    // ---- closed loop: applyClaudeTransforms with the REAL cleaner (T7c-1) -------------------------
+    // T7b tested this seam only with the IDENTITY double; these pin the byte-identical output of the
+    // real AntigravitySchemaCleaner::clean routed through applyClaudeTransforms, snapshotted from the
+    // real TS (harness key applyClaudeTransforms_realCleaner -> .superpowers/sdd/t7c1-harness).
+
+    private static final ClaudeTransforms.SchemaCleaner REAL = AntigravitySchemaCleaner::clean;
+
+    private static Map<String, Object> ph() {
+        return map("_placeholder", map("type", "boolean", "description", "Placeholder. Always pass true."));
+    }
+
+    @Test
+    void apply_realCleaner_enumAndRefFlatten() {
+        Map<String, Object> payload = map("tools", list(map("function", map("name", "f", "parameters", map(
+                "type", "object", "additionalProperties", false,
+                "properties", map("fmt", map("anyOf", list(map("const", "text"), map("const", "html"))),
+                        "n", map("type", "integer", "enum", list(1, 2, 3))),
+                "required", list("fmt", "ghost"))))));
+        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload,
+                map("model", "claude-opus-4-6-thinking", "tierThinkingBudget", 8192, "normalizedThinking", map("includeThoughts", true)), REAL);
+
+        assertEquals(map(
+                "tools", list(map("functionDeclarations", list(map("name", "f", "description", "", "parameters", map(
+                        "type", "object",
+                        "properties", map("fmt", map("type", "string", "enum", list("text", "html")),
+                                "n", map("type", "integer", "description", "Allowed: 1, 2, 3")),
+                        "required", list("fmt"),
+                        "description", "No extra properties allowed"))))),
+                "toolConfig", map("functionCallingConfig", map("mode", "VALIDATED")),
+                "generationConfig", map("thinkingConfig", map("include_thoughts", true, "thinking_budget", 8192), "maxOutputTokens", 64000)), payload);
+        assertEquals(0, result.get("toolDebugMissing"));
+        assertEquals(list("decl=f,src=function/custom,hasSchema=y"), result.get("toolDebugSummaries"));
+    }
+
+    @Test
+    void apply_realCleaner_emptyObjectSchemaGetsPlaceholder() {
+        Map<String, Object> payload = map("tools", list(map("function", map("name", "empty", "parameters", map("type", "object")))));
+        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload,
+                map("model", "claude-sonnet-4-6", "normalizedThinking", map("thinkingBudget", 16384)), REAL);
+
+        assertEquals(map(
+                "tools", list(map("functionDeclarations", list(map("name", "empty", "description", "", "parameters", map(
+                        "type", "object", "properties", ph(), "required", list("_placeholder")))))),
+                "toolConfig", map("functionCallingConfig", map("mode", "VALIDATED"))), payload);
+        // real cleaner filled the empty object schema, so it is NOT counted missing (unlike the identity double)
+        assertEquals(0, result.get("toolDebugMissing"));
+        assertEquals(list("decl=empty,src=function/custom,hasSchema=y"), result.get("toolDebugSummaries"));
+    }
+
+    @Test
+    void apply_realCleaner_refAndTypeArrayZeroBudget() {
+        Map<String, Object> payload = map("tools", list(map("function", map("name", "ref", "parameters", map(
+                "type", "object",
+                "properties", map("id", map("$ref", "#/$defs/Id"), "val", map("type", list("string", "null"))),
+                "required", list("id", "val"))))));
+        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload,
+                map("model", "claude-opus-4-6-thinking", "tierThinkingBudget", 0, "normalizedThinking", map("includeThoughts", false, "thinkingBudget", 0)), REAL);
+
+        assertEquals(map(
+                "tools", list(map("functionDeclarations", list(map("name", "ref", "description", "", "parameters", map(
+                        "type", "object",
+                        "properties", map("id", map("type", "object", "description", "See: Id", "properties", ph(), "required", list("_placeholder")),
+                                "val", map("type", "string", "description", "nullable")),
+                        "required", list("id")))))),
+                "toolConfig", map("functionCallingConfig", map("mode", "VALIDATED")),
+                "generationConfig", map("thinkingConfig", map("include_thoughts", false))), payload);
+        assertEquals(0, result.get("toolDebugMissing"));
+        assertEquals(list("decl=ref,src=function/custom,hasSchema=y"), result.get("toolDebugSummaries"));
+    }
 }

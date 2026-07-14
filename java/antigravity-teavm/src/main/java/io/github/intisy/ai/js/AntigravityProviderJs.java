@@ -5,6 +5,7 @@ import io.github.intisy.ai.antigravity.AntigravityCatalog;
 import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
+import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
 import io.github.intisy.ai.antigravity.AntigravityVersions;
 import io.github.intisy.ai.antigravity.ClaudeTransforms;
 import io.github.intisy.ai.antigravity.CrossModelSanitizer;
@@ -41,11 +42,11 @@ public final class AntigravityProviderJs {
     // Fixed 0.5 stand-in for Math.random -- this surface only proves transpilability, not
     // randomness; a deterministic value keeps the exported methods pure/reproducible.
     private static final Random FIXED_RANDOM = () -> 0.5;
-    // No-op Logger stand-in for the TS `console.warn` sites (T7b transform layer); an identity
-    // SchemaCleaner stands in for T7c's cleanJSONSchemaForAntigravity (not yet ported).
+    // No-op Logger stand-in for the TS `console.warn` sites (T7b transform layer). T7c-1 ported the
+    // real SchemaCleaner (cleanJSONSchemaForAntigravity), so the Claude transform surface below now
+    // injects it instead of the former identity double.
     private static final Logger NOOP_LOGGER = msg -> { };
-    private static final ClaudeTransforms.SchemaCleaner IDENTITY_CLEANER =
-            schema -> schema instanceof java.util.Map ? new java.util.LinkedHashMap<>((java.util.Map<?, ?>) schema) : new java.util.LinkedHashMap<>();
+    private static final ClaudeTransforms.SchemaCleaner REAL_CLEANER = AntigravitySchemaCleaner::clean;
 
     private AntigravityProviderJs() {
     }
@@ -180,11 +181,20 @@ public final class AntigravityProviderJs {
         JsonCodec json = new SimpleJsonCodec();
         Map<String, Object> payload = asMap(json.parse(payloadJson));
         Map<String, Object> options = asMap(json.parse(optionsJson));
-        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload, options, IDENTITY_CLEANER);
+        Map<String, Object> result = ClaudeTransforms.applyClaudeTransforms(payload, options, REAL_CLEANER);
         Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("payload", payload);
         out.put("result", result);
         return json.stringify(out);
+    }
+
+    // ---- AntigravitySchemaCleaner (T7c-1) ---------------------------------------------------------
+
+    /** Exercises {@link AntigravitySchemaCleaner#clean} via the JsonCodec SPI (JSON in -> JSON out). */
+    @JSExport
+    public static String cleanSchema(String schemaJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravitySchemaCleaner.clean(schemaJson != null ? json.parse(schemaJson) : null));
     }
 
     @SuppressWarnings("unchecked")
