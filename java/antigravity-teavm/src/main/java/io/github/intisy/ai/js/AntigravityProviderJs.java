@@ -30,8 +30,11 @@ import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.Random;
 
 import org.teavm.jso.JSExport;
+import org.teavm.jso.core.JSPromise;
+import org.teavm.jso.core.JSString;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -728,5 +731,197 @@ public final class AntigravityProviderJs {
         in.headers = new java.util.LinkedHashMap<>();
         AntigravityHandleOrchestrator.HandleDecision d = o.handle(in);
         return d.body;
+    }
+
+    // ---- T7g1: the async entry (multi-@Async composition proof) ---------------------------------
+
+    /**
+     * THE T7g1 export the live-rewire task (T7g2) will build on: runs the FULL {@link
+     * AntigravityHandleOrchestrator#handle} decision loop with host transport, account rotation and
+     * project-context discovery supplied as JS async/sync callbacks, and surfaces the whole
+     * (repeatedly-suspending) call graph to JS as ONE {@code Promise}. Inside the loop a single
+     * {@code attemptModel} iteration can suspend on {@link JsAccountOpsBridge#acquire} (async) then,
+     * inside {@code resolveProjectId}, on {@link JsProjectLoaderBridge#load} and {@link
+     * JsProjectOnboarderBridge#onboard} (async), then on {@link JsAttemptExecutorBridge#execute}
+     * (async) -- up to FOUR DISTINCT {@code @Async} bridges composing in one TeaVM CPS-transformed
+     * call graph (a stronger composition than claude's two). Built by hand as a {@code JSPromise} over
+     * a thread reaching the {@code @Async} boundaries (identical to {@code
+     * ClaudeProviderJs.handleClaudeRequestAsync}) -- not {@code JSPromise.callAsync}, whose generic
+     * {@code resolve.accept} would leak a raw {@code jl_String} instead of a real JS string.
+     *
+     * <p>ZERO live impact: this is not yet wired to antigravity-auth's TS runtime (that is T7g2);
+     * the {@code RequestPreparer}/{@code ThinkingRecovery} live-wiring decision is deferred there too.
+     * The {@code clock}/{@code random} are deterministic (config {@code nowMs}, else a fixed epoch;
+     * fixed {@code random}=0.5) so the smoke can assert byte-parity with the T7f snapshots; T7g2
+     * supplies real ones.
+     *
+     * @param inputsJson        {@code {url, method, headers:{}, bodyText, ctxModel?}}
+     * @param configJson        {@code {nowMs?, platform?, arch?}} (deterministic clock + platform seam)
+     * @param jsExec            async attempt transport ({@code fetch}+IP-proxy in prod)
+     * @param jsAcquire         async {@code manager.acquire(lane)}
+     * @param jsAccountOps      the grouped synchronous account ops (report/nextAvailableAt/list/mutate)
+     * @param jsProjectLoader   async {@code loadManagedProject}
+     * @param jsProjectOnboarder async {@code onboardManagedProject}
+     * @param jsPreparer        sync request preparer ({@code prepareAntigravityRequest} stand-in)
+     * @param autoCandidatesJson {@code getAutoCandidates(PROVIDER_ID)} as a JSON array, or {@code null}
+     * @return a {@code Promise<string>} resolving with the serialized {@link
+     *         AntigravityHandleOrchestrator.HandleDecision} (a discriminated union keyed by {@code kind})
+     */
+    @JSExport
+    public static JSPromise<JSString> handleAntigravityRequestAsync(
+            String inputsJson,
+            String configJson,
+            JsAttemptExecutorBridge.JsExecFn jsExec,
+            JsAccountOpsBridge.JsAcquireFn jsAcquire,
+            JsAccountOpsBridge.JsAccountFns jsAccountOps,
+            JsProjectLoaderBridge.JsLoadFn jsProjectLoader,
+            JsProjectOnboarderBridge.JsOnboardFn jsProjectOnboarder,
+            JsRequestPreparerBridge.JsPrepareFn jsPreparer,
+            String autoCandidatesJson) {
+        return new JSPromise<>((resolve, reject) -> new Thread(() -> {
+            try {
+                JsonCodec json = new SimpleJsonCodec();
+                Clock clock = parseClock(json, configJson);
+                AntigravityProjectContext.Platform platform = parsePlatform(json, configJson);
+
+                AntigravityHandleOrchestrator orchestrator = new AntigravityHandleOrchestrator(
+                        json, clock, FIXED_RANDOM, counterIds(),
+                        new JsAccountOpsBridge(jsAcquire, jsAccountOps, json),
+                        new JsRequestPreparerBridge(jsPreparer, json),
+                        new JsAttemptExecutorBridge(jsExec, json),
+                        modelId -> null,
+                        new JsProjectLoaderBridge(jsProjectLoader, json),
+                        new JsProjectOnboarderBridge(jsProjectOnboarder, json),
+                        platform);
+
+                AntigravityHandleOrchestrator.RequestInputs in = parseInputs(json, inputsJson, autoCandidatesJson);
+
+                // transitively async: handle() -> acquire()/load()/onboard()/execute() each suspend at @Async
+                AntigravityHandleOrchestrator.HandleDecision decision = orchestrator.handle(in);
+
+                resolve.accept(JSString.valueOf(decisionToJson(json, decision)));
+            } catch (Throwable e) {
+                reject.accept(JSString.valueOf("handleAntigravityRequestAsync failed: " + e));
+            }
+        }).start());
+    }
+
+    private static Clock parseClock(JsonCodec json, String configJson) {
+        Object parsed = configJson != null ? json.parse(configJson) : null;
+        if (parsed instanceof Map) {
+            Object nowMs = ((Map<?, ?>) parsed).get("nowMs");
+            if (nowMs instanceof Number) {
+                final long fixed = ((Number) nowMs).longValue();
+                return () -> fixed;
+            }
+        }
+        return () -> System.currentTimeMillis();
+    }
+
+    private static AntigravityProjectContext.Platform parsePlatform(JsonCodec json, String configJson) {
+        String platform = "linux";
+        String arch = "x64";
+        Object parsed = configJson != null ? json.parse(configJson) : null;
+        if (parsed instanceof Map) {
+            Object p = ((Map<?, ?>) parsed).get("platform");
+            Object a = ((Map<?, ?>) parsed).get("arch");
+            if (p instanceof String) platform = (String) p;
+            if (a instanceof String) arch = (String) a;
+        }
+        final String platformValue = platform;
+        final String archValue = arch;
+        return new AntigravityProjectContext.Platform() {
+            @Override
+            public String platform() {
+                return platformValue;
+            }
+
+            @Override
+            public String arch() {
+                return archValue;
+            }
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static AntigravityHandleOrchestrator.RequestInputs parseInputs(JsonCodec json, String inputsJson, String autoCandidatesJson) {
+        AntigravityHandleOrchestrator.RequestInputs in = new AntigravityHandleOrchestrator.RequestInputs();
+        Object parsed = inputsJson != null ? json.parse(inputsJson) : null;
+        if (parsed instanceof Map) {
+            Map<?, ?> m = (Map<?, ?>) parsed;
+            in.url = asString(m.get("url"));
+            in.method = asString(m.get("method"));
+            in.bodyText = asString(m.get("bodyText"));
+            in.ctxModel = asString(m.get("ctxModel"));
+            Map<String, String> headers = new LinkedHashMap<>();
+            Object headersVal = m.get("headers");
+            if (headersVal instanceof Map) {
+                for (Map.Entry<?, ?> e : ((Map<Object, Object>) headersVal).entrySet()) {
+                    if (e.getKey() != null && e.getValue() != null) {
+                        headers.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                    }
+                }
+            }
+            in.headers = headers;
+        } else {
+            in.headers = new LinkedHashMap<>();
+        }
+        Object autos = autoCandidatesJson != null ? json.parse(autoCandidatesJson) : null;
+        if (autos instanceof List) {
+            List<String> candidates = new ArrayList<>();
+            for (Object c : (List<Object>) autos) {
+                if (c instanceof String) candidates.add((String) c);
+            }
+            in.autoCandidates = candidates;
+        }
+        return in;
+    }
+
+    private static String decisionToJson(JsonCodec json, AntigravityHandleOrchestrator.HandleDecision decision) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        AntigravityHandleOrchestrator.HandleDecision.Kind kind = decision.kind;
+        out.put("kind", kind.name());
+        out.put("status", decision.status);
+        if (kind == AntigravityHandleOrchestrator.HandleDecision.Kind.SERVE) {
+            out.put("attemptRef", decision.attemptRef);
+            out.put("params", paramsToMap(decision.params));
+        } else if (kind == AntigravityHandleOrchestrator.HandleDecision.Kind.SERVE_RAW
+                || kind == AntigravityHandleOrchestrator.HandleDecision.Kind.BRIDGE_STREAM) {
+            out.put("attemptRef", decision.attemptRef);
+        } else if (kind == AntigravityHandleOrchestrator.HandleDecision.Kind.SYNTHETIC) {
+            out.put("headers", decision.headers);
+            out.put("body", decision.body);
+        } else if (kind == AntigravityHandleOrchestrator.HandleDecision.Kind.TERMINAL_ERROR) {
+            out.put("terminal", terminalToMap(decision.terminal));
+        }
+        return json.stringify(out);
+    }
+
+    private static Map<String, Object> paramsToMap(AntigravityHandleOrchestrator.TransformParams p) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (p == null) return m;
+        m.put("requestedModel", p.requestedModel);
+        m.put("projectId", p.projectId);
+        m.put("endpoint", p.endpoint);
+        m.put("effectiveModel", p.effectiveModel);
+        m.put("sessionId", p.sessionId);
+        m.put("streaming", p.streaming);
+        return m;
+    }
+
+    private static Map<String, Object> terminalToMap(AntigravityHandleOrchestrator.TerminalError t) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (t == null) return m;
+        m.put("kind", t.kind.name());
+        m.put("status", t.status);
+        m.put("messagePrefix", t.messagePrefix);
+        m.put("messageSuffix", t.messageSuffix);
+        m.put("resetEpochMs", t.resetEpochMs);
+        m.put("retryAfterMs", t.retryAfterMs);
+        return m;
+    }
+
+    private static String asString(Object o) {
+        return o instanceof String ? (String) o : null;
     }
 }
