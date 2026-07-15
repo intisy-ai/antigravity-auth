@@ -41,9 +41,11 @@ class AntigravityServePathTest {
 
     @Test
     void rotatesToNextAccountOn429(@TempDir Path configDir) {
+        // Phase 4: SERVE now bridges a buffered Gemini SSE upstream to Anthropic SSE, so the
+        // scripted "ok" response must be real `data:`-line SSE text (see AntigravityAnthropicBridge).
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueError(429, "quota exceeded for this request")
-                .enqueueOk(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi from B\"}]}}]}");
+                .enqueueOk(200, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi from B\"}]}}]}\n\n");
 
         AntigravityBackend backend = registerTestBackend(configDir, http);
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-a"));
@@ -115,11 +117,12 @@ class AntigravityServePathTest {
 
     @Test
     void happyPath_singleAccount_returnsTransformedResponseBody(@TempDir Path configDir) {
-        // Phase 3b: the upstream cloudcode-pa shape -- array-wrapped, "response"-nested -- must now
-        // come back UNWRAPPED (the array/`.response` envelope stripped by AntigravityResponseTransform),
-        // superseding 3a's "raw verbatim on SERVE" shim.
+        // Phase 4: SERVE now bridges the buffered Gemini SSE upstream (cloudcode-pa's own
+        // "response"-wrapped `data:` line shape, per src/plugin/core/streaming/transformer.ts's own
+        // unwrap precedent) all the way to Anthropic-shaped SSE (AntigravityAnthropicBridge),
+        // superseding 3b's "unwrap to plain Gemini JSON" transform.
         ScriptedHttpClient http = new ScriptedHttpClient()
-                .enqueueOk(200, "[{\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}]");
+                .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
 
         AntigravityBackend backend = registerTestBackend(configDir, http);
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-solo"));
@@ -127,9 +130,12 @@ class AntigravityServePathTest {
         HttpResponse response = handle(configDir, "antigravity-claude-sonnet-4-6");
 
         assertEquals(200, response.status);
-        assertTrue(response.body.contains("\"text\":\"ok\""));
-        assertFalse(response.body.trim().startsWith("["), "the cloudcode-pa array envelope must be unwrapped");
-        assertFalse(response.body.contains("\"response\""), "the .response wrapper key must be unwrapped");
+        assertEquals("text/event-stream", response.headers.get("content-type"));
+        assertTrue(response.body.contains("event: message_start"));
+        assertTrue(response.body.contains("\"type\":\"text_delta\",\"text\":\"ok\""));
+        assertTrue(response.body.contains("event: message_stop"));
+        assertFalse(response.body.trim().startsWith("["), "the cloudcode-pa array envelope must never leak through");
+        assertFalse(response.body.contains("\"response\""), "the .response wrapper key must be unwrapped, not leaked");
         assertEquals(1, http.requests.size());
         assertFalse(hasRateLimitEntry(backend, "acct-solo"), "a successful attempt must never rate-limit its account");
     }

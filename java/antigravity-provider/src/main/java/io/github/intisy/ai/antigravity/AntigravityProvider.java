@@ -124,7 +124,14 @@ public final class AntigravityProvider implements Provider {
         AntigravityHandleOrchestrator orchestrator = orchestratorFor(backend, log);
 
         AntigravityHandleOrchestrator.RequestInputs in = new AntigravityHandleOrchestrator.RequestInputs();
-        in.url = "https://cloudcode-pa.googleapis.com/v1internal/models/" + model + ":generateContent";
+        // Phase 4: streamGenerateContent (SSE), not generateContent -- SERVE now bridges the
+        // buffered Gemini SSE body to Anthropic (AntigravityAnthropicBridge). The TS bridge
+        // (javaHandle.ts:358) targets generativelanguage.googleapis.com, but that host needs an API
+        // key, not the OAuth account access tokens this provider's AccountOps supplies -- keep the
+        // existing cloudcode-pa v1internal host (already used by every other endpoint here, see
+        // AntigravityHandleRouting.endpointsFor) and only switch the verb; AntigravityRequestPrep
+        // detects ":streamGenerateContent" via its own action regex and appends "?alt=sse" itself.
+        in.url = "https://cloudcode-pa.googleapis.com/v1internal/models/" + model + ":streamGenerateContent";
         in.method = "POST";
         in.headers = new LinkedHashMap<>();
         in.headers.put("content-type", "application/json");
@@ -162,8 +169,14 @@ public final class AntigravityProvider implements Provider {
     private static HttpResponse materialize(AntigravityHandleOrchestrator.HandleDecision d, JsonCodec json) {
         switch (d.kind) {
             case SERVE:
+                // Phase 4: the example-server speaks Anthropic /v1/messages, so SERVE now bridges
+                // the buffered Gemini SSE upstream to Anthropic-shaped SSE (see
+                // AntigravityAnthropicBridge). AntigravityResponseTransform stays in the tree
+                // untouched -- it is the Gemini-format serve building block a future native-Gemini
+                // consumer may still want, just no longer what SERVE itself returns.
                 if (d.attemptRef instanceof HttpResponse) {
-                    return AntigravityResponseTransform.transformServe(json, (HttpResponse) d.attemptRef, d.params);
+                    String requestedModel = d.params != null ? d.params.requestedModel : null;
+                    return AntigravityAnthropicBridge.geminiSseToAnthropic(json, requestedModel, (HttpResponse) d.attemptRef);
                 }
                 return errorResponse(502, "api_error", "antigravity upstream response missing");
             case SERVE_RAW:
@@ -171,11 +184,7 @@ public final class AntigravityProvider implements Provider {
                 // orchestrator) -- returns the retained upstream HttpResponse verbatim.
                 return upstreamResponseOrError(d.attemptRef);
             case SYNTHETIC:
-                HttpResponse synthetic = new HttpResponse();
-                synthetic.status = d.status;
-                synthetic.headers = new LinkedHashMap<>(d.headers != null ? d.headers : Collections.emptyMap());
-                synthetic.body = d.body;
-                return synthetic;
+                return materializeSynthetic(json, d);
             case TERMINAL_ERROR:
                 return materializeTerminal(d.terminal);
             case BRIDGE_STREAM:
@@ -212,6 +221,45 @@ public final class AntigravityProvider implements Provider {
         response.body = "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":"
                 + quote(message) + "}}";
         return response;
+    }
+
+    // Phase 4 (handleAnthropicMessagesViaJava L361-383): a SYNTHETIC decision from the Gemini-path
+    // orchestrator (attemptModel's no-account/exhausted-attempts 503/502, or handle's
+    // all-Auto-candidates-exhausted 502) carries a plain Gemini-shaped {"error":{"message"}} body --
+    // rewrap it as Anthropic error shape so an Anthropic client never sees the Gemini shape. A
+    // rate-limit-classified status (429/503/529, AntigravityHandleRouting#isRateLimitStatus) becomes
+    // rate_limit_error; anything else becomes api_error. The orchestrator's own status/headers are
+    // preserved verbatim (brief: "Preserve the status the orchestrator chose").
+    private static HttpResponse materializeSynthetic(JsonCodec json, AntigravityHandleOrchestrator.HandleDecision d) {
+        String message = extractGeminiErrorMessage(json, d.body);
+        String errorType = AntigravityHandleRouting.isRateLimitStatus(d.status) ? "rate_limit_error" : "api_error";
+        HttpResponse response = new HttpResponse();
+        response.status = d.status;
+        response.headers = new LinkedHashMap<>(d.headers != null ? d.headers : Collections.<String, String>emptyMap());
+        response.headers.put("content-type", "application/json");
+        response.body = "{\"type\":\"error\",\"error\":{\"type\":" + quote(errorType) + ",\"message\":" + quote(message) + "}}";
+        return response;
+    }
+
+    private static String extractGeminiErrorMessage(JsonCodec json, String body) {
+        if (body == null || body.isEmpty()) {
+            return "antigravity request failed";
+        }
+        try {
+            Object parsed = json.parse(body);
+            if (parsed instanceof Map) {
+                Object err = ((Map<?, ?>) parsed).get("error");
+                if (err instanceof Map) {
+                    Object msg = ((Map<?, ?>) err).get("message");
+                    if (msg instanceof String) {
+                        return (String) msg;
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // fall through -- treat an unparsable body as the message itself
+        }
+        return body;
     }
 
     // index.ts:459's `toLocaleString(undefined, {month:"short",day:"numeric",hour:"numeric",
