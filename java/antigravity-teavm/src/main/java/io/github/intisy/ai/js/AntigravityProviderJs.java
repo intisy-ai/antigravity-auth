@@ -2,7 +2,11 @@ package io.github.intisy.ai.js;
 
 import io.github.intisy.ai.antigravity.AntigravityAuth;
 import io.github.intisy.ai.antigravity.AntigravityCatalog;
+import io.github.intisy.ai.antigravity.AntigravityFingerprint;
 import io.github.intisy.ai.antigravity.AntigravityFormatBridge;
+import io.github.intisy.ai.antigravity.AntigravityRequestKeys;
+import io.github.intisy.ai.antigravity.AntigravityRequestPrep;
+import io.github.intisy.ai.antigravity.AntigravityRequestSignatures;
 import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
@@ -439,6 +443,150 @@ public final class AntigravityProviderJs {
                 json, line, store, thoughtBuffer, sentBuffer,
                 null, null, r -> r, DATA_URL_SINK,
                 sessionKey, null, true, null, debugState);
+    }
+
+    // ---- AntigravityFingerprint / AntigravityRequestKeys / AntigravityRequestSignatures (T7e) -----
+
+    /** Exercises {@link AntigravityFingerprint#platformToDisplayName}. */
+    @JSExport
+    public static String platformToDisplayName(String platform) {
+        return AntigravityFingerprint.platformToDisplayName(platform);
+    }
+
+    /** Exercises {@link AntigravityFingerprint#buildFingerprintHeaders} via JsonCodec. */
+    @JSExport
+    public static String buildFingerprintHeaders(String fingerprintJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> fp = fingerprintJson != null ? asMap(json.parse(fingerprintJson)) : null;
+        return json.stringify(AntigravityFingerprint.buildFingerprintHeaders(fp));
+    }
+
+    /** Exercises {@link AntigravityRequestKeys#buildSignatureSessionKey}. */
+    @JSExport
+    public static String buildSignatureSessionKey(String sessionId, String model, String conv, String proj) {
+        return AntigravityRequestKeys.buildSignatureSessionKey(sessionId, model, conv, proj);
+    }
+
+    /** Exercises {@link AntigravityRequestKeys#resolveConversationKey} (sha256 seed via stub Hasher). */
+    @JSExport
+    public static String resolveConversationKey(String payloadJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        String key = AntigravityRequestKeys.resolveConversationKey(STUB_HASHER, asMap(json.parse(payloadJson)));
+        return key == null ? null : key;
+    }
+
+    /** Exercises {@link AntigravityRequestSignatures#injectDebugThinking} via JsonCodec. */
+    @JSExport
+    public static String injectDebugThinking(String responseJson, String debugText) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravityRequestSignatures.injectDebugThinking(json.parse(responseJson), debugText));
+    }
+
+    /** Exercises {@link AntigravityRequestSignatures#sanitizeRequestPayloadForAntigravity} (mutates). */
+    @JSExport
+    public static String sanitizeRequestPayload(String payloadJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> payload = asMap(json.parse(payloadJson));
+        AntigravityRequestSignatures.sanitizeRequestPayloadForAntigravity(payload);
+        return json.stringify(payload);
+    }
+
+    // ---- AntigravityRequestPrep (T7e) -------------------------------------------------------------
+
+    private static final AntigravityRequestKeys.Hasher STUB_HASHER =
+            input -> "00000000000000000000000000000000000000000000000000000000000000ff";
+
+    private static AntigravityRequestPrep.IdGenerator counterIds() {
+        return new AntigravityRequestPrep.IdGenerator() {
+            private long n = 0;
+
+            @Override
+            public String randomUuid() {
+                n += 1;
+                return "00000000-0000-4000-8000-00000000000" + n;
+            }
+        };
+    }
+
+    /** Exercises {@link AntigravityRequestPrep#generateSyntheticProjectId} (fixed Random + counter ids). */
+    @JSExport
+    public static String generateSyntheticProjectId() {
+        return AntigravityRequestPrep.generateSyntheticProjectId(counterIds(), FIXED_RANDOM);
+    }
+
+    /**
+     * Exercises the full {@link AntigravityRequestPrep#prepare} spine (JSON in -> JSON out), proving the
+     * request-preparation pipeline + all its reused ported helpers transpile. Deterministic stub seams.
+     */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String prepareAntigravityRequest(String url, String method, String headersJson, String body,
+                                                   String accessToken, String projectId, String headerStyle) {
+        JsonCodec json = new SimpleJsonCodec();
+
+        AntigravityRequestPrep.Input in = new AntigravityRequestPrep.Input();
+        in.url = url;
+        in.method = method;
+        in.headers = headersJson != null ? asMap(json.parse(headersJson)) : new java.util.LinkedHashMap<>();
+        in.body = body;
+        in.accessToken = accessToken;
+        in.projectId = projectId;
+        in.headerStyle = headerStyle;
+        in.fingerprint = null;
+
+        AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
+        deps.json = json;
+        deps.ids = counterIds();
+        deps.random = FIXED_RANDOM;
+        deps.hasher = STUB_HASHER;
+        deps.cachedSignatureLookup = (sessionId, text) -> null;
+        deps.signatureStore = new AntigravityRequestSignatures.SignatureStore() {
+            @Override
+            public Map<String, Object> get(String key) {
+                return null;
+            }
+
+            @Override
+            public boolean has(String key) {
+                return false;
+            }
+
+            @Override
+            public void delete(String key) {
+            }
+        };
+        deps.thinkingRecovery = new AntigravityRequestPrep.ThinkingRecovery() {
+            @Override
+            public Object analyzeConversationState(List<Object> contents) {
+                return new java.util.LinkedHashMap<>();
+            }
+
+            @Override
+            public boolean needsThinkingRecovery(Object state) {
+                return false;
+            }
+
+            @Override
+            public List<Object> closeToolLoopForThinking(List<Object> contents) {
+                return contents;
+            }
+        };
+        deps.logger = NOOP_LOGGER;
+        deps.keepThinking = false;
+        deps.pluginSessionId = "-00000000-0000-4000-8000-000000000000";
+        deps.selectedHeaders = new java.util.LinkedHashMap<>();
+
+        AntigravityRequestPrep.PrepareResult r = AntigravityRequestPrep.prepare(in, deps);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("request", r.request);
+        out.put("headers", r.headers);
+        out.put("body", r.body);
+        out.put("streaming", r.streaming);
+        out.put("effectiveModel", r.effectiveModel);
+        out.put("projectId", r.projectId);
+        out.put("sessionId", r.sessionId);
+        out.put("headerStyle", r.headerStyle);
+        return json.stringify(out);
     }
 
     @SuppressWarnings("unchecked")
