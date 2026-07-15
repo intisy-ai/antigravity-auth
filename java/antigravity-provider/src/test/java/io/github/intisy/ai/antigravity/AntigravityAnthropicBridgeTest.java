@@ -205,6 +205,24 @@ class AntigravityAnthropicBridgeTest {
         assertTrue(resp.body.contains("event: message_stop"));
     }
 
+    // ---- empty-content safety net (shape-mismatch guard) -----------------------------------------
+
+    @Test
+    void shapeMismatch_parsedLinesWithNoCandidates_fallsBackToUpstreamVerbatim() {
+        // Simulates an upstream envelope shape unwrapResponse doesn't anticipate: every data: line
+        // parses as valid JSON, but none carries a `candidates` array, so handleObj's `if (!cand)
+        // return` fires every time and the mapper would otherwise emit only the message_start/
+        // message_delta/message_stop scaffolding -- a look-alike 200 SSE with zero content blocks
+        // and no error signal. The guard must detect that and return the raw upstream instead.
+        HttpResponse upstream = upstream(
+                "data: {\"foo\":\"bar\"}\n\n" + "data: {\"anotherShape\":{\"nested\":true}}\n\n");
+        HttpResponse resp = AntigravityAnthropicBridge.geminiSseToAnthropic(JSON, "m", upstream, REPLAY_IDS);
+
+        assertSame(upstream, resp,
+                "a non-empty upstream that parsed but produced zero content blocks must fall back "
+                        + "to the raw upstream response, not a contentless look-alike SSE body");
+    }
+
     // ---- production id generator shape ------------------------------------------------------------
 
     @Test

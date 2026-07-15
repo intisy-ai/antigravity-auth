@@ -188,8 +188,10 @@ public final class AntigravityProvider implements Provider {
             case TERMINAL_ERROR:
                 return materializeTerminal(d.terminal);
             case BRIDGE_STREAM:
-                // TODO Phase 4: pipe the retained response through a Gemini->Anthropic SSE bridge
-                // (geminiToAnthropicStream). 3a returns the retained upstream body verbatim.
+                // Phase 4 shipped the Gemini->Anthropic SSE bridge (AntigravityAnthropicBridge,
+                // wired into the SERVE case above); the orchestrator no longer routes here in
+                // practice -- this arm stays as unreachable-defensive handling, matching SERVE_RAW's
+                // verbatim-passthrough contract if it ever is reached.
                 return upstreamResponseOrError(d.attemptRef);
             default:
                 return errorResponse(502, "api_error", "unrecognized antigravity decision: " + d.kind);

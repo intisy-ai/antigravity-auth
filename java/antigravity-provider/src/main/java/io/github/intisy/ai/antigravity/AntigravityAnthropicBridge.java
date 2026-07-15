@@ -51,6 +51,18 @@ import java.util.UUID;
  * throws), matching the class's own not-wired-yet safety net -- there is no TS equivalent of "the
  * whole bridge blew up" because the TS {@code TransformStream} can never throw past its own {@code
  * catch}.
+ *
+ * <h2>Empty-content safety net</h2>
+ * The {@code response}-unwrap above is inferred, not fixture-verified against a real cloudcode-pa
+ * capture. If the upstream envelope ever diverges further in a way {@link #unwrapResponse} doesn't
+ * anticipate, every {@code data:} line parses to valid JSON but never carries a candidate, so
+ * {@link AntigravityStreamMapper#handle} emits nothing but the {@code message_start}/{@code
+ * message_delta}/{@code message_stop} scaffolding -- a 200 {@code text/event-stream} with zero
+ * content blocks and no error signal. {@link #geminiSseToAnthropic} guards against exactly that:
+ * when the upstream body was non-empty and at least one line parsed, but the mapper opened zero
+ * content blocks, it falls back to the same verbatim-upstream contract as the exception case above
+ * (rather than a second, header-based signaling path) -- one fallback contract for both "blew up"
+ * and "silently produced nothing" keeps the caller-facing behavior uniform and already-tested.
  */
 public final class AntigravityAnthropicBridge {
 
@@ -92,6 +104,7 @@ public final class AntigravityAnthropicBridge {
         try {
             AntigravityStreamMapper mapper = new AntigravityStreamMapper(json, ids, requestedModel);
             StringBuilder out = new StringBuilder();
+            int parsedLineCount = 0;
             for (String rawLine : splitLines(upstreamGeminiSse.body)) {
                 String line = rawLine.trim();
                 if (line.isEmpty() || line.charAt(0) == ':' || !line.startsWith("data:")) {
@@ -107,6 +120,7 @@ public final class AntigravityAnthropicBridge {
                 } catch (RuntimeException e) {
                     continue; // anthropic-bridge.ts:191 -- skip partial/non-JSON
                 }
+                parsedLineCount++;
                 for (String event : mapper.handle(unwrapResponse(parsed))) {
                     out.append(event);
                 }
@@ -114,13 +128,30 @@ public final class AntigravityAnthropicBridge {
             for (String event : mapper.finish()) {
                 out.append(event);
             }
-            return buildResponse(out.toString());
+            String body = out.toString();
+
+            // Empty-content safety net (see class javadoc): the upstream had bytes AND at least one
+            // data: line parsed as JSON, but the mapper never opened a single content block --
+            // content_block_start is the cheapest reliable signal for "produced actual content"
+            // without reaching into AntigravityStreamMapper's private state. That combination means
+            // every parsed line fell through handleObj's `if (!cand) return`, which almost always
+            // means the envelope shape didn't match what unwrapResponse/the mapper expect, not that
+            // the model genuinely said nothing (a genuine empty turn is still exceedingly unlikely to
+            // produce zero candidates on every single chunk). Reuse the exact verbatim-upstream
+            // fallback already established for thrown exceptions instead of adding a second,
+            // header-based signaling path -- one contract for both failure shapes.
+            boolean upstreamHadContent = upstreamGeminiSse.body != null && !upstreamGeminiSse.body.trim().isEmpty();
+            boolean mapperProducedContent = body.contains("content_block_start");
+            if (upstreamHadContent && parsedLineCount > 0 && !mapperProducedContent) {
+                return upstreamGeminiSse;
+            }
+            return buildResponse(body);
         } catch (RuntimeException e) {
             return upstreamGeminiSse;
         }
     }
 
-    // transformer.ts:45-46's `parsed.response !== undefined` unwrap, adapted for cloudcode-pa's
+    // transformer.ts:46's `parsed.response !== undefined` unwrap, adapted for cloudcode-pa's
     // wrapped SSE shape (see class javadoc) -- only unwraps when `response` is itself an object, so
     // an already-unwrapped {candidates,...} chunk (no `response` key) passes through unchanged.
     private static Object unwrapResponse(Object parsed) {
