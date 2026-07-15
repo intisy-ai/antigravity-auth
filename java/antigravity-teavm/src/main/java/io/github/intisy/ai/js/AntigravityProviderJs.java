@@ -4,6 +4,9 @@ import io.github.intisy.ai.antigravity.AntigravityAuth;
 import io.github.intisy.ai.antigravity.AntigravityCatalog;
 import io.github.intisy.ai.antigravity.AntigravityFingerprint;
 import io.github.intisy.ai.antigravity.AntigravityFormatBridge;
+import io.github.intisy.ai.antigravity.AntigravityHandleOrchestrator;
+import io.github.intisy.ai.antigravity.AntigravityHandleRouting;
+import io.github.intisy.ai.antigravity.AntigravityProjectContext;
 import io.github.intisy.ai.antigravity.AntigravityRequestKeys;
 import io.github.intisy.ai.antigravity.AntigravityRequestPrep;
 import io.github.intisy.ai.antigravity.AntigravityRequestSignatures;
@@ -592,5 +595,138 @@ public final class AntigravityProviderJs {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> asMap(Object parsed) {
         return parsed instanceof Map ? (Map<String, Object>) parsed : new java.util.LinkedHashMap<>();
+    }
+
+    // ---- AntigravityHandleRouting / AntigravityProjectContext / Orchestrator (T7f) ----------------
+
+    /** Exercises {@link AntigravityHandleRouting#isAutoModel}. */
+    @JSExport
+    public static boolean isAutoModel(String model) {
+        return AntigravityHandleRouting.isAutoModel(model);
+    }
+
+    /** Exercises {@link AntigravityHandleRouting#rewriteModelInUrl}. */
+    @JSExport
+    public static String rewriteModelInUrl(String url, String model) {
+        return AntigravityHandleRouting.rewriteModelInUrl(url, model);
+    }
+
+    /** Exercises {@link AntigravityHandleRouting#retryAfterMsFromMessage}. */
+    @JSExport
+    public static String retryAfterMsFromMessage(String message) {
+        return String.valueOf(AntigravityHandleRouting.retryAfterMsFromMessage(message));
+    }
+
+    /** Exercises {@link AntigravityProjectContext#detectCodeAssistPlatform} via the Platform seam. */
+    @JSExport
+    public static String detectCodeAssistPlatform(String platform, String arch) {
+        return AntigravityProjectContext.detectCodeAssistPlatform(new AntigravityProjectContext.Platform() {
+            @Override
+            public String platform() {
+                return platform;
+            }
+
+            @Override
+            public String arch() {
+                return arch;
+            }
+        });
+    }
+
+    /** Exercises {@link AntigravityProjectContext#ensureProjectContext} short-circuit path (JSON out). */
+    @JSExport
+    public static String ensureProjectContextManaged(String refresh) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> auth = new java.util.LinkedHashMap<>();
+        auth.put("type", "oauth");
+        auth.put("access", "at");
+        auth.put("refresh", refresh);
+        AntigravityProjectContext.ProjectContextResult r = AntigravityProjectContext.ensureProjectContext(
+                auth, null, null,
+                (a, p, x) -> null, (a, t, p, x) -> null,
+                new AntigravityProjectContext.Platform() {
+                    @Override
+                    public String platform() {
+                        return "linux";
+                    }
+
+                    @Override
+                    public String arch() {
+                        return "x64";
+                    }
+                });
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("effectiveProjectId", r.effectiveProjectId);
+        out.put("refresh", r.auth.get("refresh"));
+        return json.stringify(out);
+    }
+
+    /**
+     * Drives a full {@link AntigravityHandleOrchestrator#handle} through the no-account terminal
+     * branch under TeaVM (proves the orchestrator + its JsonCodec body builders + attemptModel
+     * transpile), returning the synthetic 503 body. Seams are inline anonymous impls.
+     */
+    @JSExport
+    public static String handleNoAccountSmoke() {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityHandleOrchestrator.AccountOps accounts = new AntigravityHandleOrchestrator.AccountOps() {
+            @Override
+            public AntigravityHandleOrchestrator.Acquired acquire(String lane) {
+                return null;
+            }
+
+            @Override
+            public Long nextAvailableAt(String lane) {
+                return null;
+            }
+
+            @Override
+            public void reportError(String accountId, int attempt, String message) {
+            }
+
+            @Override
+            public void reportRateLimit(String accountId, String lane, long resetMs) {
+            }
+
+            @Override
+            public void reportSuccess(String accountId) {
+            }
+
+            @Override
+            public void reportProxyRateLimit(String accountId, boolean ipSuspected) {
+            }
+
+            @Override
+            public List<Map<String, Object>> list() {
+                return new ArrayList<>();
+            }
+
+            @Override
+            public void mutate(String accountId, AntigravityHandleOrchestrator.Mutator mutator) {
+            }
+        };
+        AntigravityHandleOrchestrator o = new AntigravityHandleOrchestrator(
+                json, SYSTEM_CLOCK, FIXED_RANDOM, counterIds(), accounts,
+                (url, body, method, headers, access, projectId, endpoint, headerStyle, account) -> null,
+                (accountId, prepared) -> null,
+                id -> null, (a, p, x) -> null, (a, t, p, x) -> null,
+                new AntigravityProjectContext.Platform() {
+                    @Override
+                    public String platform() {
+                        return "linux";
+                    }
+
+                    @Override
+                    public String arch() {
+                        return "x64";
+                    }
+                });
+        AntigravityHandleOrchestrator.RequestInputs in = new AntigravityHandleOrchestrator.RequestInputs();
+        in.ctxModel = "antigravity-claude-sonnet-4-6";
+        in.url = "https://cloudcode-pa.googleapis.com/v1internal/models/antigravity-claude-sonnet-4-6:generateContent";
+        in.method = "POST";
+        in.headers = new java.util.LinkedHashMap<>();
+        AntigravityHandleOrchestrator.HandleDecision d = o.handle(in);
+        return d.body;
     }
 }
