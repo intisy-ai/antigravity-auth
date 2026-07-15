@@ -111,12 +111,15 @@ class AntigravityServePathTest {
         assertTrue(hasRateLimitEntry(backend, "acct-a") || hasRateLimitEntry(backend, "acct-b"));
     }
 
-    // ---- scenario 4: happy path, single account ---------------------------------------------------
+    // ---- scenario 4: happy path, single account -----------------------------------------------------
 
     @Test
-    void happyPath_singleAccount_returnsUpstreamBodyRaw(@TempDir Path configDir) {
+    void happyPath_singleAccount_returnsTransformedResponseBody(@TempDir Path configDir) {
+        // Phase 3b: the upstream cloudcode-pa shape -- array-wrapped, "response"-nested -- must now
+        // come back UNWRAPPED (the array/`.response` envelope stripped by AntigravityResponseTransform),
+        // superseding 3a's "raw verbatim on SERVE" shim.
         ScriptedHttpClient http = new ScriptedHttpClient()
-                .enqueueOk(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}");
+                .enqueueOk(200, "[{\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}]");
 
         AntigravityBackend backend = registerTestBackend(configDir, http);
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-solo"));
@@ -125,6 +128,8 @@ class AntigravityServePathTest {
 
         assertEquals(200, response.status);
         assertTrue(response.body.contains("\"text\":\"ok\""));
+        assertFalse(response.body.trim().startsWith("["), "the cloudcode-pa array envelope must be unwrapped");
+        assertFalse(response.body.contains("\"response\""), "the .response wrapper key must be unwrapped");
         assertEquals(1, http.requests.size());
         assertFalse(hasRateLimitEntry(backend, "acct-solo"), "a successful attempt must never rate-limit its account");
     }
@@ -196,6 +201,9 @@ class AntigravityServePathTest {
             HttpResponse r = new HttpResponse();
             r.status = status;
             r.headers = new LinkedHashMap<>();
+            // Real cloudcode-pa responses are JSON; setting this lets AntigravityResponseTransform
+            // (Phase 3b) actually run on the SERVE path instead of taking its non-JSON passthrough.
+            r.headers.put("content-type", "application/json");
             r.body = body;
             queue.add(r);
             return this;

@@ -2,6 +2,7 @@ package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.shared.routing.HandlerCtx;
 import io.github.intisy.ai.shared.routing.Provider;
+import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.http.HttpRequest;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
@@ -32,8 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code HttpResponse}. The Anthropic&harr;Gemini bridge + {@code AntigravityRequestPrep} spine
  * that Phase 2 ran inline here now live in {@link AntigravityHostSeams.HostRequestPreparer} (moved,
  * not duplicated). Response-body transform (Gemini-&gt;Anthropic) for a {@code SERVE} decision is
- * Phase 3b -- here {@code SERVE}/{@code SERVE_RAW}/{@code BRIDGE_STREAM} all return the retained
- * upstream response verbatim.
+ * ported in Phase 3b via {@link AntigravityResponseTransform#transformServe}; {@code SERVE_RAW} and
+ * {@code BRIDGE_STREAM} still return the retained upstream response verbatim (streaming/SSE is
+ * Phase 4).
  *
  * <p>Shape discipline: {@code compileOnly project(":routing")} + {@code compileOnly
  * "io.github.intisy:jvm:0.1.0"} keep this module's own jar THIN (no {@code :routing}/{@code :jvm}
@@ -132,7 +134,7 @@ public final class AntigravityProvider implements Provider {
         in.log = log;
 
         try {
-            return materialize(orchestrator.handle(in));
+            return materialize(orchestrator.handle(in), backend.json);
         } catch (RuntimeException e) {
             return errorResponse(502, "api_error", "antigravity request failed: " + e.getMessage());
         }
@@ -157,12 +159,16 @@ public final class AntigravityProvider implements Provider {
 
     // ---- HandleDecision materialization (brief step 6) -------------------------------------------
 
-    private static HttpResponse materialize(AntigravityHandleOrchestrator.HandleDecision d) {
+    private static HttpResponse materialize(AntigravityHandleOrchestrator.HandleDecision d, JsonCodec json) {
         switch (d.kind) {
             case SERVE:
+                if (d.attemptRef instanceof HttpResponse) {
+                    return AntigravityResponseTransform.transformServe(json, (HttpResponse) d.attemptRef, d.params);
+                }
+                return errorResponse(502, "api_error", "antigravity upstream response missing");
             case SERVE_RAW:
-                // Phase 3a: the Gemini->Anthropic response transform for SERVE is Phase 3b -- both
-                // kinds return the retained upstream HttpResponse (d.attemptRef) verbatim here.
+                // Phase 4: SERVE_RAW is untransformed by design (raw passthrough decisions from the
+                // orchestrator) -- returns the retained upstream HttpResponse verbatim.
                 return upstreamResponseOrError(d.attemptRef);
             case SYNTHETIC:
                 HttpResponse synthetic = new HttpResponse();
