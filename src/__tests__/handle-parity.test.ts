@@ -14,7 +14,7 @@
 // cooldowns (Java bakes random=0.5; we pin Math.random=0.5 so the TS jitter matches it exactly).
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import crypto from "node:crypto";
+import crypto, { randomUUID as realRandomUuid } from "node:crypto";
 
 const H = vi.hoisted(() => {
   const harness: any = {
@@ -348,6 +348,52 @@ describe("handle parity: TS path vs Java-orchestrator delegation", () => {
       expect(jvOutbound, "outbound fetch requests must be byte-identical").toEqual(tsOutbound);
     });
   }
+});
+
+// CRITICAL-1 regression guard: fresh accounts (no discovered managed project, no pre-set synthetic id)
+// must mint a UNIQUE per-account synthetic project id — otherwise every such account gets the SAME
+// x-goog-user-project-equivalent (the outbound body `project` field) and gets correlated (index.ts:108-109).
+// Before the fix the live export baked FIXED_RANDOM(0.5)+counterIds, so this ALWAYS produced
+// "swift-spark-00000" for every account → this test FAILS. After injecting real Math.random/crypto.randomUUID
+// into the orchestrator it produces distinct ids → PASSES. Uses REAL entropy (not the deterministic pin).
+describe("CRITICAL-1: fresh-account synthetic project id is unique per account (no correlation)", () => {
+  it("two fresh accounts get DISTINCT persisted meta.syntheticProjectId AND distinct outbound body project on the Java path", async () => {
+    vi.spyOn(crypto, "randomUUID").mockImplementation(() => realRandomUuid()); // un-pin -> real entropy
+
+    const geminiReq = () => new Request(PROD + "/v1internal/models/antigravity-claude-sonnet-4-6:generateContent", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }] }),
+    });
+    // A fresh account: NO managedProjectId, NO syntheticProjectId -> resolveProjectId mints+persists a
+    // synthetic id, and (load+onboard both fail) the synthetic id becomes the effective project id in
+    // the outbound body. 3 loadCodeAssist endpoints + 3 onboardUser endpoints all 404, then the main 200.
+    const freshFetch = () => [
+      resp(404, jsonHeaders, "no"), resp(404, jsonHeaders, "no"), resp(404, jsonHeaders, "no"),
+      resp(404, jsonHeaders, "no"), resp(404, jsonHeaders, "no"), resp(404, jsonHeaders, "no"),
+      resp(200, jsonHeaders, '{"response":{"candidates":[]}}'),
+    ];
+
+    const results: Array<{ persisted: string; bodyProject: string }> = [];
+    for (const id of ["fresh1", "fresh2"]) {
+      resetForRun({
+        accounts: [{ id, enabled: true, refresh: "rt-" + id, expires: harness.now + 3_600_000, meta: { fingerprint: FIXED_FP } }],
+        acquire: [{ id, access: "tok-" + id }],
+        fetch: freshFetch(),
+      });
+      await handleViaJavaOrchestrator(geminiReq(), { model: "antigravity-claude-sonnet-4-6", log: () => {} });
+      const persisted = harness.accounts[0].meta.syntheticProjectId;
+      const mainOut = harness.outbound.find((o) => String(o.url).includes(":generateContent"));
+      let bodyProject = "";
+      try { bodyProject = JSON.parse(String(mainOut?.body ?? "{}")).project; } catch {}
+      results.push({ persisted, bodyProject });
+    }
+
+    expect(results[0].persisted, "account 1 must persist a synthetic id").toBeTruthy();
+    expect(results[1].persisted, "account 2 must persist a synthetic id").toBeTruthy();
+    expect(results[0].bodyProject, "synthetic id must reach the outbound body project field").toBe(results[0].persisted);
+    expect(results[1].persisted, "two fresh accounts must NOT share a synthetic project id (correlation)").not.toBe(results[0].persisted);
+    expect(results[1].bodyProject, "two fresh accounts must NOT share the outbound body project").not.toBe(results[0].bodyProject);
+  });
 });
 
 describe("flag routing", () => {

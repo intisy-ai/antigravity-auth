@@ -30,6 +30,8 @@ import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.Random;
 
 import org.teavm.jso.JSExport;
+import org.teavm.jso.JSFunctor;
+import org.teavm.jso.JSObject;
 import org.teavm.jso.core.JSPromise;
 import org.teavm.jso.core.JSString;
 
@@ -767,6 +769,19 @@ public final class AntigravityProviderJs {
      * @return a {@code Promise<string>} resolving with the serialized {@link
      *         AntigravityHandleOrchestrator.HandleDecision} (a discriminated union keyed by {@code kind})
      */
+    /** JS {@code () => number} (production: {@code Math.random}) -> the {@link Random} SPI. */
+    @JSFunctor
+    public interface JsRandomFn extends JSObject {
+        double next();
+    }
+
+    /** JS {@code () => string} (production: {@code crypto.randomUUID}) -> the {@link
+     *  AntigravityRequestPrep.IdGenerator} feeding {@code generateSyntheticProjectId}. */
+    @JSFunctor
+    public interface JsUuidFn extends JSObject {
+        JSString uuid();
+    }
+
     @JSExport
     public static JSPromise<JSString> handleAntigravityRequestAsync(
             String inputsJson,
@@ -777,15 +792,28 @@ public final class AntigravityProviderJs {
             JsProjectLoaderBridge.JsLoadFn jsProjectLoader,
             JsProjectOnboarderBridge.JsOnboardFn jsProjectOnboarder,
             JsRequestPreparerBridge.JsPrepareFn jsPreparer,
-            String autoCandidatesJson) {
+            String autoCandidatesJson,
+            JsRandomFn jsRandom,
+            JsUuidFn jsUuid) {
         return new JSPromise<>((resolve, reject) -> new Thread(() -> {
             try {
                 JsonCodec json = new SimpleJsonCodec();
                 Clock clock = parseClock(json, configJson);
                 AntigravityProjectContext.Platform platform = parsePlatform(json, configJson);
 
+                // Real entropy injected from JS (CRITICAL-1 fix): without these the baked FIXED_RANDOM
+                // (0.5) + counter ids made generateSyntheticProjectId a CONSTANT ("swift-spark-00000"),
+                // so every account lacking a discovered managed project minted + persisted the SAME
+                // x-goog-user-project-equivalent and got correlated (index.ts:108-109). The node smoke /
+                // parity harness pass deterministic stand-ins through these SAME seams.
+                Random random = () -> jsRandom.next();
+                AntigravityRequestPrep.IdGenerator ids = () -> {
+                    JSString u = jsUuid.uuid();
+                    return u == null ? "" : u.stringValue();
+                };
+
                 AntigravityHandleOrchestrator orchestrator = new AntigravityHandleOrchestrator(
-                        json, clock, FIXED_RANDOM, counterIds(),
+                        json, clock, random, ids,
                         new JsAccountOpsBridge(jsAcquire, jsAccountOps, json),
                         new JsRequestPreparerBridge(jsPreparer, json),
                         new JsAttemptExecutorBridge(jsExec, json),

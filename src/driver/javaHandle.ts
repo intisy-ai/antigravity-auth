@@ -23,6 +23,7 @@
 //   - NO response body ever crosses into Java: SERVE/SERVE_RAW return the RETAINED live Response
 //     verbatim (SSE/stream intact); only SYNTHETIC/TERMINAL bodies are built here from the decision.
 
+import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
 import { manager } from "./index.js";
 import { prepareAntigravityRequest, transformAntigravityResponse } from "../plugin/request.js";
@@ -267,9 +268,17 @@ async function runGeminiViaJava(request, ctx) {
     },
   };
 
+  // REAL entropy seams (CRITICAL-1): the orchestrator's Random SPI + the IdGenerator that feeds
+  // generateSyntheticProjectId must be production Math.random / crypto.randomUUID, so each account
+  // lacking a discovered managed project mints a UNIQUE synthetic x-goog-user-project (never the
+  // baked "swift-spark-00000" constant). This also restores the ±15s MODEL_CAPACITY cooldown jitter.
+  const jsRandom = () => Math.random();
+  const jsUuid = () => crypto.randomUUID();
+
   const { handleAntigravityRequestAsync } = await loadOrchestrator();
   const decisionJson = await handleAntigravityRequestAsync(
     inputsJson, configJson, jsExec, jsAcquire, jsAccountOps, jsLoad, jsOnboard, jsPreparer, autoCandidatesJson,
+    jsRandom, jsUuid,
   );
   const decision = JSON.parse(decisionJson);
   return materializeDecision(decision, responses, log);

@@ -166,9 +166,16 @@ function rate(attemptRef) {
   };
 }
 
+// Deterministic entropy stand-ins passed through the SAME jsRandom/jsUuid seams the production
+// javaHandle wires to Math.random / crypto.randomUUID (kept fixed here so the smoke stays byte-parity
+// with the T7f snapshots; the smoke's accounts already carry syntheticProjectId, so these don't fire).
+const FIXED_RANDOM = () => 0.5;
+const FIXED_UUID = () => "00000000-0000-4000-8000-000000000001";
+
 async function call(f, inputs, autoCandidatesJson = null) {
   return JSON.parse(await handleAntigravityRequestAsync(
-    inputs, CONFIG, f.jsExec, f.jsAcquire, f.jsAccountOps, f.jsLoad, f.jsOnboard, f.jsPreparer, autoCandidatesJson));
+    inputs, CONFIG, f.jsExec, f.jsAcquire, f.jsAccountOps, f.jsLoad, f.jsOnboard, f.jsPreparer, autoCandidatesJson,
+    FIXED_RANDOM, FIXED_UUID));
 }
 
 async function run() {
