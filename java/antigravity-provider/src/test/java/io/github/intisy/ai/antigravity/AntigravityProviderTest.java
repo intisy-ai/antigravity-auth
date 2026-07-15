@@ -12,19 +12,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Phase 2 offline test for {@link AntigravityProvider#handle}: the has-no-account path must
- * return a clear Anthropic-shaped auth error WITHOUT attempting any network call (no accounts.json
- * exists under the temp {@code configDir}, so {@code AccountManager#acquire} returns {@code null}
- * before {@link AntigravityRequestPrep#prepare} or the {@code HttpClient} SPI ever run). This is
- * the only Phase 2 path exercisable without a real upstream/network dependency -- the
- * account-found -> prepare -> single-POST path needs a real (or seeded) refresh token and hits
- * Google's OAuth endpoint via the self-assembled {@code UrlConnectionHttpClient}, so it is not
- * unit-tested here (see the Phase 2 report for the manual/self-review reasoning).
+ * Phase 3a offline test for {@link AntigravityProvider#handle}: the has-no-account path must
+ * return a clear, well-formed error WITHOUT attempting any network call (no accounts.json exists
+ * under the temp {@code configDir}, so {@code AccountManager#acquire} returns {@code null} and
+ * {@link AntigravityHandleOrchestrator#attemptModel} materializes its own "no available account"
+ * SYNTHETIC 503 decision before {@link AntigravityRequestPrep#prepare} or the {@code HttpClient}
+ * SPI ever run). This supersedes the Phase 2 ad-hoc 401 -- the orchestrator now owns this decision
+ * (see {@code .superpowers/sdd/phase-3a-brief.md}); the full rotation/rate-limit/terminal-error
+ * paths are covered by {@code AntigravityServePathTest}'s scripted-HttpClient scenarios.
  */
 class AntigravityProviderTest {
 
     @Test
-    void handle_noAccountConfigured_returnsAnthropicAuthErrorWithoutNetworkCall(@TempDir Path configDir) {
+    void handle_noAccountConfigured_returnsClearErrorWithoutNetworkCall(@TempDir Path configDir) {
         HttpRequest request = new HttpRequest();
         request.method = "POST";
         request.url = "/v1/messages";
@@ -36,10 +36,10 @@ class AntigravityProviderTest {
 
         HttpResponse response = new AntigravityProvider().handle(request, ctx);
 
-        assertEquals(401, response.status);
+        assertEquals(503, response.status);
         assertEquals("application/json", response.headers.get("content-type"));
-        assertTrue(response.body.contains("\"type\":\"authentication_error\""));
-        assertTrue(response.body.contains("no antigravity account"));
+        assertTrue(response.body.contains("\"error\""));
+        assertTrue(response.body.contains("No available antigravity account"));
     }
 
     @Test

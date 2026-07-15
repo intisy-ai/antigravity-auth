@@ -12,6 +12,7 @@ import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.HttpClient;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Random;
+import io.github.intisy.ai.shared.spi.Store;
 import io.github.intisy.ai.shared.store.AccountStore;
 
 import java.nio.file.Paths;
@@ -51,9 +52,23 @@ final class AntigravityBackend {
     final Clock clock;
     final Random random;
     final HttpClient http;
+    final Store store;
+    final AccountStore accountStore;
     final AccountManager accounts;
 
     private AntigravityBackend(String configDir) {
+        this(configDir, new UrlConnectionHttpClient());
+    }
+
+    /**
+     * Phase 3a testability seam (see {@code .superpowers/sdd/phase-3a-brief.md} "Testability"):
+     * lets a test inject a scripted {@link HttpClient} while everything else self-assembles
+     * exactly like the production path (real {@code FileStore}, so a test can seed
+     * {@code accounts.json} under a temp {@code configDir} via {@link #accountStore}). NOT
+     * memoized in {@link #CACHE} -- every call builds a fresh instance, and production call sites
+     * never see this constructor (package-private, only {@link #forConfigDir} is public API).
+     */
+    AntigravityBackend(String configDir, HttpClient http) {
         FileStore store = (configDir != null && !configDir.trim().isEmpty())
                 ? new FileStore(Paths.get(configDir))
                 : FileStore.fromEnv();
@@ -61,9 +76,10 @@ final class AntigravityBackend {
         this.json = new GsonJsonCodec();
         this.clock = new SystemClock();
         this.random = new SecureRandomAdapter();
-        this.http = new UrlConnectionHttpClient();
+        this.http = http;
+        this.store = store;
 
-        AccountStore accountStore = new AccountStore(store, json);
+        this.accountStore = new AccountStore(store, json);
 
         OAuthConfig oauth = new OAuthConfig();
         oauth.tokenUrl = GOOGLE_TOKEN_URL;
@@ -80,5 +96,23 @@ final class AntigravityBackend {
     static AntigravityBackend forConfigDir(String configDir) {
         String key = configDir != null ? configDir : "";
         return CACHE.computeIfAbsent(key, AntigravityBackend::new);
+    }
+
+    /** Test-only factory: a fresh (unmemoized) backend with an injected {@link HttpClient}. */
+    static AntigravityBackend forTest(String configDir, HttpClient http) {
+        return new AntigravityBackend(configDir, http);
+    }
+
+    /**
+     * Test-only: pre-seeds {@link #CACHE} so a subsequent {@link #forConfigDir} call for this
+     * {@code configDir} (e.g. from inside {@code AntigravityProvider#handle}) resolves to the
+     * given (already-built, presumably {@link #forTest}) backend instead of self-assembling a
+     * production one. Lets a test drive {@code AntigravityProvider#handle} end-to-end with a
+     * scripted {@link HttpClient} WITHOUT changing any production call site -- {@link
+     * #forConfigDir} itself is untouched; this only ever matters when a test has pre-populated the
+     * map for its own (temp-directory) key first.
+     */
+    static void registerForTest(String configDir, AntigravityBackend backend) {
+        CACHE.put(configDir != null ? configDir : "", backend);
     }
 }
