@@ -2,11 +2,14 @@ package io.github.intisy.ai.js;
 
 import io.github.intisy.ai.antigravity.AntigravityAuth;
 import io.github.intisy.ai.antigravity.AntigravityCatalog;
+import io.github.intisy.ai.antigravity.AntigravityFormatBridge;
 import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravityResponseParse;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
+import io.github.intisy.ai.antigravity.AntigravityStreamMapper;
+import io.github.intisy.ai.antigravity.AntigravityStreamTransform;
 import io.github.intisy.ai.antigravity.AntigravityThinkingBlocks;
 import io.github.intisy.ai.antigravity.AntigravityThinkingConfig;
 import io.github.intisy.ai.antigravity.AntigravityToolPairing;
@@ -346,6 +349,96 @@ public final class AntigravityProviderJs {
         out.put("contentsFixed", result.contentsFixed);
         out.put("messagesFixed", result.messagesFixed);
         return json.stringify(out);
+    }
+
+    // ---- AntigravityFormatBridge (T7d) ------------------------------------------------------------
+
+    /** Exercises {@link AntigravityFormatBridge#anthropicToGemini} (real cleaner injected) via JsonCodec. */
+    @JSExport
+    public static String anthropicToGemini(String bodyJson, String model) {
+        JsonCodec json = new SimpleJsonCodec();
+        return json.stringify(AntigravityFormatBridge.anthropicToGemini(json, asMap(json.parse(bodyJson)), model, REAL_CLEANER));
+    }
+
+    /** Exercises {@link AntigravityFormatBridge#supportsThinking}. */
+    @JSExport
+    public static boolean supportsThinking(String model) {
+        return AntigravityFormatBridge.supportsThinking(model);
+    }
+
+    /** Exercises {@link AntigravityFormatBridge#isAnthropicMessages}. */
+    @JSExport
+    public static boolean isAnthropicMessages(String url) {
+        return AntigravityFormatBridge.isAnthropicMessages(url);
+    }
+
+    // ---- AntigravityStreamMapper (T7d) ------------------------------------------------------------
+
+    // Deterministic id source for the transpilability proof (production ids are minted in the TS shell).
+    private static final AntigravityStreamMapper.IdGenerator FIXED_IDS = new AntigravityStreamMapper.IdGenerator() {
+        @Override
+        public String newMessageId() {
+            return "msg_js";
+        }
+
+        @Override
+        public String newToolId() {
+            return "toolu_js";
+        }
+    };
+
+    /** Exercises the {@link AntigravityStreamMapper} state machine: feed each parsed object, then finish. */
+    @JSExport
+    @SuppressWarnings("unchecked")
+    public static String geminiToAnthropicStream(String model, String objectsJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityStreamMapper mapper = new AntigravityStreamMapper(json, FIXED_IDS, model);
+        StringBuilder sb = new StringBuilder();
+        Object parsed = objectsJson != null ? json.parse(objectsJson) : null;
+        if (parsed instanceof List) {
+            for (Object obj : (List<Object>) parsed) {
+                for (String ev : mapper.handle(obj)) sb.append(ev);
+            }
+        }
+        for (String ev : mapper.finish()) sb.append(ev);
+        return sb.toString();
+    }
+
+    // ---- AntigravityStreamTransform (T7d) ---------------------------------------------------------
+
+    /** Exercises {@link AntigravityStreamTransform#hashString} (DJB2, {@code >>> 0}, base16). */
+    @JSExport
+    public static String hashString(String str) {
+        return AntigravityStreamTransform.hashString(str != null ? str : "");
+    }
+
+    /** Exercises {@link AntigravityStreamTransform#transformStreamingPayload} (identity transform) via JsonCodec. */
+    @JSExport
+    public static String transformStreamingPayload(String payload) {
+        return AntigravityStreamTransform.transformStreamingPayload(new SimpleJsonCodec(), payload, r -> r);
+    }
+
+    /** Exercises {@link AntigravityStreamTransform#deduplicateThinkingText} (data-URL image sink) via JsonCodec. */
+    @JSExport
+    public static String deduplicateThinkingText(String responseJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object response = responseJson != null ? json.parse(responseJson) : null;
+        AntigravityStreamTransform.ThoughtBuffer buffer = AntigravityStreamTransform.createThoughtBuffer();
+        return json.stringify(AntigravityStreamTransform.deduplicateThinkingText(response, buffer, null, DATA_URL_SINK));
+    }
+
+    /** Exercises {@link AntigravityStreamTransform#transformSseLine} (cache + identity transform) via JsonCodec. */
+    @JSExport
+    public static String transformSseLine(String line, String sessionKey) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityStreamTransform.ThoughtBuffer thoughtBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.ThoughtBuffer sentBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.SignatureStore store = (k, t, s) -> { };
+        AntigravityStreamTransform.DebugState debugState = new AntigravityStreamTransform.DebugState(false);
+        return AntigravityStreamTransform.transformSseLine(
+                json, line, store, thoughtBuffer, sentBuffer,
+                null, null, r -> r, DATA_URL_SINK,
+                sessionKey, null, true, null, debugState);
     }
 
     @SuppressWarnings("unchecked")
