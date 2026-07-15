@@ -133,6 +133,7 @@ public final class AntigravityProvider implements Provider {
         input.url = "https://cloudcode-pa.googleapis.com/v1internal/models/" + model + ":generateContent";
         input.method = "POST";
         input.headers = new LinkedHashMap<>();
+        input.headers.put("content-type", "application/json");
         input.body = backend.json.stringify(geminiBody);
         input.accessToken = acquired.access;
         input.projectId = projectId;

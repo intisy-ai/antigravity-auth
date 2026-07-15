@@ -68,7 +68,7 @@ final class AntigravityBackend {
         OAuthConfig oauth = new OAuthConfig();
         oauth.tokenUrl = GOOGLE_TOKEN_URL;
         oauth.clientId = ANTIGRAVITY_CLIENT_ID;
-        String cs = System.getenv("ANTIGRAVITY_CLIENT_SECRET"); oauth.clientSecret = cs != null ? cs : "";
+        oauth.clientSecret = System.getenv("ANTIGRAVITY_CLIENT_SECRET"); // null when unset -> OAuthConfig omits client_secret
 
         ManagerOptions opts = new ManagerOptions();
         opts.oauth = oauth;
