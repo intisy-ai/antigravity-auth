@@ -63,6 +63,19 @@ const manager = new AccountManager(PROVIDER_ID, {
   isAvailable: (account) => !(account.meta && account.meta.verificationRequired),
 });
 
+// Exported so the flag-gated Java-orchestrator delegation shell (javaHandle.ts) and the parity
+// harness share this ONE AccountManager instance (state consistency). Additive; no runtime effect.
+export { manager };
+
+// DORMANT delegation flag (T7g2): when true, `handle` delegates its decision loop to the
+// TeaVM-compiled Java orchestrator instead of the pure-TS path. Default OFF — landing the delegation
+// must NOT change live `oc`. The env var HUB_ANTIGRAVITY_JAVA_HANDLE=1 forces it on for agentbox
+// testing without editing config; otherwise the persisted setting decides. The flip is T7h.
+function useJavaOrchestrator() {
+  if (process.env.HUB_ANTIGRAVITY_JAVA_HANDLE === "1") return true;
+  return getConfigValue("use_java_orchestrator") === true;
+}
+
 // reconstruct the OAuthAuthDetails the existing project/transform code expects;
 // the legacy refresh string packs the project ids that ensureProjectContext reads.
 function buildAuth(account, access) {
@@ -395,6 +408,13 @@ function maybeMaintainVersions(log) {
 async function handle(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   maybeMaintainVersions(log);
+  // DORMANT delegation gate (T7g2): default OFF. When ON, run the whole decision loop through the
+  // TeaVM-compiled Java orchestrator instead. The module — and the TeaVM ESM it pulls in — is
+  // imported ONLY here and ONLY when ON, so a flag-OFF `oc` never loads or executes any of it.
+  if (useJavaOrchestrator()) {
+    const { handleViaJavaOrchestrator } = await import("./javaHandle.js");
+    return handleViaJavaOrchestrator(request, ctx);
+  }
   if (isAnthropicMessages(request.url)) return handleAnthropicMessages(request, ctx);
   const url = request.url;
   let bodyText;
@@ -484,6 +504,12 @@ const settingsGroups = [
     fields: [
       { key: "default_retry_after_seconds", label: "Base retry delay (s)", type: "number", min: 1, max: 300, hint: "Base cooldown after a transient account error; doubles per attempt (AccountManager backoff)." },
       { key: "max_backoff_seconds", label: "Max backoff (s)", type: "number", min: 5, max: 300, hint: "Caps how long the per-account error backoff can grow." },
+    ],
+  },
+  {
+    title: "Experimental",
+    fields: [
+      { key: "use_java_orchestrator", label: "Use Java orchestrator (experimental)", type: "bool", hint: "Route requests through the TeaVM-compiled Java handle orchestrator instead of the TS path. Default off; env HUB_ANTIGRAVITY_JAVA_HANDLE=1 also forces it on." },
     ],
   },
   {
