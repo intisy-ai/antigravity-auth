@@ -1,59 +1,220 @@
 // @ts-nocheck
-// T7g2 — the DORMANT delegation shell that runs antigravity-auth's `handle` decision loop through
-// the TeaVM-compiled Java orchestrator (`AntigravityHandleOrchestrator`, exported as
-// `handleAntigravityRequestAsync` from :antigravity-teavm) instead of the pure-TS path in index.ts.
-//
-// This module is loaded ONLY when the flag is ON (index.ts dynamically imports it inside `handle`),
-// and the TeaVM ESM is loaded ONLY on the first delegated request (lazily-memoized dynamic import
-// below). So with the flag OFF nothing here — and none of the ~MB of TeaVM output — ever evaluates:
-// zero runtime risk to live `oc` (mirrors claude-code-auth's T6c2 javaHandle).
+// The delegation shell that runs antigravity-auth's `handle` decision loop (and the account-view
+// quota/catalog helpers below) through the TeaVM-compiled Java orchestrator
+// (`AntigravityHandleOrchestrator` + `AntigravityProviderJs`'s other exports from :antigravity-teavm)
+// instead of duplicated TS. index.ts's `handle` dynamically imports this module on the first request;
+// the TeaVM ESM itself is loaded via the lazily-memoized `loadOrchestrator()` below, so the ~MB
+// compiled bundle is never bundled statically and only evaluates once actually needed.
 //
 // Split of responsibility (mirrors AntigravityHandleOrchestrator's javadoc):
 //   - The Java orchestrator owns EVERY decision: model resolve + Auto candidate walk, the
 //     account/endpoint retry+rotation loop, project-context discovery control flow, the
 //     status→action branching (rate-limit classify / rotate / fall-through), and the terminal
 //     selection (gemini-cli vs antigravity quota-reset).
-//   - This TS shell owns only host I/O: the fetch + IP-proxy transport (jsExec, reproducing
+//   - This TS shell owns host I/O: the fetch + IP-proxy transport (jsExec, reproducing
 //     index.ts:156-218 verbatim), account acquisition/reporting over the shared `manager`
 //     (jsAcquire/jsAccountOps), the project fetch loops (jsLoad/jsOnboard = TS
-//     loadManagedProject/onboardManagedProject), the TS request prepare (jsPreparer =
-//     prepareAntigravityRequest — the T7g2 controller decision), and building the final Response
-//     from the orchestrator's decision (transformAntigravityResponse / chatError + its locale date
-//     format / the geminiToAnthropicStream anthropic bridge).
+//     loadManagedProject/onboardManagedProject), and building the final Response from the
+//     orchestrator's decision (transformAntigravityResponse / chatError + its locale date format).
 //   - NO response body ever crosses into Java: SERVE/SERVE_RAW return the RETAINED live Response
 //     verbatim (SSE/stream intact); only SYNTHETIC/TERMINAL bodies are built here from the decision.
+//
+// Task 3 (TeaVM de-dup): `jsPreparer` now calls the Java PRODUCTION export
+// `prepareAntigravityRequestProd` (see `prepareViaJava` below) instead of the TS
+// `prepareAntigravityRequest`, injecting real host seams (sha256 hasher, the disk-backed signature
+// cache lookup, a `defaultSignatureStore` adapter, real Math.random/crypto.randomUUID). The
+// Anthropic bridge (`handleAnthropicMessagesViaJava`) now calls the Java `anthropicToGemini` export
+// and pipes through `javaStream.ts`'s `makeAnthropicStream` (Java `newStreamMapper`) instead of the
+// TS `anthropicToGemini`/`geminiToAnthropicStream`.
+// Task 3c: closes the 3 Task-3 gaps. (1) `prepareAntigravityRequestProd` now takes `endpointOverride`
+// directly (the `applyEndpointOverride` URL-substitution workaround is gone). (2)
+// `claudeToolHardening`/`claudePromptAutoCaching` are read from the SAME `loadConfig()` the TS path
+// uses and threaded through. (3) `materializeDecision`'s SERVE case now routes through the Java
+// response-transform exports (`transformServeBodyProd` / `newResponseSseTransformer`, real-seamed:
+// real `defaultSignatureStore`, real `processImageData`, real `cacheSignature`/`getCachedSignature`,
+// real `getKeepThinking()`) instead of the retained TS `transformAntigravityResponse` — see
+// javaStream.ts's `makeResponseTransformStream` for the streaming shell.
 
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
 import { manager } from "./index.js";
-import { prepareAntigravityRequest, transformAntigravityResponse } from "../plugin/request.js";
+import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
-import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
-import { loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
+import { isAnthropicMessages } from "../plugin/anthropic-bridge.js";
+import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
+import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
+import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
+import { processImageData } from "../plugin/image-saver.js";
+import { isGemini3Model } from "../plugin/transform-java.js";
+import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
-const PROVIDER_ID = "antigravity";
-
-// Prepare options (config/antigravity.json) read once, exactly like index.ts's module-load `config`.
+// Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives
+// both paths identically; a runtime config edit needs a process restart for either path).
 let config;
 try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 
-// Dormancy marker: bumped once when this (flag-ON-only) module first evaluates. Lets the
-// parity/dormancy test prove this module — and the TeaVM orchestrator it pulls in — is never loaded
-// while the flag is OFF. Harmless no-op counter in production.
-const globalScope = globalThis as any;
-globalScope.__ANTIGRAVITY_JAVA_HANDLE_MODULE_LOADS = (globalScope.__ANTIGRAVITY_JAVA_HANDLE_MODULE_LOADS || 0) + 1;
+const PROVIDER_ID = "antigravity";
 
 // Lazily-memoized dynamic import of the TeaVM ESM — staged to src/generated/ by core/teavm-build.mjs
-// at build time and bundled (deferred) by esbuild.
+// at build time and bundled (deferred) by esbuild. Exported (read-only usage) so the parity test can
+// load the same memoized module instance without re-importing it.
 let orchestratorPromise = null;
-function loadOrchestrator() {
-  if (!orchestratorPromise) orchestratorPromise = import("../generated/antigravity-orchestrator.teavm.js");
+let orchestratorLoaded = null;   // synchronously readable once loadOrchestrator() resolves (Task 7a)
+export function loadOrchestrator() {
+  if (!orchestratorPromise) {
+    orchestratorPromise = import("../generated/antigravity-orchestrator.teavm.js").then((m) => (orchestratorLoaded = m));
+  }
   return orchestratorPromise;
+}
+// For callback contracts that can't await (accounts-controller.ts's synchronous status/availableAt/
+// quota view) — null until the first loadOrchestrator() resolves.
+export function getLoadedOrchestrator() {
+  return orchestratorLoaded;
+}
+
+// Task 7a — routes fetchModels' catalog build through the Java buildCatalog export
+// (AntigravityCatalog.buildAntigravityCatalog), replacing the deleted TS buildAntigravityCatalog.
+export async function buildCatalogViaJava(payload) {
+  const orchestrator = await loadOrchestrator();
+  return JSON.parse(orchestrator.buildCatalog(JSON.stringify(payload)));
+}
+
+// Task 7b-2 — generateSyntheticProjectId's real-seam replacement (login.ts's checkAntigravityAccess
+// verify-ping + accounts-controller.ts's verify() diagnostic; both ad-hoc, unpersisted ids).
+export async function generateSyntheticProjectIdViaJava() {
+  const orchestrator = await loadOrchestrator();
+  return orchestrator.generateSyntheticProjectIdProd(jsRandom, jsUuid);
+}
+
+// Task 7b-2 — fetchModels' project-id resolution, routed through the SAME Java
+// AntigravityHandleOrchestrator.resolveProjectId the live SERVE path (runGeminiViaJava) already uses
+// — no re-implementation. jsLoad/jsOnboard mirror runGeminiViaJava's (project.ts's loadManagedProject/
+// onboardManagedProject), fixed to the ALREADY-SELECTED `proxy` (fetchModels picks one proxy up front,
+// unlike the per-attempt-account proxy the SERVE loop resolves via a closure).
+export async function resolveProjectIdViaJava(manager, account, access, log, proxy) {
+  const orchestrator = await loadOrchestrator();
+  const jsLoad = async (accessToken, projectId) => {
+    const payload = await loadManagedProject(accessToken, projectId || undefined, proxy || undefined);
+    return payload ? JSON.stringify(payload) : null;
+  };
+  const jsOnboard = async (accessToken, tierId, projectId) => {
+    const managedId = await onboardManagedProject(accessToken, tierId, projectId || undefined, undefined, undefined, proxy || undefined);
+    return managedId ? JSON.stringify(managedId) : null;
+  };
+  const configJson = JSON.stringify({ platform: process.platform, arch: process.arch });
+  const resultJson = await orchestrator.resolveProjectIdProd(
+    JSON.stringify(account), access, jsRandom, jsUuid, jsLoad, jsOnboard, configJson,
+  );
+  const result = JSON.parse(resultJson);
+  const meta = result.meta || {};
+  // Mirrors runGeminiViaJava's jsAccountOps.mutate: the orchestrator only ever sets these two fields.
+  manager.mutate(account.id, (a) => {
+    a.meta = a.meta || {};
+    if ("syntheticProjectId" in meta) a.meta.syntheticProjectId = meta.syntheticProjectId;
+    if ("managedProjectId" in meta) a.meta.managedProjectId = meta.managedProjectId;
+  });
+  return result.projectId;
 }
 
 // index.ts:82 — the antigravity rate-limit statuses.
 function isRateLimitStatus(status) {
   return status === 429 || status === 503 || status === 529;
+}
+
+// ---- Task 3: real host seams for prepareAntigravityRequestProd / cacheSignaturesFromResponse -----
+// REAL entropy (CRITICAL-1): production Math.random / crypto.randomUUID, never baked.
+const jsRandom = () => Math.random();
+const jsUuid = () => crypto.randomUUID();
+// request.ts:112-114's exact sha256 (Java truncates to 16 hex chars itself; this seam returns the
+// full hex, matching AntigravityRequestKeys.Hasher's contract).
+const jsHasher = (input) => crypto.createHash("sha256").update(input, "utf8").digest("hex");
+// cache.ts's getCachedSignature -> JsCacheLookupFn (null, not undefined, on a miss).
+const jsCacheLookup = (sessionId, text) => getCachedSignature(sessionId, text) ?? null;
+
+// Adapter: defaultSignatureStore (stores/signature-store.ts) is object-shaped
+// (get(key)->SignedThinking|undefined, set(key,{text,signature}), has, delete); JsSignatureStoreFns
+// needs get(key)->JSON string|null, set(key,text,signature) (3-arg). This bridges the two shapes
+// without changing the underlying store.
+function makeJsSignatureStore(store) {
+  return {
+    get(key) {
+      const v = store.get(key);
+      return v ? JSON.stringify(v) : null;
+    },
+    has(key) { return store.has(key); },
+    delete(key) { store.delete(key); },
+    set(sessionKey, text, signature) { store.set(sessionKey, { text, signature }); },
+  };
+}
+const jsSignatureStore = makeJsSignatureStore(defaultSignatureStore);
+
+// Task 3c gap 3 seams — the real response-transform seams (mirrors the prepare seams above).
+// cache.ts's cacheSignature -> JsCacheSignatureFn (the on-disk signature-cache WRITE; distinct from
+// jsCacheLookup above, which is the READ).
+const jsCacheSignatureFn = (sessionKey, text, signature) => cacheSignature(sessionKey, text, signature);
+// image-saver.ts's processImageData -> JsImageSinkFn: real fs write to ~/.opencode|.claude/generated-
+// images/, returning a markdown link (never DATA_URL_SINK's fake data-URL stand-in). A missing
+// mimeType/data arrives as "" (Java's bridge never sends raw null across the boundary); processImageData's
+// own `mimeType || 'image/png'` / `if (!data) return null` treat "" and undefined identically.
+const jsImageSink = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
+
+// Task 3d — the Gemini-3 SSE-reconnect thought-dedup seam: a process-lifetime `Set<string>` (created
+// once, never reset) feeding the Java SERVE streaming transform, mirroring the deleted TS path's own
+// module-private `sessionDisplayedThinkingHashes` (request.ts, removed with the rest of the pure-TS
+// decision loop — this is now the only implementation).
+const javaSessionDisplayedThinkingHashes = new Set();
+const jsThoughtDedup = {
+  has(hash) { return javaSessionDisplayedThinkingHashes.has(hash); },
+  add(hash) { javaSessionDisplayedThinkingHashes.add(hash); },
+};
+
+// request.ts's regex-extracted `rawModel` (the debug-only `requestedModel` field) — Java's prod
+// export intentionally doesn't return it (only the driver-relevant fields), so it's re-derived here
+// from the SAME url the export parses; this is substring extraction, not decision logic.
+function extractRequestedModel(url) {
+  const m = typeof url === "string" ? url.match(/\/models\/([^:]+):(\w+)/) : null;
+  return m ? m[1] : undefined;
+}
+
+// transformAntigravityResponse's debugText resolution (request.ts:1735-1740), specialized to this
+// call site: materializeDecision never passes debugLines (the debug-TUI transcript), matching the
+// pure-TS driver's OWN call site (driver/index.ts:235-239, also debugLines-less) — so
+// `isDebugTuiEnabled() && Array.isArray(debugLines) && ...` is always false here, leaving only the
+// getKeepThinking() fallback. Returns "" (not undefined) for "no debug text" — the Java exports treat
+// an empty string as "none", matching JS truthiness.
+function computeDebugText() {
+  return getKeepThinking() ? SYNTHETIC_THINKING_PLACEHOLDER : "";
+}
+
+// Calls the Java prod prepare export and reassembles the SAME result shape
+// `prepareAntigravityRequest` (TS) returns, so callers (jsPreparer + the parity test) can treat them
+// interchangeably. `orchestrator` is the already-resolved loadOrchestrator() module.
+export function prepareViaJava(
+  orchestrator, url, method, headersJson, bodyText,
+  accessToken, projectId, endpointOverride, headerStyle, fingerprint,
+  claudeToolHardening = DEFAULT_CONFIG.claude_tool_hardening,
+  claudePromptAutoCaching = DEFAULT_CONFIG.claude_prompt_auto_caching,
+) {
+  const fingerprintJson = JSON.stringify(fingerprint ?? null);
+  const resultJson = orchestrator.prepareAntigravityRequestProd(
+    url, method, headersJson, bodyText ?? "",
+    accessToken, projectId, headerStyle, fingerprintJson,
+    getKeepThinking(), getPluginSessionId(), endpointOverride ?? "",
+    !!claudeToolHardening, !!claudePromptAutoCaching,
+    jsRandom, jsUuid, jsHasher, jsCacheLookup, jsSignatureStore,
+  );
+  const r = JSON.parse(resultJson);
+  return {
+    request: r.request,
+    init: { method, headers: new Headers(r.headers || {}), body: r.body },
+    streaming: !!r.streaming,
+    requestedModel: extractRequestedModel(url),
+    effectiveModel: r.effectiveModel,
+    projectId: r.projectId,
+    endpoint: r.request,
+    sessionId: r.sessionId,
+    headerStyle: r.headerStyle,
+  };
 }
 
 // Top-level delegated entry: mirror index.ts's routing — the Anthropic Messages bridge, else the
@@ -68,6 +229,8 @@ export async function handleViaJavaOrchestrator(request, ctx) {
 // for the inner request of the Anthropic bridge.
 async function runGeminiViaJava(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
+  const orchestrator = await loadOrchestrator();
+  const { handleAntigravityRequestAsync } = orchestrator;
 
   let bodyText;
   try { bodyText = await request.clone().text(); } catch { bodyText = undefined; }
@@ -111,24 +274,25 @@ async function runGeminiViaJava(request, ctx) {
     return JSON.stringify({ accountId: acquired.account.id, access: acquired.access || "", account: acquired.account });
   };
 
-  // jsPreparer — the T7g2 CONTROLLER DECISION: run the EXISTING TS prepareAntigravityRequest
-  // (index.ts:163-168), NOT the Java prepare. Retains the prepared {request, init} host-side and
-  // hands Java only an opaque requestRef + the response-transform params. A prepare throw returns
-  // null, which the JsRequestPreparerBridge re-raises so the orchestrator skips the endpoint
-  // (index.ts:169).
+  // jsPreparer — Task 3: calls the Java PRODUCTION export prepareAntigravityRequestProd (via
+  // prepareViaJava) instead of the TS prepareAntigravityRequest. Retains the prepared {request, init}
+  // host-side and hands Java only an opaque requestRef + the response-transform params. A prepare
+  // throw returns null, which the JsRequestPreparerBridge re-raises so the orchestrator skips the
+  // endpoint (index.ts:169).
+  // Task 3c: threads config.claude_tool_hardening / claude_prompt_auto_caching through (previously
+  // silently dropped). debug_gemini_payloads is still not threaded — it is a local fs-debug-log side
+  // channel with no effect on the upstream request (the Java port drops it deliberately, per its own
+  // docs), not a request-shaping option.
   const jsPreparer = (url, bodyText2, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
-    let headers, account;
-    try { headers = headersJson ? JSON.parse(headersJson) : {}; } catch { headers = {}; }
+    let account;
     try { account = accountJson ? JSON.parse(accountJson) : {}; } catch { account = {}; }
-    const init = { method, headers, body: bodyText2 };
+    const fingerprint = (account.meta && account.meta.fingerprint) ?? null;
     let prepared;
     try {
-      prepared = prepareAntigravityRequest(url, init, access, projectId, endpoint, headerStyle, false, {
-        fingerprint: account.meta && account.meta.fingerprint,
-        claudeToolHardening: config.claude_tool_hardening,
-        claudePromptAutoCaching: config.claude_prompt_auto_caching,
-        debugGeminiPayloads: config.debug_gemini_payloads,
-      });
+      prepared = prepareViaJava(
+        orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint,
+        config.claude_tool_hardening, config.claude_prompt_auto_caching,
+      );
     } catch (error) {
       log("prepare failed: " + error);
       return null;
@@ -268,35 +432,68 @@ async function runGeminiViaJava(request, ctx) {
     },
   };
 
-  // REAL entropy seams (CRITICAL-1): the orchestrator's Random SPI + the IdGenerator that feeds
-  // generateSyntheticProjectId must be production Math.random / crypto.randomUUID, so each account
-  // lacking a discovered managed project mints a UNIQUE synthetic x-goog-user-project (never the
-  // baked "swift-spark-00000" constant). This also restores the ±15s MODEL_CAPACITY cooldown jitter.
-  const jsRandom = () => Math.random();
-  const jsUuid = () => crypto.randomUUID();
-
-  const { handleAntigravityRequestAsync } = await loadOrchestrator();
+  // REAL entropy seams (CRITICAL-1, module-level jsRandom/jsUuid above): the orchestrator's Random
+  // SPI + the IdGenerator that feeds generateSyntheticProjectId must be production Math.random /
+  // crypto.randomUUID, so each account lacking a discovered managed project mints a UNIQUE synthetic
+  // x-goog-user-project (never the baked "swift-spark-00000" constant). This also restores the ±15s
+  // MODEL_CAPACITY cooldown jitter.
   const decisionJson = await handleAntigravityRequestAsync(
     inputsJson, configJson, jsExec, jsAcquire, jsAccountOps, jsLoad, jsOnboard, jsPreparer, autoCandidatesJson,
     jsRandom, jsUuid,
   );
   const decision = JSON.parse(decisionJson);
-  return materializeDecision(decision, responses, log);
+  return materializeDecision(decision, responses, log, orchestrator);
+}
+
+// Task 3c — routes SERVE's response transform through Java (transformAntigravityResponse's ok-branch,
+// request.ts:1711-1926). response.ok is always true here (the orchestrator only ever emits SERVE on a
+// 2xx attempt — confirmed by AntigravityResponseTransform's own javadoc and this module's TS twin call
+// site, driver/index.ts:233-239, which is likewise gated by `if (response.ok)`), so the giant
+// !response.ok branch (request.ts:1788-1861, error-body debug-info/recovery/retry-after handling) is
+// unreachable here and intentionally not reproduced.
+export async function transformServeViaJava(orchestrator, response, p) {
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJsonResponse = contentType.includes("application/json");
+  const isEventStreamResponse = contentType.includes("text/event-stream");
+  if (!isJsonResponse && !isEventStreamResponse) return response; // request.ts:1743-1748 passthrough
+
+  const debugText = computeDebugText();
+
+  if (p.streaming && isEventStreamResponse && response.body) {
+    // request.ts:1751-1780 — headers pass through UNCHANGED (no usage-header mutation on this path).
+    const headers = new Headers(response.headers);
+    const cacheSignatures = shouldCacheThinkingSignatures(p.effectiveModel);
+    // request.ts:1770's exact gate: `effectiveModel && isGemini3Model(effectiveModel) ? <set> : undefined`.
+    const thoughtDedupSeam = p.effectiveModel && isGemini3Model(p.effectiveModel) ? jsThoughtDedup : null;
+    const sseHandle = orchestrator.newResponseSseTransformer(
+      p.sessionId ?? "", debugText, cacheSignatures,
+      jsSignatureStore, jsCacheSignatureFn, jsImageSink, thoughtDedupSeam,
+    );
+    const stream = response.body.pipeThrough(makeResponseTransformStream(sseHandle));
+    return new Response(stream, { status: response.status, statusText: response.statusText, headers });
+  }
+
+  // request.ts:1782-1926 — buffered JSON path (parse -> preview-error rewrite -> usage headers ->
+  // debug-inject -> transformThinkingParts), fully reproduced by transformServeBodyProd.
+  const headersJson = JSON.stringify(Object.fromEntries(new Headers(response.headers)));
+  const text = await response.text();
+  const resultJson = orchestrator.transformServeBodyProd(
+    text, response.status, headersJson, p.requestedModel ?? "", debugText, jsImageSink,
+  );
+  const result = JSON.parse(resultJson);
+  return new Response(result.body, { status: result.status, statusText: response.statusText, headers: result.headers || {} });
 }
 
 // Build the final Response from a HandleDecision — the 5 decision kinds. NO response bytes crossed
 // into Java: SERVE/SERVE_RAW/BRIDGE_STREAM return the host-retained live Response.
-async function materializeDecision(decision, responses, log) {
+async function materializeDecision(decision, responses, log, orchestrator) {
   switch (decision.kind) {
     case "SERVE": {
-      // ok upstream response through the TS transform (index.ts:222-226), SSE/stream intact.
+      // ok upstream response through the Java-driven transform (Task 3c), SSE/stream intact.
       const retained = responses[decision.attemptRef];
       if (!retained) return serveRefError();
       const p = decision.params || {};
-      return await transformAntigravityResponse(
-        retained, p.streaming, null,
-        p.requestedModel, p.projectId, p.endpoint, p.effectiveModel, p.sessionId,
-      );
+      return await transformServeViaJava(orchestrator, retained, p);
     }
     case "SERVE_RAW": {
       // a real 429/non-ok fallback, or the transient-limit passthrough (index.ts:236/442) — verbatim.
@@ -346,15 +543,19 @@ function serveRefError() {
 }
 
 // Anthropic Messages bridge (index.ts:304-349) — reproduced VERBATIM, with the single inner
-// `handle(geminiReq, ctx)` call replaced by the delegated `runGeminiViaJava(geminiReq, ctx)`. All the
-// classification (chatError passthrough → rate_limit_error 429 / invalid_request_error, the api_error
-// path) and the geminiToAnthropicStream pipe stay host-side, byte-exact.
+// `handle(geminiReq, ctx)` call replaced by the delegated `runGeminiViaJava(geminiReq, ctx)`, and
+// (Task 3) the request/response translation routed through Java: `anthropicToGemini` -> the Java
+// export, `geminiToAnthropicStream` -> javaStream.ts's `makeAnthropicStream` over Java's
+// `newStreamMapper` (real ids minted host-side via jsIds). All the classification (chatError
+// passthrough → rate_limit_error 429 / invalid_request_error, the api_error path) and the x-hub-*
+// header handling stay host-side, byte-exact.
 async function handleAnthropicMessagesViaJava(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
+  const orchestrator = await loadOrchestrator();
   let anthropicBody;
   try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
   const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
-  const geminiBody = anthropicToGemini(anthropicBody, model);
+  const geminiBody = JSON.parse(orchestrator.anthropicToGemini(JSON.stringify(anthropicBody), model));
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
   const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
   const geminiRes = await runGeminiViaJava(geminiReq, ctx); // geminiUrl isn't /v1/messages -> normal Gemini path
@@ -381,6 +582,6 @@ async function handleAnthropicMessagesViaJava(request, ctx) {
     log("anthropic bridge: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
     return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)) } }), { status: (geminiRes && geminiRes.status) || 502, headers: { "content-type": "application/json" } });
   }
-  const stream = geminiRes.body.pipeThrough(geminiToAnthropicStream(anthropicBody.model || model));
+  const stream = geminiRes.body.pipeThrough(makeAnthropicStream(orchestrator.newStreamMapper, anthropicBody.model || model, jsIds));
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
 }

@@ -3,7 +3,6 @@
 
 import { runProviderMenu, buildAccountMenu } from "../core-auth/dist/index.js";
 import { driver } from "./driver/index.js";
-export { anthropicToGemini } from "./plugin/anthropic-bridge.js";   // exposed for tests
 
 export const handle = driver.handle;
 export const accounts = driver.accounts;

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getNewestVersion, getVersionList, pickVersion, driftVersion, nextVersionDriftDelay } from "./versions.js";
-
-const DAY = 24 * 60 * 60 * 1000;
+import { getNewestVersion, getVersionList } from "./versions.js";
+import { loadOrchestrator } from "../driver/javaHandle.js";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
@@ -28,61 +27,46 @@ describe("versions pool", () => {
     const max = list.reduce((a, b) => (cmp(b, a) > 0 ? b : a), list[0]);
     expect(getNewestVersion()).toBe(max);
   });
-
-  it("pickVersion always returns a version from the list", () => {
-    const list = new Set(getVersionList());
-    for (let i = 0; i < 50; i++) expect(list.has(pickVersion())).toBe(true);
-  });
-
-  it("is weighted toward newer versions", () => {
-    const newest = getNewestVersion();
-    const oldest = getVersionList()[getVersionList().length - 1];
-    let newestCount = 0, oldestCount = 0;
-    for (let i = 0; i < 2000; i++) {
-      const v = pickVersion();
-      if (v === newest) newestCount++;
-      if (v === oldest) oldestCount++;
-    }
-    expect(newestCount).toBeGreaterThan(oldestCount);
-  });
-
-  it("pickVersion(min) never returns older than min", () => {
-    const list = getVersionList();
-    const min = list[Math.floor(list.length / 2)];
-    for (let i = 0; i < 50; i++) expect(cmp(pickVersion(min), min)).toBeGreaterThanOrEqual(0);
-  });
-
-  it("driftVersion never downgrades", () => {
-    const list = getVersionList();
-    for (const current of list) {
-      for (let i = 0; i < 20; i++) expect(cmp(driftVersion(current), current)).toBeGreaterThanOrEqual(0);
-    }
-  });
-
-  it("driftVersion with no current falls back to a valid pick", () => {
-    expect(driftVersion("")).toMatch(SEMVER);
-  });
 });
 
-describe("nextVersionDriftDelay (staggering)", () => {
-  it("legacy (no version) migrates within the first week", () => {
-    for (let i = 0; i < 200; i++) {
-      const d = nextVersionDriftDelay(false);
-      expect(d).toBeGreaterThanOrEqual(0);
-      expect(d).toBeLessThanOrEqual(7 * DAY);
-    }
+// Task 7b-1 parity gate: pickVersion/driftVersion/nextVersionDriftDelay/driftAccountVersions are
+// deleted from TS (routed through Java). The fixed-random expected values below are the SAME frozen
+// ground truth already used by java/antigravity-provider's AntigravityVersionsTest /
+// AntigravityHandleRoutingTest (that JUnit suite's javadoc documents these as extracted verbatim from
+// the real src/plugin/versions.ts via a throwaway node harness with Math.random stubbed) — reused here
+// rather than re-derived, so both suites assert against one recorded ground truth.
+const fixedRandom = (value: number) => () => value;
+const POOL_JSON = JSON.stringify([
+  "2.1.1", "2.0.4", "2.0.3", "2.0.2", "2.0.1",
+  "1.23.2", "1.22.2", "1.21.9", "1.21.6", "1.20.6",
+  "1.19.6", "1.18.4", "1.18.3",
+]);
+
+describe("versions parity: Java prod exports vs the frozen TS fixture", () => {
+  it("pickVersionProd matches AntigravityVersionsTest's frozen picks", async () => {
+    const orchestrator = await loadOrchestrator();
+    expect(orchestrator.pickVersionProd(POOL_JSON, "", fixedRandom(0.0))).toBe("2.1.1");
+    expect(orchestrator.pickVersionProd(POOL_JSON, "1.21.6", fixedRandom(0.0))).toBe("2.1.1");
+    expect(orchestrator.pickVersionProd(POOL_JSON, "9.9.9", fixedRandom(0.0))).toBe("2.1.1");
+    expect(orchestrator.pickVersionProd(POOL_JSON, "", fixedRandom(0.999999))).toBe("1.20.6");
   });
 
-  it("versioned accounts re-drift on a 2–5 week window", () => {
-    for (let i = 0; i < 200; i++) {
-      const d = nextVersionDriftDelay(true);
-      expect(d).toBeGreaterThanOrEqual(14 * DAY);
-      expect(d).toBeLessThanOrEqual(35 * DAY);
-    }
-  });
-
-  it("produces scattered (not identical) delays across accounts", () => {
-    const delays = new Set(Array.from({ length: 50 }, () => nextVersionDriftDelay(true)));
-    expect(delays.size).toBeGreaterThan(40);   // essentially all distinct -> no lockstep
+  it("driftAccountVersionsProd matches AntigravityHandleRoutingTest's frozen snapshot", async () => {
+    const orchestrator = await loadOrchestrator();
+    const now = 1700000000000;
+    const accounts = [
+      { id: "d1", meta: { fingerprint: { userAgent: "antigravity/1.18.3 (x)", version: "1.18.3" } } },
+      { id: "d2", meta: { fingerprint: { userAgent: "antigravity/1.18.3 (x)", version: "1.18.3", nextVersionDriftAt: now - 1000 } } },
+      { id: "d3", meta: {} }, // no fingerprint.userAgent -> skipped
+    ];
+    const drifts = JSON.parse(orchestrator.driftAccountVersionsProd(
+      JSON.stringify(accounts), now, POOL_JSON, fixedRandom(0.5),
+    ));
+    expect(drifts).toHaveLength(2);
+    expect(drifts[0]).toMatchObject({ accountId: "d1", scheduleOnly: true, nextVersionDriftAt: 1702116800000 });
+    expect(drifts[1]).toMatchObject({
+      accountId: "d2", scheduleOnly: false, userAgent: "antigravity/2.0.4 (x)",
+      version: "2.0.4", versionPickedAt: now, nextVersionDriftAt: 1702116800000,
+    });
   });
 });

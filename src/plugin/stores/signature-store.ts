@@ -1,4 +1,20 @@
-import type { SignatureStore, SignedThinking, ThoughtBuffer } from '../core/streaming/types';
+export interface SignedThinking {
+  text: string;
+  signature: string;
+}
+
+export interface SignatureStore {
+  get(sessionKey: string): SignedThinking | undefined;
+  set(sessionKey: string, value: SignedThinking): void;
+  has(sessionKey: string): boolean;
+  delete(sessionKey: string): void;
+}
+
+export interface ThoughtBuffer {
+  get(index: number): string | undefined;
+  set(index: number, text: string): void;
+  clear(): void;
+}
 
 export function createSignatureStore(): SignatureStore {
   const store = new Map<string, SignedThinking>();

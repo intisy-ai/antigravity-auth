@@ -10,7 +10,7 @@
 
 import * as crypto from "node:crypto";
 import * as os from "node:os";
-import { pickVersion } from "./versions";
+import { getVersionList } from "./versions";
 
 const OS_VERSIONS: Record<string, string[]> = {
   darwin: ["10.15.7", "11.6.8", "12.6.3", "13.5.2", "14.2.1", "14.5"],
@@ -70,10 +70,6 @@ export interface FingerprintVersion {
   reason: 'initial' | 'regenerated' | 'restored';
 }
 
-export interface FingerprintHeaders {
-  "User-Agent": string;
-}
-
 const PLATFORM_CHOICES = ["darwin", "win32"] as const;
 type PlatformChoice = typeof PLATFORM_CHOICES[number];
 
@@ -97,11 +93,14 @@ function generateSessionToken(): string {
  * Generate a randomized device fingerprint.
  * Each fingerprint represents a unique "device" identity.
  */
-export function generateFingerprint(): Fingerprint {
+export async function generateFingerprint(): Promise<Fingerprint> {
   const platform = randomFrom(PLATFORM_CHOICES);
   const arch = randomFrom(ARCHITECTURES);
   const osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
-  const version = pickVersion();   // weighted toward newer real versions
+  // weighted toward newer real versions — AntigravityVersions.pickVersion (Java), real jsRandom.
+  const { loadOrchestrator } = await import("../driver/javaHandle.js");
+  const orchestrator = await loadOrchestrator();
+  const version = orchestrator.pickVersionProd(JSON.stringify(getVersionList()), "", () => Math.random());
 
   return {
     deviceId: generateDeviceId(),
@@ -120,20 +119,6 @@ export function generateFingerprint(): Fingerprint {
 }
 
 /**
- * Build HTTP headers from a fingerprint object.
- * These headers are used to identify the "device" making API requests.
- */
-export function buildFingerprintHeaders(fingerprint: Fingerprint | null): Partial<FingerprintHeaders> {
-  if (!fingerprint) {
-    return {};
-  }
-
-  return {
-    "User-Agent": fingerprint.userAgent,
-  };
-}
-
-/**
  * Session-level fingerprint instance.
  * Generated once at module load, persists for the lifetime of the process.
  */
@@ -143,9 +128,9 @@ let sessionFingerprint: Fingerprint | null = null;
  * Get or create the session fingerprint.
  * Returns the same fingerprint for all calls within a session.
  */
-export function getSessionFingerprint(): Fingerprint {
+export async function getSessionFingerprint(): Promise<Fingerprint> {
   if (!sessionFingerprint) {
-    sessionFingerprint = generateFingerprint();
+    sessionFingerprint = await generateFingerprint();
   }
   return sessionFingerprint;
 }

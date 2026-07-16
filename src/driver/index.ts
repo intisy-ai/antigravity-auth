@@ -4,45 +4,18 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager, getAutoCandidates, readModelCache, notify, chatError } from "../../core-auth/dist/index.js";
-import { prepareAntigravityRequest, transformAntigravityResponse, generateSyntheticProjectId } from "../plugin/request.js";
-import { anthropicToGemini, geminiToAnthropicStream, isAnthropicMessages } from "../plugin/anthropic-bridge.js";
-import { ensureProjectContext } from "../plugin/project.js";
-import { fetchAvailableModels, buildAntigravityCatalog } from "../plugin/models-fetch.js";
-import { refreshVersions, driftVersion, nextVersionDriftDelay } from "../plugin/versions.js";
-import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
-import { ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_ENDPOINT_PROD } from "../constants.js";
+import { defineProvider, AccountManager, proxyManager } from "../../core-auth/dist/index.js";
+import { fetchAvailableModels } from "../plugin/models-fetch.js";
+import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
 import { oauthConfig } from "./config.js";
-import { laneFor, headerStyleFor, parseRateLimitReason, resetTimeFor } from "./lanes.js";
 import { login, loginFlow } from "./login.js";
-import { createAntigravityAccounts, accountHasQuota } from "./accounts-controller.js";
+import { createAntigravityAccounts } from "./accounts-controller.js";
 import { getConfigValue, setConfigValue, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
 
 const PROVIDER_ID = "antigravity";
-const MAX_ATTEMPTS = 6;   // total account/endpoint attempts before giving up
 const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
-
-// Soonest quota-pool reset (epoch ms) among EXHAUSTED pools, from the last-fetched
-// cachedQuota. This is the real "try again" time — the 429 retry-after is a short
-// backoff, not the quota refill (which can be days out). 0 when unknown.
-function soonestQuotaReset() {
-  let soonest = 0;
-  for (const a of manager.list()) {
-    const cq = a.meta && a.meta.cachedQuota;
-    if (!cq) continue;
-    for (const label of Object.keys(cq)) {
-      const q = cq[label];
-      if (!q || !q.resetTime) continue;
-      if (q.remainingFraction === 0 || q.remainingFraction === undefined) {
-        const t = Date.parse(q.resetTime);
-        if (Number.isFinite(t) && (!soonest || t < soonest)) soonest = t;
-      }
-    }
-  }
-  return soonest;
-}
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below — account selection
@@ -63,334 +36,41 @@ const manager = new AccountManager(PROVIDER_ID, {
   isAvailable: (account) => !(account.meta && account.meta.verificationRequired),
 });
 
-// Exported so the flag-gated Java-orchestrator delegation shell (javaHandle.ts) and the parity
-// harness share this ONE AccountManager instance (state consistency). Additive; no runtime effect.
+// Exported so javaHandle.ts (the Java-orchestrator delegation shell) shares this ONE
+// AccountManager instance (state consistency).
 export { manager };
-
-// DORMANT delegation flag (T7g2): when true, `handle` delegates its decision loop to the
-// TeaVM-compiled Java orchestrator instead of the pure-TS path. Default OFF — landing the delegation
-// must NOT change live `oc`. The env var HUB_ANTIGRAVITY_JAVA_HANDLE=1 forces it on for agentbox
-// testing without editing config; otherwise the persisted setting decides. The flip is T7h.
-function useJavaOrchestrator() {
-  if (process.env.HUB_ANTIGRAVITY_JAVA_HANDLE === "1") return true;
-  return getConfigValue("use_java_orchestrator") === true;
-}
-
-// reconstruct the OAuthAuthDetails the existing project/transform code expects;
-// the legacy refresh string packs the project ids that ensureProjectContext reads.
-function buildAuth(account, access) {
-  const meta = account.meta || {};
-  return {
-    type: "oauth",
-    access,
-    expires: account.expires,
-    refresh: formatRefreshParts({ refreshToken: account.refresh, projectId: meta.projectId, managedProjectId: meta.managedProjectId }),
-  };
-}
-
-function endpointsFor(headerStyle) {
-  return headerStyle === "gemini-cli" ? [ANTIGRAVITY_ENDPOINT_PROD] : [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
-}
-
-function isRateLimitStatus(status) {
-  return status === 429 || status === 503 || status === 529;
-}
-
-// model id without depending on the (currently broken) url-helpers module
-function modelFromRequest(url, bodyText, ctxModel) {
-  if (ctxModel) return ctxModel;
-  const match = typeof url === "string" && url.match(/\/models\/([^:/?]+)/);
-  if (match) return decodeURIComponent(match[1]);
-  try { const parsed = JSON.parse(bodyText || "{}"); if (parsed.model) return parsed.model; } catch {}
-  return "antigravity-auto";
-}
-
-// a stable per-account project id, so accounts without a discovered managed
-// project never share the same x-goog-user-project (which would correlate them)
-function syntheticProjectFor(account) {
-  let synthetic = account.meta && account.meta.syntheticProjectId;
-  if (!synthetic) {
-    synthetic = generateSyntheticProjectId();
-    manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.syntheticProjectId = synthetic; });
-  }
-  return synthetic;
-}
-
-async function resolveProjectId(account, access, log, proxy) {
-  const meta = account.meta || {};
-  const fallbackProjectId = syntheticProjectFor(account);
-  let projectId = meta.managedProjectId || meta.projectId || "";
-  try {
-    const result = await ensureProjectContext(buildAuth(account, access), { proxy, fallbackProjectId });
-    if (result && result.effectiveProjectId) projectId = result.effectiveProjectId;
-    const discovered = parseRefreshParts(result.auth.refresh).managedProjectId;
-    if (discovered && discovered !== meta.managedProjectId) {
-      manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.managedProjectId = discovered; });
-    }
-  } catch (error) { log("ensureProjectContext failed: " + error); }
-  return projectId || fallbackProjectId;
-}
-
-function errorResponse(status, message) {
-  return new Response(JSON.stringify({ error: { message } }), { status, headers: { "content-type": "application/json" } });
-}
-
-// Run one model through the account/endpoint attempt loop. Returns the upstream
-// response (transformed on success); a rate-limit status means "all accounts for
-// this model's lane are spent" so the Auto caller can fall through to the next.
-async function attemptModel(model, url, init, ctx, log) {
-  const lane = laneFor(model);
-  const headerStyle = headerStyleFor(model);
-  let lastResponse = null;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const acquired = await manager.acquire(lane);
-    if (!acquired || !acquired.account) {
-      // No account free for this lane — almost always its quota pool is spent.
-      const next = manager.nextAvailableAt(lane);
-      const secs = next ? Math.max(0, Math.round((next - Date.now()) / 1000)) : 0;
-      const msg = secs > 0
-        ? `${lane} quota exhausted — resets in ~${secs}s. Pick another model or use Auto (it falls through to a free pool).`
-        : `No available antigravity account for lane ${lane}.`;
-      // No toast here: the per-lane 503 lets Auto fall through to the next pool, and
-      // the final give-up already surfaces a clean chat error (handle() -> chatError)
-      // with the real quota reset. A toast here would double up and show the short
-      // 429 back-off time (nextAvailableAt), not the actual reset — the wrong number.
-      return errorResponse(503, msg);
-    }
-    const account = acquired.account;
-    // (No per-acquire notification: when accounts rotate on rate-limit the handler
-    // switches accounts repeatedly within a single request, which flooded the Stop-hook
-    // notification drain with "Antigravity · … (account N/total) · pool" lines. Account
-    // rotation is routine; only genuine problems — e.g. all accounts exhausted — surface
-    // to the user, via the final chatError.)
-    const access = acquired.access;
-    if (!access) { manager.reportError(account.id, attempt, "missing access token"); continue; }
-
-    const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
-    const projectId = await resolveProjectId(account, access, log, proxyUrl);
-
-    let rateLimited = false;
-    for (const endpoint of endpointsFor(headerStyle)) {
-      let prepared;
-      try {
-        prepared = prepareAntigravityRequest(url, init, access, projectId, endpoint, headerStyle, false, {
-          fingerprint: account.meta && account.meta.fingerprint,
-          claudeToolHardening: config.claude_tool_hardening,
-          claudePromptAutoCaching: config.claude_prompt_auto_caching,
-          debugGeminiPayloads: config.debug_gemini_payloads,
-        });
-      } catch (error) { log("prepare failed: " + error); continue; }
-      if (proxyUrl) prepared.init.proxy = proxyUrl;   // Bun fetch honors .proxy
-
-      let response;
-      let proxyOk = false;
-      const started = Date.now();
-      try { response = await fetch(prepared.request, prepared.init); proxyOk = !!proxyUrl; }
-      catch (error) {
-        if (proxyUrl) {
-          proxyManager.reportResult(proxyUrl, false);
-          // proxy unreachable -> retry this request directly (a dead proxy gives
-          // no isolation anyway, and otherwise every account/attempt fails).
-          log("fetch via proxy " + proxyUrl + " failed: " + error + " — retrying directly");
-          try {
-            const directInit = { ...prepared.init };
-            delete directInit.proxy;
-            response = await fetch(prepared.request, directInit);
-          } catch (directError) { log("direct retry failed: " + directError); continue; }
-        } else { log("fetch failed: " + error); continue; }
-      }
-      if (proxyOk) proxyManager.reportResult(proxyUrl, true, Date.now() - started);
-
-      if (!response.ok) {
-        let snippet = "";
-        try { snippet = (await response.clone().text()).slice(0, 300); } catch {}
-        log("antigravity response " + response.status + " from " + endpoint + (snippet ? " body: " + snippet : ""));
-      }
-
-      if (isRateLimitStatus(response.status)) {
-        rateLimited = true;
-        lastResponse = response;
-        let reason, message;
-        try {
-          let j = await response.clone().json();
-          if (Array.isArray(j)) j = j[0];   // cloudcode-pa returns [{error}] for capacity 429s
-          message = j && j.error && j.error.message;
-          reason = j && j.error && (j.error.status || j.error.reason);
-        } catch {}
-        const parsed = parseRateLimitReason(reason, message, response.status);
-        // honor the server's stated reset ("...reset after 38s") so a short rolling
-        // window (e.g. the Gemini CLI free pool) isn't over-blocked by our backoff.
-        const retryMatch = message && /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i.exec(message);
-        const retryAfterMs = retryMatch ? parseInt(retryMatch[1], 10) * 1000 : 0;
-        manager.reportRateLimit(account.id, lane, resetTimeFor(parsed, attempt, retryAfterMs));
-        if (proxyUrl) {
-          const fresh = manager.list().find((a) => a.id === account.id) || account;
-          proxyManager.reportRateLimit(proxyUrl, { ipSuspected: accountHasQuota(fresh) });
-        }
-        continue;   // next endpoint, then rotate account
-      }
-
-      if (response.ok) {
-        manager.reportSuccess(account.id);
-        return await transformAntigravityResponse(
-          response, prepared.streaming, null,
-          prepared.requestedModel, prepared.projectId, prepared.endpoint,
-          prepared.effectiveModel, prepared.sessionId,
-        );
-      }
-
-      // Non-ok, non-rate-limit (e.g. 403 "no valid license" / "staging API not
-      // enabled" from a sandbox endpoint the account isn't provisioned for): keep
-      // it as a fallback, but NEVER let it overwrite a real rate-limit from the
-      // licensed prod endpoint. Otherwise a genuine 429 ("quota reached, resets X")
-      // gets masked by the sandbox's scary-but-irrelevant GCP-project 403, and the
-      // outer handler then treats the 403 as a hard error instead of showing the
-      // proper rate-limit message.
-      if (!lastResponse || !isRateLimitStatus(lastResponse.status)) lastResponse = response;
-      continue;
-    }
-
-    if (!rateLimited) break;
-  }
-  return lastResponse || errorResponse(502, "antigravity request failed after " + MAX_ATTEMPTS + " attempts");
-}
-
-function isAutoModel(model) {
-  const stripped = String(model || "").replace(/^antigravity-/i, "");
-  return stripped === "auto" || stripped.startsWith("auto-");
-}
-
-function rewriteModelInUrl(url, model) {
-  return String(url).replace(/\/models\/[^:/?]+/, "/models/" + model);
-}
-
-// ---- Effort variants ---------------------------------------------------------
-// models-fetch collapses per-effort backend models (gemini-3.5-flash-extra-low /
-// -low / gemini-3-flash-agent = one "Gemini 3.5 Flash" at minimal/medium/high)
-// into ONE catalog entry whose variants[level].model names the concrete backend
-// id. At request time the requested thinking level picks the variant.
-
-// Requested thinking level from the request body: opencode sends
-// providerOptions.google.{thinkingLevel|thinkingConfig}; the Claude Code bridge
-// emits generationConfig.thinkingConfig (mapped from /effort).
-function requestedThinkingLevel(bodyText) {
-  try {
-    const parsed = JSON.parse(bodyText || "{}");
-    const req = parsed.request && typeof parsed.request === "object" ? parsed.request : parsed;
-    const google = req.providerOptions && req.providerOptions.google;
-    if (google && typeof google.thinkingLevel === "string") return google.thinkingLevel;
-    const tc = (google && google.thinkingConfig) || (req.generationConfig && req.generationConfig.thinkingConfig);
-    if (tc && typeof tc.thinkingLevel === "string") return tc.thinkingLevel;
-    if (tc && typeof tc.thinkingBudget === "number") {
-      return tc.thinkingBudget <= 8192 ? "low" : tc.thinkingBudget <= 16384 ? "medium" : "high";
-    }
-  } catch {}
-  return null;
-}
-
-const LEVEL_ORDER = ["minimal", "low", "medium", "high"];
-
-function resolveEffortVariant(modelId, bodyText, log) {
-  let entry;
-  try { const cache = readModelCache(PROVIDER_ID); entry = cache && cache.models && cache.models[modelId]; } catch {}
-  const variants = entry && entry.variants;
-  if (!variants) return modelId;
-  const level = requestedThinkingLevel(bodyText);
-  if (!level) return modelId;
-  const want = LEVEL_ORDER.indexOf(level);
-  if (want < 0) return modelId;
-  // exact level, else the highest available level not above the request, else lowest
-  const available = Object.entries(variants)
-    .filter(([key, variant]) => variant && variant.model && LEVEL_ORDER.includes(key))
-    .sort(([a], [b]) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b));
-  if (!available.length) return modelId;
-  let chosen = available[0];
-  for (const candidate of available) if (LEVEL_ORDER.indexOf(candidate[0]) <= want) chosen = candidate;
-  const target = chosen[1].model;
-  if (target && target !== modelId && log) log("effort variant: " + modelId + " @ " + level + " -> " + target);
-  return target || modelId;
-}
-
-// Claude Code sends the Anthropic Messages API (/v1/messages) through the loader
-// proxy; bridge it to the Gemini format cloudcode-pa speaks (and translate the
-// streamed response back). Non-Anthropic (OpenCode/Gemini) requests fall through.
-async function handleAnthropicMessages(request, ctx) {
-  const log = (ctx && ctx.log) || (() => {});
-  let anthropicBody;
-  try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
-  const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
-  const geminiBody = anthropicToGemini(anthropicBody, model);
-  const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
-  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
-  const geminiRes = await handle(geminiReq, ctx);   // geminiUrl isn't /v1/messages -> normal Gemini path, no recursion
-  // A terminal chatError is already a proper Anthropic error (HTTP 4xx + {error:{message}}).
-  // Pass it straight through — Claude Code parses the status + error.message into a clean
-  // "API Error: <message>". Do NOT run it through the Gemini->Anthropic translator or the
-  // api_error re-wrap below (that double-wrapped it and leaked the raw JSON), and do NOT
-  // turn it into a 200 SSE (Claude then reports "empty/malformed HTTP 200").
-  if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
-    // route() produced a Gemini-format terminal error. Convert it to the Anthropic shape.
-    let msg = "request failed";
-    try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
-    // A RATE-LIMIT must keep its signal on the way out: the loader proxy only advances
-    // a tier's fallback chain (e.g. opus: antigravity -> claude-code) and only renders
-    // Claude's native rate-limit UI when it sees a 429 or the x-hub-rate-limited header.
-    // Dropping them (as before) made a rate-limit read as a terminal 400 — no fallback,
-    // no native message, just a raw provider error in the chat.
-    if (geminiRes.headers.get("x-hub-rate-limited") === "1") {
-      const rlHeaders = { "content-type": "application/json", "x-hub-rate-limited": "1" };
-      const ra = geminiRes.headers.get("x-hub-retry-after-ms");
-      if (ra) rlHeaders["x-hub-retry-after-ms"] = ra;
-      return new Response(
-        JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: msg } }),
-        { status: 429, headers: rlHeaders },
-      );
-    }
-    return new Response(
-      JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: msg } }),
-      { status: geminiRes.status || 400, headers: { "content-type": "application/json" } },
-    );
-  }
-  if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
-    let detail = "";
-    try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
-    log("anthropic bridge: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
-    return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)) } }), { status: (geminiRes && geminiRes.status) || 502, headers: { "content-type": "application/json" } });
-  }
-  const stream = geminiRes.body.pipeThrough(geminiToAnthropicStream(anthropicBody.model || model));
-  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
-}
 
 // Bump accounts' stored UA version FORWARD over time, simulating an IDE auto-update.
 // Each account has its OWN randomized due date (fp.nextVersionDriftAt), so they never
 // update in lockstep — versions roll forward gradually. The first time an account is
 // seen it's only SCHEDULED (no change), which is what staggers the initial migration
 // off the old hardcoded version. Never downgrades; platform/arch preserved.
-function driftAccountVersions(log) {
+// The DECISION (Option-B: Java decides, host applies) is AntigravityHandleRouting.
+// driftAccountVersions (real jsRandom); this just applies the returned mutations + logs.
+async function driftAccountVersions(log) {
+  const { loadOrchestrator } = await import("./javaHandle.js");
+  const orchestrator = await loadOrchestrator();
   const now = Date.now();
-  for (const account of manager.list()) {
-    const fp = account.meta && account.meta.fingerprint;
-    if (!fp || !fp.userAgent) continue;
-
-    // First sight under the scheduler: assign a staggered due date, change nothing yet.
-    if (typeof fp.nextVersionDriftAt !== "number") {
-      const delay = nextVersionDriftDelay(!!fp.version);
-      manager.mutate(account.id, (a) => { const f = a.meta && a.meta.fingerprint; if (f) f.nextVersionDriftAt = now + delay; });
-      continue;
-    }
-    if (now < fp.nextVersionDriftAt) continue;   // not due yet
-
-    const current = fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "";
-    const next = driftVersion(current);
-    manager.mutate(account.id, (a) => {
+  const accounts = manager.list();
+  const drifts = JSON.parse(orchestrator.driftAccountVersionsProd(
+    JSON.stringify(accounts), now, JSON.stringify(getVersionList()), () => Math.random(),
+  ));
+  for (const d of drifts) {
+    const account = accounts.find((a) => a.id === d.accountId);
+    const fp = account && account.meta && account.meta.fingerprint;
+    const current = fp ? (fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "") : "";
+    manager.mutate(d.accountId, (a) => {
       const f = a.meta && a.meta.fingerprint;
       if (!f) return;
-      f.userAgent = String(f.userAgent).replace(/antigravity\/[^ ]+/, "antigravity/" + next);
-      f.version = next;
-      f.versionPickedAt = now;
-      f.nextVersionDriftAt = now + nextVersionDriftDelay(true);   // reschedule, jittered
+      if (d.scheduleOnly) { f.nextVersionDriftAt = d.nextVersionDriftAt; return; }
+      f.userAgent = d.userAgent;
+      f.version = d.version;
+      f.versionPickedAt = d.versionPickedAt;
+      f.nextVersionDriftAt = d.nextVersionDriftAt;
     });
-    if (log && next !== current) log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + next);
+    if (!d.scheduleOnly && log && d.version !== current) {
+      log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + d.version);
+    }
   }
 }
 
@@ -405,63 +85,14 @@ function maybeMaintainVersions(log) {
   refreshVersions(log).then(() => driftAccountVersions(log)).catch(() => {});
 }
 
+// `handle` is a lazy delegate to the TeaVM-compiled Java orchestrator (javaHandle.ts), which
+// owns the whole decision loop (model resolve, account/endpoint retry, rate-limit handling).
+// The dynamic import keeps the ~MB TeaVM ESM out of the module graph until the first request.
 async function handle(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   maybeMaintainVersions(log);
-  // DORMANT delegation gate (T7g2): default OFF. When ON, run the whole decision loop through the
-  // TeaVM-compiled Java orchestrator instead. The module — and the TeaVM ESM it pulls in — is
-  // imported ONLY here and ONLY when ON, so a flag-OFF `oc` never loads or executes any of it.
-  if (useJavaOrchestrator()) {
-    const { handleViaJavaOrchestrator } = await import("./javaHandle.js");
-    return handleViaJavaOrchestrator(request, ctx);
-  }
-  if (isAnthropicMessages(request.url)) return handleAnthropicMessages(request, ctx);
-  const url = request.url;
-  let bodyText;
-  try { bodyText = await request.clone().text(); } catch { bodyText = undefined; }
-  const requestedModel = modelFromRequest(url, bodyText, ctx && ctx.model);
-  const init = { method: request.method, headers: Object.fromEntries(request.headers), body: bodyText };
-
-  // Auto: walk the user-ranked candidate models, falling through to the next when
-  // one is rate-limited (smart fallback). Non-auto models run exactly once.
-  let candidates = [requestedModel];
-  if (isAutoModel(requestedModel)) {
-    const ranked = getAutoCandidates(PROVIDER_ID);   // full catalog ids (already prefixed)
-    if (ranked.length) candidates = ranked;
-  }
-
-  let lastResponse = null;
-  let lastModel = null;
-  for (const model of candidates) {
-    const effective = resolveEffortVariant(model, bodyText, log);
-    lastModel = effective;
-    const candidateUrl = (effective !== requestedModel || candidates.length > 1) ? rewriteModelInUrl(url, effective) : url;
-    const response = await attemptModel(effective, candidateUrl, init, ctx, log);
-    lastResponse = response;
-    if (!response || !isRateLimitStatus(response.status)) return response;   // success / non-retryable
-    if (candidates.length > 1) log("auto: " + model + " rate-limited (" + response.status + "); trying next candidate");
-  }
-  // Everything is rate-limited — surface a lane-accurate TERMINAL error (else the
-  // host retries forever). The reset shown must belong to the FAILED lane:
-  if (lastResponse && isRateLimitStatus(lastResponse.status)) {
-    const lane = laneFor(lastModel || requestedModel);
-    if (lane === "gemini-cli") {
-      // The Gemini CLI free pool has no quota API and its 429 ("exhausted your
-      // capacity on this model") carries no reset — so never show the antigravity
-      // pool's reset date here (that's a different, unrelated quota).
-      return chatError("The Gemini CLI free pool is exhausted for this model. Pick another model or try again later.", { format: "gemini", rateLimited: true });
-    }
-    // Antigravity lanes: use the real quota-pool reset when a pool is genuinely
-    // exhausted; otherwise it was a transient burst — return the retryable status
-    // so the host backs off and retries instead of seeing a false "quota resets X".
-    const reset = soonestQuotaReset();
-    if (reset) {
-      const when = ` Quota resets ${new Date(reset).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`;
-      return chatError(`All Antigravity accounts are rate-limited for this model.${when} Try again later or pick another model.`, { format: "gemini", rateLimited: true, retryAfterMs: reset - Date.now() });
-    }
-    return lastResponse;   // transient limit — let the host retry with backoff
-  }
-  return lastResponse || errorResponse(502, "all antigravity Auto candidates exhausted");
+  const { handleViaJavaOrchestrator } = await import("./javaHandle.js");
+  return handleViaJavaOrchestrator(request, ctx);
 }
 
 // Live model discovery for core-auth: pick the first usable account, fetch the
@@ -476,10 +107,11 @@ async function fetchModels(ctx) {
   try { access = await manager.ensureAccess(account.id); } catch (error) { log("fetchModels token refresh failed: " + error); return null; }
   if (!access) return null;
   const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
-  const projectId = await resolveProjectId(account, access, log, proxyUrl);
+  const { resolveProjectIdViaJava, buildCatalogViaJava } = await import("./javaHandle.js");
+  const projectId = await resolveProjectIdViaJava(manager, account, access, log, proxyUrl);
   const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
   if (!payload) return null;
-  return buildAntigravityCatalog(payload);
+  return buildCatalogViaJava(payload);
 }
 
 // Settings shown in core-auth's settings UI. ONLY options actually consumed by
@@ -487,7 +119,7 @@ async function fetchModels(ctx) {
 //   account_selection_strategy -> AccountManager(selection) above
 //   keep_thinking              -> request transform via getKeepThinking() (initRuntimeConfig above)
 //   claude_tool_hardening / claude_prompt_auto_caching / debug_gemini_payloads
-//                              -> passed into prepareAntigravityRequest options in handle()
+//                              -> read by javaHandle.ts's Java prepare path
 // The other historical AntigravityConfig keys (scheduling/rate-limit/quota/health/
 // token-bucket/recovery/notifications/etc.) have NO consumer in the core-auth
 // provider form — their behavior is owned by core-auth's own engine — so exposing
@@ -504,12 +136,6 @@ const settingsGroups = [
     fields: [
       { key: "default_retry_after_seconds", label: "Base retry delay (s)", type: "number", min: 1, max: 300, hint: "Base cooldown after a transient account error; doubles per attempt (AccountManager backoff)." },
       { key: "max_backoff_seconds", label: "Max backoff (s)", type: "number", min: 5, max: 300, hint: "Caps how long the per-account error backoff can grow." },
-    ],
-  },
-  {
-    title: "Experimental",
-    fields: [
-      { key: "use_java_orchestrator", label: "Use Java orchestrator (experimental)", type: "bool", hint: "Route requests through the TeaVM-compiled Java handle orchestrator instead of the TS path. Default off; env HUB_ANTIGRAVITY_JAVA_HANDLE=1 also forces it on." },
     ],
   },
   {

@@ -1,0 +1,35 @@
+{
+  "gemini": {
+    "request": "https://cloudcode-pa.googleapis.com/v1internal:generateContent",
+    "headers": {
+      "authorization": "Bearer tok-gemini",
+      "content-type": "application/json",
+      "user-agent": "antigravity/1.2.3"
+    },
+    "body": "{\"project\":\"proj-gemini\",\"model\":\"gemini-3-pro-low\",\"request\":{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Hello from the Gemini parity fixture\"}]}],\"generationConfig\":{\"thinkingConfig\":{\"includeThoughts\":true,\"thinkingLevel\":\"low\"}},\"systemInstruction\":{\"role\":\"user\",\"parts\":[{\"text\":\"You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.\\nYou are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\\n**Absolute paths only**\\n**Proactiveness**\\n\\n<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>\\n\"}]},\"sessionId\":\"<PLUGIN_SESSION_ID>:gemini-3-pro-low:proj-gemini:seed-6d643e21b6fa9958\"},\"requestType\":\"agent\",\"userAgent\":\"antigravity\",\"requestId\":\"agent-00000000-0000-0000-0000-000000000000\"}",
+    "streaming": false,
+    "requestedModel": "gemini-3-pro",
+    "effectiveModel": "gemini-3-pro-low",
+    "projectId": "proj-gemini",
+    "endpoint": "https://cloudcode-pa.googleapis.com/v1internal:generateContent",
+    "sessionId": "<PLUGIN_SESSION_ID>:gemini-3-pro-low:proj-gemini:seed-6d643e21b6fa9958",
+    "headerStyle": "antigravity"
+  },
+  "claude": {
+    "request": "https://cloudcode-pa.googleapis.com/v1internal:generateContent",
+    "headers": {
+      "anthropic-beta": "interleaved-thinking-2025-05-14",
+      "authorization": "Bearer tok-claude",
+      "content-type": "application/json",
+      "user-agent": "antigravity/1.2.3"
+    },
+    "body": "{\"project\":\"proj-claude\",\"model\":\"claude-sonnet-4-6-thinking\",\"request\":{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Hello from the Claude parity fixture\"}]}],\"toolConfig\":{\"functionCallingConfig\":{\"mode\":\"VALIDATED\"}},\"generationConfig\":{\"thinkingConfig\":{\"include_thoughts\":true,\"thinking_budget\":32768},\"maxOutputTokens\":64000},\"systemInstruction\":{\"role\":\"user\",\"parts\":[{\"text\":\"You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.\\nYou are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\\n**Absolute paths only**\\n**Proactiveness**\\n\\n<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>\\n\"}]},\"sessionId\":\"<PLUGIN_SESSION_ID>:claude-sonnet-4-6-thinking:proj-claude:seed-7fb97d06007779ec\"},\"requestType\":\"agent\",\"userAgent\":\"antigravity\",\"requestId\":\"agent-00000000-0000-0000-0000-000000000000\"}",
+    "streaming": false,
+    "requestedModel": "claude-sonnet-4-6-thinking",
+    "effectiveModel": "claude-sonnet-4-6-thinking",
+    "projectId": "proj-claude",
+    "endpoint": "https://cloudcode-pa.googleapis.com/v1internal:generateContent",
+    "sessionId": "<PLUGIN_SESSION_ID>:claude-sonnet-4-6-thinking:proj-claude:seed-7fb97d06007779ec",
+    "headerStyle": "antigravity"
+  }
+}

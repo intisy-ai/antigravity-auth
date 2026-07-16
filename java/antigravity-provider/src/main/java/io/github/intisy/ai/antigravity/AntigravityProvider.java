@@ -70,8 +70,7 @@ public final class AntigravityProvider implements Provider {
 
     static final AntigravityRequestKeys.Hasher SHA256_HASHER = AntigravityProvider::sha256Hex;
 
-    // No real signature cache yet (Bucket C, deferred past Phase 2): every lookup is a cache miss,
-    // matching the "ship a no-op to start" guidance for ThinkingRecovery/SignatureStore.
+    // No real signature cache yet (Bucket C, deferred past Phase 2): every lookup is a cache miss.
     static final AntigravityThinkingBlocks.CachedSignatureLookup NO_CACHED_SIGNATURE =
             (sessionId, text) -> null;
 
@@ -90,24 +89,6 @@ public final class AntigravityProvider implements Provider {
                 @Override
                 public void delete(String key) {
                     // no-op
-                }
-            };
-
-    static final AntigravityRequestPrep.ThinkingRecovery NOOP_THINKING_RECOVERY =
-            new AntigravityRequestPrep.ThinkingRecovery() {
-                @Override
-                public Object analyzeConversationState(List<Object> contents) {
-                    return null;
-                }
-
-                @Override
-                public boolean needsThinkingRecovery(Object state) {
-                    return false;
-                }
-
-                @Override
-                public List<Object> closeToolLoopForThinking(List<Object> contents) {
-                    return contents;
                 }
             };
 

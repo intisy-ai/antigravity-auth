@@ -5,74 +5,44 @@
 
 import { accountControllerFromManager, proxyManager } from "../../core-auth/dist/index.js";
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
-import { generateSyntheticProjectId } from "../plugin/request.js";
 import { login } from "./login.js";
 
 function out(message) { process.stdout.write(message + "\n"); }
 
-// True only when EVERY known quota pool is exhausted. A pool counts as having
-// capacity when it reports a positive remainingFraction.
-function allPoolsExhausted(cachedQuota) {
-  const pools = Object.values(cachedQuota || {});
-  if (!pools.length) return false;
-  return pools.every((q) => !(q && typeof q.remainingFraction === "number" && q.remainingFraction > 0));
+// Task 7a — the status/quota-view logic (allPoolsExhausted/antigravityStatus/antigravityAvailableAt/
+// antigravityQuota/familyLabel + the per-family quota aggregation) now lives in Java
+// (AntigravityQuotaParser), reached via AntigravityProviderJs's exports. core-auth's `list()` callback
+// contract (antigravityStatus/antigravityAvailableAt/antigravityQuota) is synchronous, so the Java
+// module — still a dynamic import, javaHandle.ts's own heavier imports stay off this module's load
+// path — is warmed on the FIRST call rather than at module load (module-load-time would race
+// javaHandle.ts's own circular import back into driver/index.ts, which is still mid-evaluation at that
+// point); a call landing before the warm-up resolves falls back to a benign default and self-corrects
+// on the next render.
+let orchestrator = null;
+let warming = false;
+function warmOrchestrator() {
+  if (warming || orchestrator) return;
+  warming = true;
+  import("./javaHandle.js").then(({ loadOrchestrator }) => loadOrchestrator()).then((o) => { orchestrator = o; });
 }
 
-// Status reflects the account's real serving capacity via its quota POOLS, not the
-// per-lane rate-limit backoffs. A single transient lane limit (e.g. the gemini-cli
-// fallback pool, which isn't even a displayed quota pool) must not flag the whole
-// account as rate-limited while Gemini/Claude still have quota. Only when every
-// pool is exhausted is the account truly rate-limited. Falls back to the lane check
-// before the first quota fetch (no cachedQuota yet).
 function antigravityStatus(account, now) {
-  if (account.enabled === false) return "disabled";
-  if (account.meta && account.meta.verificationRequired) return "verification-required";
-  if (typeof account.coolingDownUntil === "number" && account.coolingDownUntil > now) return "cooling-down";
-  const cachedQuota = account.meta && account.meta.cachedQuota;
-  if (cachedQuota && Object.keys(cachedQuota).length) {
-    return allPoolsExhausted(cachedQuota) ? "rate-limited" : "active";
-  }
-  const lanes = account.rateLimitResetTimes || {};
-  if (Object.values(lanes).some((reset) => typeof reset === "number" && reset > now)) return "rate-limited";
-  return "active";
+  warmOrchestrator();
+  if (!orchestrator) return account.enabled === false ? "disabled" : "active";
+  return orchestrator.antigravityStatus(JSON.stringify(account), now);
 }
 
-// Usability time for the account row/hint, pool-based to match antigravityStatus:
-// usable NOW when any pool has capacity (or before the first quota fetch, since a
-// per-lane limit still leaves other lanes serving); the soonest pool reset when
-// every pool is exhausted; disabled/cooldown handled as usual.
 function antigravityAvailableAt(account, now) {
-  if (account.enabled === false) return Infinity;
-  if (typeof account.coolingDownUntil === "number" && account.coolingDownUntil > now) return account.coolingDownUntil;
-  const cachedQuota = account.meta && account.meta.cachedQuota;
-  if (cachedQuota && Object.keys(cachedQuota).length && allPoolsExhausted(cachedQuota)) {
-    let soonest = Infinity;
-    for (const q of Object.values(cachedQuota)) {
-      const t = q && q.resetTime ? Date.parse(q.resetTime) : NaN;
-      if (Number.isFinite(t)) soonest = Math.min(soonest, t);
-    }
-    return Number.isFinite(soonest) ? soonest : now;
-  }
-  return now;
+  warmOrchestrator();
+  if (!orchestrator) return account.enabled === false ? Infinity : now;
+  return orchestrator.antigravityAvailableAt(JSON.stringify(account), now);
 }
 
 function antigravityQuota(account) {
-  const cached = account.meta && account.meta.cachedQuota;
-  if (!cached) return undefined;
-  return Object.entries(cached).map(([label, quota]) => ({
-    label,
-    remainingFraction: quota && typeof quota.remainingFraction === "number" ? quota.remainingFraction : undefined,
-    resetTime: quota && quota.resetTime,
-  }));
-}
-
-// Friendly family name for a model. Returns null for internal/unknown models.
-function familyLabel(modelName) {
-  const lower = String(modelName).toLowerCase();
-  if (lower.includes("claude")) return "Claude";
-  if (lower.includes("gpt") || lower.includes("oss")) return "GPT-OSS";
-  if (lower.includes("gemini")) return "Gemini";
-  return null;
+  warmOrchestrator();
+  if (!orchestrator) return undefined;
+  const resultJson = orchestrator.antigravityQuota(JSON.stringify(account));
+  return resultJson == null ? undefined : JSON.parse(resultJson);
 }
 
 // ---- Pool display (no merging, no hardcoded pool map) ------------------------
@@ -106,25 +76,13 @@ async function fetchQuotaFamilies(manager, id) {
   try { data = await response.json(); } catch { return null; }
   const models = (data && data.models) || {};
 
-  // Step 1 — aggregate quota per FAMILY (worst remaining + earliest reset across
-  // that family's models). When a pool is exhausted cloudcode-pa drops
-  // remainingFraction and returns only resetTime — treat that as 0 remaining so the
-  // pool still shows (100% used, resets at X) instead of vanishing.
-  const perFamily = {};
-  for (const [modelName, info] of Object.entries(models)) {
-    const fam = familyLabel(modelName);
-    if (!fam || !info || !info.quotaInfo) continue;
-    const remaining = typeof info.quotaInfo.remainingFraction === "number"
-      ? info.quotaInfo.remainingFraction
-      : (info.quotaInfo.resetTime ? 0 : undefined);
-    if (remaining === undefined) continue;
-    const reset = info.quotaInfo.resetTime || "";
-    const f = perFamily[fam] || (perFamily[fam] = { remainingFraction: remaining, resetTime: reset });
-    f.remainingFraction = Math.min(f.remainingFraction, remaining);
-    if (reset && (!f.resetTime || Date.parse(reset) < Date.parse(f.resetTime))) f.resetTime = reset;
-  }
-
-  return Object.keys(perFamily).length ? perFamily : null;
+  // Per-FAMILY aggregation (worst remaining + earliest reset across that family's models; an
+  // exhausted pool's dropped remainingFraction counts as 0, per Java's aggregateQuotaFamilies) —
+  // routed through the Java export (safe to await here: unlike the account-view quintet above,
+  // this call site is already async).
+  const { loadOrchestrator } = await import("./javaHandle.js");
+  const o = await loadOrchestrator();
+  return JSON.parse(o.aggregateQuota(JSON.stringify(models)));
 }
 
 // Fetch + persist one account's quota — one bar per family, never merged.
@@ -159,7 +117,11 @@ async function verify(manager, view) {
     if (!access) { out("✗ " + name + ": no access token"); return; }
     const account = manager.list().find((a) => a.id === view.id);
     const meta = (account && account.meta) || {};
-    const projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId || generateSyntheticProjectId();
+    let projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId;
+    if (!projectId) {
+      const { generateSyntheticProjectIdViaJava } = await import("./javaHandle.js");
+      projectId = await generateSyntheticProjectIdViaJava();
+    }
     const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
     if (projectId) headers["x-goog-user-project"] = projectId;
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });
@@ -188,14 +150,6 @@ async function refreshToken(manager, view) {
   const name = view.email || view.id;
   try { out(await manager.refresh(view.id) ? "✓ refreshed " + name : "✗ no OAuth config / refresh token for " + name); }
   catch (error) { out("✗ refresh failed for " + name + ": " + (error && error.message || error)); }
-}
-
-// Quota still remaining? Used to decide a rate-limit is an IP limit (proxy signal),
-// not real account exhaustion. Unknown quota -> false (never blame the proxy).
-export function accountHasQuota(account) {
-  const cq = account && account.meta && account.meta.cachedQuota;
-  if (!cq) return false;
-  return Object.values(cq).some((q) => q && typeof q.remainingFraction === "number" && q.remainingFraction > 0);
 }
 
 export function createAntigravityAccounts(manager) {

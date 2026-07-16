@@ -10,7 +10,6 @@ import { startOAuthListener, addAccount, proxyManager, isTTY } from "../../core-
 import { authorizeAntigravity, exchangeAntigravity, encodeState } from "../antigravity/oauth.js";
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";
-import { generateSyntheticProjectId } from "../plugin/request.js";
 import { ANTIGRAVITY_REDIRECT_URI, ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 
 // Google OAuth succeeds for ANY Google account, but Antigravity only accepts
@@ -22,7 +21,11 @@ import { ANTIGRAVITY_REDIRECT_URI, ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHead
 async function checkAntigravityAccess(access, projectId, proxy) {
   try {
     const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
-    headers["x-goog-user-project"] = projectId || generateSyntheticProjectId();
+    if (!projectId) {
+      const { generateSyntheticProjectIdViaJava } = await import("./javaHandle.js");
+      projectId = await generateSyntheticProjectIdViaJava();
+    }
+    headers["x-goog-user-project"] = projectId;
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });
     const aborter = new AbortController();
     const timer = setTimeout(() => aborter.abort(), 20000);
@@ -80,7 +83,7 @@ function tryOpenBrowser(url) {
   } catch {}
 }
 
-function toCoreAccount(result) {
+async function toCoreAccount(result) {
   const parts = parseRefreshParts(result.refresh);
   const account = {
     id: result.email || parts.refreshToken.slice(0, 16),
@@ -94,7 +97,7 @@ function toCoreAccount(result) {
     rateLimitResetTimes: {},
     meta: { projectId: result.projectId || parts.projectId, managedProjectId: parts.managedProjectId },
   };
-  try { account.meta.fingerprint = generateFingerprint(); } catch {}
+  try { account.meta.fingerprint = await generateFingerprint(); } catch {}
   return account;
 }
 
@@ -132,7 +135,7 @@ export async function loginFlow() {
         process.stderr.write("antigravity login failed — token exchange error: " + (result.error || "unknown") + "\n");
         return null;
       }
-      const account = toCoreAccount(result);
+      const account = await toCoreAccount(result);
       // gate: confirm Antigravity actually accepts this account before saving it
       const projectId = account.meta.managedProjectId || account.meta.projectId || result.projectId || "";
       const check = await checkAntigravityAccess(result.access, projectId, boundProxy);

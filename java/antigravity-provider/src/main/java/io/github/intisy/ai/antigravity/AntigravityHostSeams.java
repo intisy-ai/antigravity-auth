@@ -190,7 +190,7 @@ final class AntigravityHostSeams {
                 deps.hasher = AntigravityProvider.SHA256_HASHER;
                 deps.cachedSignatureLookup = AntigravityProvider.NO_CACHED_SIGNATURE;
                 deps.signatureStore = AntigravityProvider.NOOP_SIGNATURE_STORE;
-                deps.thinkingRecovery = AntigravityProvider.NOOP_THINKING_RECOVERY;
+                deps.thinkingRecovery = new AntigravityThinkingRecovery(backend.json);
                 deps.logger = logger;
                 deps.keepThinking = false; // config default (schema.ts keep_thinking: false)
                 deps.pluginSessionId = AntigravityProvider.PLUGIN_SESSION_ID;

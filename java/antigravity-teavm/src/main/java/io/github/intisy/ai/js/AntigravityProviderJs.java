@@ -14,11 +14,13 @@ import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravityResponseParse;
+import io.github.intisy.ai.antigravity.AntigravityResponseTransform;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
 import io.github.intisy.ai.antigravity.AntigravityStreamMapper;
 import io.github.intisy.ai.antigravity.AntigravityStreamTransform;
 import io.github.intisy.ai.antigravity.AntigravityThinkingBlocks;
 import io.github.intisy.ai.antigravity.AntigravityThinkingConfig;
+import io.github.intisy.ai.antigravity.AntigravityThinkingRecovery;
 import io.github.intisy.ai.antigravity.AntigravityToolPairing;
 import io.github.intisy.ai.antigravity.AntigravityVersions;
 import io.github.intisy.ai.antigravity.ClaudeTransforms;
@@ -28,17 +30,22 @@ import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.Random;
+import io.github.intisy.ai.shared.spi.http.HttpResponse;
 
 import org.teavm.jso.JSExport;
 import org.teavm.jso.JSFunctor;
 import org.teavm.jso.JSObject;
+import org.teavm.jso.core.JSArray;
 import org.teavm.jso.core.JSPromise;
 import org.teavm.jso.core.JSString;
 
+import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * TeaVM JS export surface over antigravity-auth's Java port (T7a) -- proves all five ported
@@ -105,13 +112,63 @@ public final class AntigravityProviderJs {
         return String.valueOf(AntigravityLanes.calculateBackoffMs(classified, consecutiveFailures, null, FIXED_RANDOM));
     }
 
-    // ---- AntigravityVersions ----------------------------------------------------------------------
+    // ---- AntigravityVersions (Task 7b-1: production exports, real jsRandom) ------------------------
 
-    /** Exercises {@link AntigravityVersions#driftVersion} over the curated fallback pool (+ Random SPI). */
+    /** JS {@code (versionListJson, min, jsRandom) => string} -- {@link AntigravityVersions#pickVersion}
+     *  (fingerprint.ts's new-account version pick; {@code min} empty/{@code null} = no floor). */
     @JSExport
-    public static String driftVersion(String current) {
-        List<String> pool = new ArrayList<>(AntigravityVersions.FALLBACK_VERSIONS);
-        return AntigravityVersions.driftVersion(current, pool, FIXED_RANDOM);
+    public static String pickVersionProd(String versionListJson, String min, JsRandomFn jsRandom) {
+        JsonCodec json = new SimpleJsonCodec();
+        Random random = () -> jsRandom.next();
+        return AntigravityVersions.pickVersion(parseVersionList(json, versionListJson),
+                (min != null && !min.isEmpty()) ? min : null, random);
+    }
+
+    /**
+     * JS {@code (accountsJson, now, versionListJson, jsRandom) => string} (JSON array of {@code
+     * {accountId,scheduleOnly,nextVersionDriftAt,userAgent,version,versionPickedAt}}) -- {@link
+     * AntigravityHandleRouting#driftAccountVersions}, the per-account UA version-drift scheduler
+     * (index.ts's {@code driftAccountVersions}). Returns the ordered mutations only; the host applies
+     * each via {@code manager.mutate} (Option-B: Java decides, host applies).
+     */
+    @JSExport
+    public static String driftAccountVersionsProd(String accountsJson, double now, String versionListJson, JsRandomFn jsRandom) {
+        JsonCodec json = new SimpleJsonCodec();
+        Random random = () -> jsRandom.next();
+        List<AntigravityHandleRouting.VersionDrift> drifts = AntigravityHandleRouting.driftAccountVersions(
+                parseMapList(json, accountsJson), (long) now, random, parseVersionList(json, versionListJson));
+        List<Object> out = new ArrayList<>();
+        for (AntigravityHandleRouting.VersionDrift d : drifts) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("accountId", d.accountId);
+            m.put("scheduleOnly", d.scheduleOnly);
+            m.put("nextVersionDriftAt", d.nextVersionDriftAt);
+            m.put("userAgent", d.userAgent);
+            m.put("version", d.version);
+            m.put("versionPickedAt", d.versionPickedAt);
+            out.add(m);
+        }
+        return json.stringify(out);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> parseVersionList(JsonCodec json, String versionListJson) {
+        List<String> out = new ArrayList<>();
+        Object parsed = versionListJson != null ? json.parse(versionListJson) : null;
+        if (parsed instanceof List) {
+            for (Object v : (List<Object>) parsed) if (v instanceof String) out.add((String) v);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> parseMapList(JsonCodec json, String listJson) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Object parsed = listJson != null ? json.parse(listJson) : null;
+        if (parsed instanceof List) {
+            for (Object v : (List<Object>) parsed) if (v instanceof Map) out.add((Map<String, Object>) v);
+        }
+        return out;
     }
 
     // ---- AntigravityCatalog -----------------------------------------------------------------------
@@ -136,6 +193,37 @@ public final class AntigravityProviderJs {
         Object parsed = modelsJson != null ? json.parse(modelsJson) : null;
         Map<String, Object> models = parsed instanceof Map ? (Map<String, Object>) parsed : new java.util.LinkedHashMap<>();
         return json.stringify(AntigravityQuotaParser.aggregateQuotaFamilies(models));
+    }
+
+    // ---- AntigravityQuotaParser: accounts-controller.ts's account-view (Task 7a) ------------------
+    // familyLabel and allPoolsExhausted have no direct TS caller: familyLabel is used internally by
+    // aggregateQuotaFamilies (above, wired to fetchQuotaFamilies); allPoolsExhausted is used
+    // internally by antigravityStatus/antigravityAvailableAt below. Neither needs its own JS export.
+
+    /** Exercises {@link AntigravityQuotaParser#antigravityStatus} (account JSON + now epoch-ms). */
+    @JSExport
+    public static String antigravityStatus(String accountJson, double now) {
+        JsonCodec json = new SimpleJsonCodec();
+        return AntigravityQuotaParser.antigravityStatus(asMap(json.parse(accountJson)), (long) now);
+    }
+
+    /**
+     * Exercises {@link AntigravityQuotaParser#antigravityAvailableAt} (account JSON + now epoch-ms).
+     * Returns the raw {@code double} (not JSON) so a disabled account's {@code Double.POSITIVE_INFINITY}
+     * compiles straight to JS {@code Infinity} -- {@code SimpleJsonCodec} has no JSON encoding for it.
+     */
+    @JSExport
+    public static double antigravityAvailableAt(String accountJson, double now) {
+        JsonCodec json = new SimpleJsonCodec();
+        return AntigravityQuotaParser.antigravityAvailableAt(asMap(json.parse(accountJson)), (long) now);
+    }
+
+    /** Exercises {@link AntigravityQuotaParser#antigravityQuota} via JsonCodec (JSON out, {@code null} when uncached). */
+    @JSExport
+    public static String antigravityQuota(String accountJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        List<Map<String, Object>> result = AntigravityQuotaParser.antigravityQuota(asMap(json.parse(accountJson)));
+        return result == null ? null : json.stringify(result);
     }
 
     // ---- AntigravityModelResolver (T7b) -----------------------------------------------------------
@@ -666,6 +754,111 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
+    /** JS {@code (jsRandom, jsUuid) => string} -- {@link AntigravityRequestPrep#generateSyntheticProjectId}
+     *  (real seams; login.ts/accounts-controller.ts's ad-hoc verify-ping ids + fetchModels' fallback). */
+    @JSExport
+    public static String generateSyntheticProjectIdProd(JsRandomFn jsRandom, JsUuidFn jsUuid) {
+        Random random = () -> jsRandom.next();
+        AntigravityRequestPrep.IdGenerator ids = () -> {
+            JSString u = jsUuid.uuid();
+            return u == null ? "" : u.stringValue();
+        };
+        return AntigravityRequestPrep.generateSyntheticProjectId(ids, random);
+    }
+
+    /**
+     * Task 7b-2: standalone project-id resolution for ONE account -- {@code fetchModels}' host entry
+     * point. Calls the SAME {@link AntigravityHandleOrchestrator#resolveProjectId} the live SERVE path
+     * (via {@link #handleAntigravityRequestAsync}) already uses, so this shares that Java decision
+     * verbatim instead of re-implementing it. {@code accounts.mutate} is implemented by mutating the
+     * SAME account {@code Map} parsed from {@code accountJson} in place (there is only ever the one
+     * account in scope here) -- the returned {@code meta} reflects the post-mutation state; the host
+     * persists {@code syntheticProjectId}/{@code managedProjectId} into its own account store.
+     * Preparer/executor/modelCache are never invoked by {@code resolveProjectId} -- unreachable stubs.
+     *
+     * @return {@code Promise<string>} resolving to JSON {@code {projectId, meta}}
+     */
+    @JSExport
+    public static JSPromise<JSString> resolveProjectIdProd(
+            String accountJson, String access,
+            JsRandomFn jsRandom, JsUuidFn jsUuid,
+            JsProjectLoaderBridge.JsLoadFn jsProjectLoader,
+            JsProjectOnboarderBridge.JsOnboardFn jsProjectOnboarder,
+            String configJson) {
+        return new JSPromise<>((resolve, reject) -> new Thread(() -> {
+            try {
+                JsonCodec json = new SimpleJsonCodec();
+                AntigravityProjectContext.Platform platform = parsePlatform(json, configJson);
+                Random random = () -> jsRandom.next();
+                AntigravityRequestPrep.IdGenerator ids = () -> {
+                    JSString u = jsUuid.uuid();
+                    return u == null ? "" : u.stringValue();
+                };
+                Map<String, Object> account = asMap(accountJson != null ? json.parse(accountJson) : null);
+
+                AntigravityHandleOrchestrator.AccountOps accounts = new AntigravityHandleOrchestrator.AccountOps() {
+                    @Override
+                    public AntigravityHandleOrchestrator.Acquired acquire(String lane) {
+                        return null;
+                    }
+
+                    @Override
+                    public Long nextAvailableAt(String lane) {
+                        return null;
+                    }
+
+                    @Override
+                    public void reportError(String accountId, int attempt, String message) {
+                    }
+
+                    @Override
+                    public void reportRateLimit(String accountId, String lane, long resetMs) {
+                    }
+
+                    @Override
+                    public void reportSuccess(String accountId) {
+                    }
+
+                    @Override
+                    public void reportProxyRateLimit(String accountId, boolean ipSuspected) {
+                    }
+
+                    @Override
+                    public List<Map<String, Object>> list() {
+                        return new ArrayList<>();
+                    }
+
+                    @Override
+                    public void mutate(String accountId, AntigravityHandleOrchestrator.Mutator mutator) {
+                        mutator.apply(account);
+                    }
+                };
+                AntigravityHandleOrchestrator.RequestPreparer preparer = (url, bodyText, method, headers,
+                        acc, projectId, endpoint, headerStyle, acct) -> {
+                    throw new UnsupportedOperationException("resolveProjectIdProd never prepares a request");
+                };
+                AntigravityHandleOrchestrator.AttemptExecutor executor = (accountId, ref) -> {
+                    throw new UnsupportedOperationException("resolveProjectIdProd never executes a request");
+                };
+
+                AntigravityHandleOrchestrator orchestrator = new AntigravityHandleOrchestrator(
+                        json, SYSTEM_CLOCK, random, ids, accounts, preparer, executor, modelId -> null,
+                        new JsProjectLoaderBridge(jsProjectLoader, json),
+                        new JsProjectOnboarderBridge(jsProjectOnboarder, json),
+                        platform);
+
+                String projectId = orchestrator.resolveProjectId(account, access, NOOP_LOGGER);
+
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("projectId", projectId);
+                out.put("meta", account.get("meta"));
+                resolve.accept(JSString.valueOf(json.stringify(out)));
+            } catch (Throwable e) {
+                reject.accept(JSString.valueOf("resolveProjectIdProd failed: " + e));
+            }
+        }).start());
+    }
+
     /**
      * Drives a full {@link AntigravityHandleOrchestrator#handle} through the no-account terminal
      * branch under TeaVM (proves the orchestrator + its JsonCodec body builders + attemptModel
@@ -951,5 +1144,369 @@ public final class AntigravityProviderJs {
 
     private static String asString(Object o) {
         return o instanceof String ? (String) o : null;
+    }
+
+    // ---- Production seam exports (Task 2: TeaVM de-dup) --------------------------------------------
+
+    /** JS {@code (input) => string} (production: sha256 hex) -> the {@link AntigravityRequestKeys.Hasher} SPI. */
+    @JSFunctor
+    public interface JsHasherFn extends JSObject {
+        JSString hash(JSString input);
+    }
+
+    /** JS {@code (sessionId, text) => string|null} -> the {@link AntigravityThinkingBlocks.CachedSignatureLookup} SPI. */
+    @JSFunctor
+    public interface JsCacheLookupFn extends JSObject {
+        JSString get(JSString sessionId, JSString text);
+    }
+
+    /**
+     * {@code defaultSignatureStore}'s get/set/has/delete, grouped in ONE JS object -- multi-method, so
+     * NOT a {@code @JSFunctor} (mirrors {@link JsAccountOpsBridge.JsAccountFns}). {@code get} returns a
+     * JSON {@code {text,signature}} string (or {@code null}/{@code "null"}/empty for a miss).
+     */
+    public interface JsSignatureStoreFns extends JSObject {
+        JSString get(JSString key);
+
+        boolean has(JSString key);
+
+        void delete(JSString key);
+
+        void set(JSString sessionKey, JSString text, JSString signature);
+    }
+
+    /** {@code crypto.randomUUID}-derived id pair for {@link AntigravityStreamMapper.IdGenerator}, grouped like {@link JsSignatureStoreFns}. */
+    public interface JsIdsFns extends JSObject {
+        JSString newMessageId();
+
+        JSString newToolId();
+    }
+
+    /**
+     * Production variant of {@link #prepareAntigravityRequest}: same pipeline, but every {@link
+     * AntigravityRequestPrep.Deps} seam is bridged to a real JS host implementation instead of a
+     * deterministic stub. {@code thinkingRecovery} is the internal {@link AntigravityThinkingRecovery}
+     * (Task 1 port) -- not a JS seam. {@code endpointOverride} (empty/{@code null} for "use default"),
+     * {@code claudeToolHardening} and {@code claudePromptAutoCaching} close the Task 3 report's gaps
+     * #1/#2 -- the host resolves the config-driven booleans (defaults true/false) and the per-attempt
+     * endpoint override exactly as {@code prepareAntigravityRequest}'s callers do.
+     */
+    @JSExport
+    public static String prepareAntigravityRequestProd(
+            String url, String method, String headersJson, String body,
+            String accessToken, String projectId, String headerStyle, String fingerprintJson,
+            boolean keepThinking, String pluginSessionId, String endpointOverride,
+            boolean claudeToolHardening, boolean claudePromptAutoCaching,
+            JsRandomFn jsRandom, JsUuidFn jsUuid, JsHasherFn jsHasher,
+            JsCacheLookupFn jsCacheLookup, JsSignatureStoreFns jsSignatureStore) {
+        JsonCodec json = new SimpleJsonCodec();
+        Map<String, Object> fp = fingerprintJson != null ? asMap(json.parse(fingerprintJson)) : null;
+
+        AntigravityRequestPrep.Input in = new AntigravityRequestPrep.Input();
+        in.url = url;
+        in.method = method;
+        in.headers = headersJson != null ? asMap(json.parse(headersJson)) : new LinkedHashMap<>();
+        in.body = body;
+        in.accessToken = accessToken;
+        in.projectId = projectId;
+        in.headerStyle = headerStyle;
+        in.fingerprint = fp;
+        in.endpointOverride = (endpointOverride != null && !endpointOverride.isEmpty()) ? endpointOverride : null;
+        in.claudeToolHardening = claudeToolHardening;
+        in.claudePromptAutoCaching = claudePromptAutoCaching;
+
+        AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
+        deps.json = json;
+        deps.random = () -> jsRandom.next();
+        deps.ids = () -> {
+            JSString u = jsUuid.uuid();
+            return u == null ? "" : u.stringValue();
+        };
+        deps.hasher = input -> {
+            JSString h = jsHasher.hash(JSString.valueOf(input));
+            return h == null ? null : h.stringValue();
+        };
+        deps.cachedSignatureLookup = (sessionId, text) -> {
+            JSString r = jsCacheLookup.get(JSString.valueOf(sessionId), JSString.valueOf(text));
+            return r == null ? null : r.stringValue();
+        };
+        deps.signatureStore = new AntigravityRequestSignatures.SignatureStore() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Map<String, Object> get(String key) {
+                JSString r = jsSignatureStore.get(JSString.valueOf(key));
+                String s = r == null ? null : r.stringValue();
+                if (s == null || s.isEmpty() || "null".equals(s)) return null;
+                Object parsed = json.parse(s);
+                return parsed instanceof Map ? (Map<String, Object>) parsed : null;
+            }
+
+            @Override
+            public boolean has(String key) {
+                return jsSignatureStore.has(JSString.valueOf(key));
+            }
+
+            @Override
+            public void delete(String key) {
+                jsSignatureStore.delete(JSString.valueOf(key));
+            }
+        };
+        deps.thinkingRecovery = new AntigravityThinkingRecovery(json);
+        deps.logger = NOOP_LOGGER;
+        deps.keepThinking = keepThinking;
+        deps.pluginSessionId = pluginSessionId;
+        deps.selectedHeaders = AntigravityFingerprint.buildFingerprintHeaders(fp);
+
+        AntigravityRequestPrep.PrepareResult r = AntigravityRequestPrep.prepare(in, deps);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("request", r.request);
+        out.put("headers", r.headers);
+        out.put("body", r.body);
+        out.put("streaming", r.streaming);
+        out.put("effectiveModel", r.effectiveModel);
+        out.put("projectId", r.projectId);
+        out.put("sessionId", r.sessionId);
+        out.put("headerStyle", r.headerStyle);
+        return json.stringify(out);
+    }
+
+    /** Stateful JS handle over one {@link AntigravityStreamMapper} instance -- {@link #newStreamMapper}'s return. */
+    public interface JsStreamMapperHandle extends JSObject {
+        JSArray<JSString> handle(JSString objJson);
+
+        JSArray<JSString> finish();
+    }
+
+    /** Factory for a stateful stream mapper: ONE captured {@link AntigravityStreamMapper}, driven by the TS {@code TransformStream} (Task 3). */
+    @JSExport
+    public static JsStreamMapperHandle newStreamMapper(String model, JsIdsFns jsIds) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityStreamMapper.IdGenerator ids = new AntigravityStreamMapper.IdGenerator() {
+            @Override
+            public String newMessageId() {
+                JSString s = jsIds.newMessageId();
+                return s == null ? "" : s.stringValue();
+            }
+
+            @Override
+            public String newToolId() {
+                JSString s = jsIds.newToolId();
+                return s == null ? "" : s.stringValue();
+            }
+        };
+        AntigravityStreamMapper mapper = new AntigravityStreamMapper(json, ids, model);
+        return new JsStreamMapperHandle() {
+            @Override
+            public JSArray<JSString> handle(JSString objJson) {
+                Object parsed = objJson != null ? json.parse(objJson.stringValue()) : null;
+                return toJsStringArray(mapper.handle(parsed));
+            }
+
+            @Override
+            public JSArray<JSString> finish() {
+                return toJsStringArray(mapper.finish());
+            }
+        };
+    }
+
+    // No String[] idiom exists elsewhere in this module; JSArray<JSString> is the documented fallback.
+    private static JSArray<JSString> toJsStringArray(List<String> values) {
+        JSArray<JSString> arr = new JSArray<>();
+        for (String v : values) {
+            arr.push(JSString.valueOf(v));
+        }
+        return arr;
+    }
+
+    /**
+     * Exports {@link AntigravityStreamTransform#cacheThinkingSignaturesFromResponse} (a fresh per-call
+     * {@link AntigravityStreamTransform.ThoughtBuffer}; the JVM signature also requires a
+     * {@code signatureSessionKey}, so this export takes one beyond the plan's 2-arg sketch).
+     */
+    @JSExport
+    public static void cacheSignaturesFromResponse(String responseJson, String signatureSessionKey, JsSignatureStoreFns jsSignatureStore) {
+        JsonCodec json = new SimpleJsonCodec();
+        Object response = responseJson != null ? json.parse(responseJson) : null;
+        AntigravityStreamTransform.ThoughtBuffer thoughtBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.SignatureStore store = (sessionKey, text, signature) ->
+                jsSignatureStore.set(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
+        AntigravityStreamTransform.cacheThinkingSignaturesFromResponse(response, signatureSessionKey, store, thoughtBuffer, null);
+    }
+
+    // ---- Real-seamed response-transform exports (Task 3c: route SERVE through Java) ----------------
+
+    /**
+     * JS {@code (mimeType, base64Data) => string|null} -- production: the real {@code processImageData}
+     * (image-saver.ts), which SAVES the decoded image to {@code ~/.opencode|.claude/generated-images/}
+     * and returns a markdown link (or a data-URL fallback on a write failure). Replaces the
+     * transpilability-only {@code DATA_URL_SINK} stand-in for every production response-transform export
+     * below.
+     */
+    @JSFunctor
+    public interface JsImageSinkFn extends JSObject {
+        JSString save(JSString mimeType, JSString base64Data);
+    }
+
+    /** JS {@code (sessionKey, text, signature) => void} -- production: {@code cacheSignature} (cache.ts), the on-disk signature cache write. */
+    @JSFunctor
+    public interface JsCacheSignatureFn extends JSObject {
+        void onCacheSignature(JSString sessionKey, JSString text, JSString signature);
+    }
+
+    /**
+     * Host-owned Gemini-3 SSE-reconnect thought-dedup set (request.ts:79's {@code
+     * sessionDisplayedThinkingHashes}) -- has/add over hash strings, grouped like {@link
+     * JsSignatureStoreFns} (multi-method, so not a {@code @JSFunctor}). The host passes {@code null}
+     * for every non-Gemini-3 {@code effectiveModel} (request.ts:1770's exact gate), matching TS.
+     */
+    public interface JsThoughtDedupFns extends JSObject {
+        boolean has(JSString hash);
+
+        void add(JSString hash);
+    }
+
+    // Bridges a nullable JsThoughtDedupFns to the java.util.Set<String> that
+    // AntigravityStreamTransform#transformSseLine/deduplicateThinkingText expect. Only contains()/add()
+    // are ever invoked by that pure logic (never iterated/sized) -- those are the only AbstractSet
+    // methods overridden.
+    private static Set<String> bridgeThoughtDedup(JsThoughtDedupFns fns) {
+        if (fns == null) return null;
+        return new AbstractSet<String>() {
+            @Override
+            public boolean contains(Object o) {
+                return o instanceof String && fns.has(JSString.valueOf((String) o));
+            }
+
+            @Override
+            public boolean add(String hash) {
+                fns.add(JSString.valueOf(hash));
+                return true;
+            }
+
+            @Override
+            public Iterator<String> iterator() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int size() {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
+    // A missing mimeType/data maps to "" (not null): both are equally falsy in JS, matching
+    // processImageData's own `mimeType || 'image/png'` / `if (!data) return null;` fallbacks exactly.
+    private static AntigravityThinkingBlocks.ImageSink bridgeImageSink(JsImageSinkFn sink) {
+        return (mimeType, data) -> {
+            String mt = mimeType instanceof String ? (String) mimeType : "";
+            String d = data instanceof String ? (String) data : "";
+            JSString r = sink.save(JSString.valueOf(mt), JSString.valueOf(d));
+            return r == null ? null : r.stringValue();
+        };
+    }
+
+    /**
+     * Production non-streaming SERVE-transform export: the "OK JSON body" half of
+     * {@code transformAntigravityResponse} (request.ts:1782-1926, real-seamed via {@link
+     * AntigravityResponseTransform#transformServe}). {@code debugText} is the host-resolved
+     * {@code isDebugTuiEnabled()}/{@code getKeepThinking()} placeholder (empty/{@code null} for
+     * "none" -- request.ts:1735-1740); {@code jsImageSink} bridges the real {@code processImageData}.
+     * Returns {@code {status, headers, body}} JSON for the host to build the final {@code Response}.
+     */
+    @JSExport
+    public static String transformServeBodyProd(
+            String bodyText, int status, String headersJson, String requestedModel,
+            String debugText, JsImageSinkFn jsImageSink) {
+        JsonCodec json = new SimpleJsonCodec();
+        HttpResponse upstream = new HttpResponse();
+        upstream.status = status;
+        upstream.headers = asStringHeaders(json, headersJson);
+        upstream.body = bodyText;
+
+        AntigravityHandleOrchestrator.TransformParams params =
+                new AntigravityHandleOrchestrator.TransformParams(requestedModel, null, null, null, null, false);
+        String resolvedDebugText = debugText != null && !debugText.isEmpty() ? debugText : null;
+
+        HttpResponse result = AntigravityResponseTransform.transformServe(
+                json, upstream, params, resolvedDebugText, bridgeImageSink(jsImageSink));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", (long) (result != null ? result.status : status));
+        out.put("headers", result != null ? result.headers : upstream.headers);
+        out.put("body", result != null ? result.body : bodyText);
+        return json.stringify(out);
+    }
+
+    private static Map<String, String> asStringHeaders(JsonCodec json, String headersJson) {
+        Map<String, String> out = new LinkedHashMap<>();
+        Object parsed = headersJson != null ? json.parse(headersJson) : null;
+        if (parsed instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) parsed).entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    out.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Stateful JS handle over ONE streaming SERVE-transform "session" (thought/sent buffers +
+     * debug-injected flag persist across lines, mirroring {@code createStreamingTransformer}'s
+     * per-stream closures) -- {@link #newResponseSseTransformer}'s return.
+     */
+    public interface JsResponseSseHandle extends JSObject {
+        JSString handle(JSString line);
+    }
+
+    /**
+     * Factory for the streaming half of {@code transformAntigravityResponse}
+     * (request.ts:1758-1774's {@code createStreamingTransformer} options, real-seamed via {@link
+     * AntigravityStreamTransform#transformSseLine}). The host {@code TransformStream} shell (line
+     * buffering + the 45s watchdog + the synthetic-usage flush) stays TS (Task 3c's
+     * {@code javaStream.ts}); every line's dedup/signature-cache/debug-inject/thinking-transform
+     * decision runs here. {@code jsSignatureStore} is the SAME adapter {@link
+     * #prepareAntigravityRequestProd} uses (bridges the real {@code defaultSignatureStore});
+     * {@code jsCacheSignature} bridges the real on-disk {@code cacheSignature}; {@code jsImageSink}
+     * bridges the real {@code processImageData}; {@code jsThoughtDedup} bridges the real Gemini-3
+     * SSE-reconnect {@code sessionDisplayedThinkingHashes} dedup set (request.ts:79) -- the host passes
+     * {@code null} here for every non-Gemini-3 {@code effectiveModel}, exactly mirroring TS's own
+     * {@code effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes :
+     * undefined} gate (request.ts:1770); this method never re-derives that gate itself.
+     */
+    @JSExport
+    public static JsResponseSseHandle newResponseSseTransformer(
+            String signatureSessionKey, String debugText, boolean cacheSignatures,
+            JsSignatureStoreFns jsSignatureStore, JsCacheSignatureFn jsCacheSignature, JsImageSinkFn jsImageSink,
+            JsThoughtDedupFns jsThoughtDedup) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityStreamTransform.ThoughtBuffer thoughtBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.ThoughtBuffer sentBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.DebugState debugState = new AntigravityStreamTransform.DebugState(false);
+        String resolvedDebugText = debugText != null && !debugText.isEmpty() ? debugText : null;
+        Set<String> displayedThinkingHashes = bridgeThoughtDedup(jsThoughtDedup);
+
+        AntigravityStreamTransform.SignatureStore store = (sessionKey, text, signature) ->
+                jsSignatureStore.set(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
+        AntigravityStreamTransform.CacheSignatureCallback onCacheSignature = (sessionKey, text, signature) ->
+                jsCacheSignature.onCacheSignature(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
+        AntigravityStreamTransform.InjectDebug onInjectDebug = AntigravityRequestSignatures::injectDebugThinking;
+        AntigravityThinkingBlocks.ImageSink imageSink = bridgeImageSink(jsImageSink);
+        AntigravityStreamTransform.ThinkingPartsTransform transformThinkingParts = response ->
+                AntigravityThinkingBlocks.transformThinkingParts(
+                        response, value -> AntigravityResponseParse.recursivelyParseJsonStrings(json, value), imageSink);
+
+        return new JsResponseSseHandle() {
+            @Override
+            public JSString handle(JSString lineJs) {
+                String line = lineJs == null ? "" : lineJs.stringValue();
+                String out = AntigravityStreamTransform.transformSseLine(
+                        json, line, store, thoughtBuffer, sentBuffer,
+                        onCacheSignature, onInjectDebug, transformThinkingParts, imageSink,
+                        signatureSessionKey, resolvedDebugText, cacheSignatures, displayedThinkingHashes, debugState);
+                return JSString.valueOf(out);
+            }
+        };
     }
 }

@@ -16,13 +16,9 @@ flowchart TD
     end
 
     subgraph Driver [antigravity-auth driver]
-        HANDLE["handle(request, ctx)"]
+        HANDLE["handle(request, ctx) - delegates to the Java orchestrator"]
         LOGIN["login - CLI: antigravity login"]
-        TRANSFORM["prepareAntigravityRequest / transformAntigravityResponse"]
-        LANES["laneFor / parseRateLimitReason"]
-        HANDLE --> LANES
-        HANDLE --> TRANSFORM
-        TRANSFORM -->|POST + endpoint fallback| GOOGLE[(Cloud Code Assist API)]
+        HANDLE -->|POST + endpoint fallback| GOOGLE[(Cloud Code Assist API)]
         LOGIN -->|Google PKCE OAuth| GOOGLE
     end
 
@@ -38,7 +34,7 @@ flowchart TD
 
 ## Driver Detail
 
-The driver maps a requested model to a lane (`claude`, `gemini-antigravity`, `gemini-cli`), asks `AccountManager` for an account + fresh access token, builds the upstream request with the reused transform layer, and dispatches with endpoint fallback. On a rate-limit it reports the reset time to core and rotates; on success it transforms the response back to the caller's format.
+`handle` delegates every decision — model/lane resolve, the account/endpoint retry+rotation loop, request/response transform, and rate-limit classification — to the Java orchestrator (`java/antigravity-provider`, TeaVM-compiled, called via `driver/javaHandle.ts`/`javaStream.ts`). This TS layer owns only host I/O: the fetch + proxy transport, `AccountManager` acquisition/reporting, project-context discovery, OAuth login, device fingerprinting, and the version pool.
 
 ## Structure
 
@@ -46,8 +42,8 @@ The driver maps a requested model to a lane (`claude`, `gemini-antigravity`, `ge
   - `index.ts` — OpenCode entry (the core-auth provider plugin)
   - `handler.ts` — Claude Code entry (`handle()` for the claude-code-loader proxy)
   - `cli.ts` — `antigravity login | list | remove`
-  - `driver/` — `index.ts` (driver + `handle`), `config.ts`, `lanes.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`
-  - `antigravity/oauth.ts`, `plugin/{request,request-helpers,project,transform/*,core/streaming/*,...}.ts` — the reused antigravity transform/request layer
+  - `driver/` — `index.ts` (driver + `handle`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)
+  - `antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts` — the host I/O this driver still owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform + decision logic itself lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)
   - `commands.ts` — cross-app slash-command definitions + their CLI actions
   - `core-auth/` — the core-auth library (git submodule, bundled into the output)
   - `core/` — shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in

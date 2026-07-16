@@ -1,17 +1,16 @@
-import {
-  getAntigravityHeaders,
-  ANTIGRAVITY_ENDPOINT_FALLBACKS,
-  ANTIGRAVITY_LOAD_ENDPOINTS,
-  ANTIGRAVITY_DEFAULT_PROJECT_ID,
-} from "../constants";
-import { formatRefreshParts, parseRefreshParts } from "./auth";
+// Task 7b-3: ensureProjectContext (the project-id discovery DECISION + its per-refresh-token
+// result/pending Map/Promise dedup cache) is deleted — AntigravityProjectContext.ensureProjectContext
+// (Java) owns that decision now, reached via driver/javaHandle.ts's resolveProjectIdViaJava (fetchModels)
+// and the SERVE path's handleAntigravityRequestAsync; ensureProjectContext was the cache's only
+// consumer, so the cache had no reason to survive (never wrapped loadManagedProject/onboardManagedProject
+// directly). What remains here is host I/O only: the two network fetch loops (used by BOTH Java paths
+// via the jsLoad/jsOnboard seams) + buildMetadata/detectCodeAssistPlatform, which those loops need to
+// build request bodies (also duplicated in Java, but genuinely local formatting the loops call directly
+// — not re-exposed as a standalone seam).
+import { getAntigravityHeaders, ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_LOAD_ENDPOINTS } from "../constants";
 import { createLogger } from "./logger";
-import type { OAuthAuthDetails, ProjectContextResult } from "./types";
 
 const log = createLogger("project");
-
-const projectContextResultCache = new Map<string, ProjectContextResult>();
-const projectContextPendingCache = new Map<string, Promise<ProjectContextResult>>();
 
 // The loadCodeAssist/onboardUser request body validates metadata.platform
 // against ClientMetadata.Platform — "WINDOWS"/"MACOS" are NOT valid enum values
@@ -68,51 +67,12 @@ function buildMetadata(projectId?: string): Record<string, string> {
 }
 
 /**
- * Selects the default tier ID from the allowed tiers list.
- */
-function getDefaultTierId(allowedTiers?: AntigravityUserTier[]): string | undefined {
-  if (!allowedTiers || allowedTiers.length === 0) {
-    return undefined;
-  }
-  for (const tier of allowedTiers) {
-    if (tier?.isDefault) {
-      return tier.id;
-    }
-  }
-  return allowedTiers[0]?.id;
-}
-
-/**
  * Promise-based delay utility.
  */
 function wait(ms: number): Promise<void> {
   return new Promise(function (resolve) {
     setTimeout(resolve, ms);
   });
-}
-
-/**
- * Extracts the cloudaicompanion project id from loadCodeAssist responses.
- */
-function extractManagedProjectId(payload: LoadCodeAssistPayload | null): string | undefined {
-  if (!payload) {
-    return undefined;
-  }
-  if (typeof payload.cloudaicompanionProject === "string") {
-    return payload.cloudaicompanionProject;
-  }
-  if (payload.cloudaicompanionProject && typeof payload.cloudaicompanionProject.id === "string") {
-    return payload.cloudaicompanionProject.id;
-  }
-  return undefined;
-}
-
-/**
- * Generates a cache key for project context based on refresh token.
- */
-function getCacheKey(auth: OAuthAuthDetails): string | undefined {
-  const refresh = auth.refresh?.trim();
-  return refresh ? refresh : undefined;
 }
 
 /**
@@ -230,110 +190,4 @@ export async function onboardManagedProject(
   }
 
   return undefined;
-}
-
-/**
- * Resolves an effective project ID for the current auth state, caching results per refresh token.
- */
-export async function ensureProjectContext(
-  auth: OAuthAuthDetails,
-  options: { proxy?: string; fallbackProjectId?: string } = {},
-): Promise<ProjectContextResult> {
-  const proxy = options.proxy;
-  const accessToken = auth.access;
-  if (!accessToken) {
-    return { auth, effectiveProjectId: "" };
-  }
-
-  const cacheKey = getCacheKey(auth);
-  if (cacheKey) {
-    const cached = projectContextResultCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-    const pending = projectContextPendingCache.get(cacheKey);
-    if (pending) {
-      return pending;
-    }
-  }
-
-  const resolveContext = async (): Promise<ProjectContextResult> => {
-    const parts = parseRefreshParts(auth.refresh);
-    if (parts.managedProjectId) {
-      return { auth, effectiveProjectId: parts.managedProjectId };
-    }
-
-    const fallbackProjectId = options.fallbackProjectId || ANTIGRAVITY_DEFAULT_PROJECT_ID;
-    const persistManagedProject = async (managedProjectId: string): Promise<ProjectContextResult> => {
-      const updatedAuth: OAuthAuthDetails = {
-        ...auth,
-        refresh: formatRefreshParts({
-          refreshToken: parts.refreshToken,
-          projectId: parts.projectId,
-          managedProjectId,
-        }),
-      };
-
-      return { auth: updatedAuth, effectiveProjectId: managedProjectId };
-    };
-
-
-    const loadPayload = await loadManagedProject(accessToken, parts.projectId ?? fallbackProjectId, proxy);
-    const resolvedManagedProjectId = extractManagedProjectId(loadPayload);
-
-    if (resolvedManagedProjectId) {
-      return persistManagedProject(resolvedManagedProjectId);
-    }
-
-
-    const tierId = getDefaultTierId(loadPayload?.allowedTiers) ?? "FREE";
-    log.debug("Auto-provisioning managed project", { tierId, projectId: parts.projectId });
-    
-    const provisionedProjectId = await onboardManagedProject(
-      accessToken,
-      tierId,
-      parts.projectId,
-      undefined,
-      undefined,
-      proxy,
-    );
-
-    if (provisionedProjectId) {
-      log.debug("Successfully provisioned managed project", { provisionedProjectId });
-      return persistManagedProject(provisionedProjectId);
-    }
-
-    log.warn("Failed to provision managed project - account may not work correctly", {
-      hasProjectId: !!parts.projectId,
-    });
-
-    if (parts.projectId) {
-      return { auth, effectiveProjectId: parts.projectId };
-    }
-
-
-    return { auth, effectiveProjectId: fallbackProjectId };
-  };
-
-  if (!cacheKey) {
-    return resolveContext();
-  }
-
-  const promise = resolveContext()
-    .then((result) => {
-      const nextKey = getCacheKey(result.auth) ?? cacheKey;
-      projectContextPendingCache.delete(cacheKey);
-      projectContextResultCache.set(nextKey, result);
-      if (nextKey !== cacheKey) {
-        projectContextResultCache.delete(cacheKey);
-      }
-      return result;
-    })
-    .catch((error) => {
-      projectContextPendingCache.delete(cacheKey);
-      throw error;
-    });
-
-  projectContextPendingCache.set(cacheKey, promise);
-  return promise;
 }
