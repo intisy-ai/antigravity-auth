@@ -595,4 +595,36 @@ public final class AntigravityResponseParse {
     private static void appendEvent(StringBuilder sb, String eventName, String dataJson) {
         sb.append("event: ").append(eventName).append("\ndata: ").append(dataJson).append("\n\n");
     }
+
+    // ---- detectErrorType (recovery.ts:41-70, TeaVM de-dup Task 1) ----------------------------------
+
+    /**
+     * Port of {@code detectErrorType}: classifies an already-extracted upstream error message into a
+     * recoverable error type ({@code tool_result_missing} / {@code thinking_block_order} /
+     * {@code thinking_disabled_violation}), or {@code null}. The TS's polymorphic {@code
+     * getErrorMessage} unwrapping (error-object/{@code .data}/{@code .error} nesting, {@code
+     * JSON.stringify} fallback) is not ported -- request.ts's one call site (:1802) always passes the
+     * already-extracted message string.
+     */
+    public static String detectErrorType(String message) {
+        String m = message != null ? message.toLowerCase() : "";
+        boolean hasExpectedFoundThinkingOrder =
+                (m.contains("expected thinking") || m.contains("expected a thinking")) && m.contains("found");
+
+        if (m.contains("tool_use") && m.contains("tool_result")) {
+            return "tool_result_missing";
+        }
+
+        if (m.contains("thinking")
+                && (m.contains("first block") || m.contains("must start with")
+                || m.contains("preceeding") || m.contains("preceding") || hasExpectedFoundThinkingOrder)) {
+            return "thinking_block_order";
+        }
+
+        if (m.contains("thinking is disabled") && m.contains("cannot contain")) {
+            return "thinking_disabled_violation";
+        }
+
+        return null;
+    }
 }
