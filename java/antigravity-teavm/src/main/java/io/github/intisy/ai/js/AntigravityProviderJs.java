@@ -145,6 +145,37 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityQuotaParser.aggregateQuotaFamilies(models));
     }
 
+    // ---- AntigravityQuotaParser: accounts-controller.ts's account-view (Task 7a) ------------------
+    // familyLabel and allPoolsExhausted have no direct TS caller: familyLabel is used internally by
+    // aggregateQuotaFamilies (above, wired to fetchQuotaFamilies); allPoolsExhausted is used
+    // internally by antigravityStatus/antigravityAvailableAt below. Neither needs its own JS export.
+
+    /** Exercises {@link AntigravityQuotaParser#antigravityStatus} (account JSON + now epoch-ms). */
+    @JSExport
+    public static String antigravityStatus(String accountJson, double now) {
+        JsonCodec json = new SimpleJsonCodec();
+        return AntigravityQuotaParser.antigravityStatus(asMap(json.parse(accountJson)), (long) now);
+    }
+
+    /**
+     * Exercises {@link AntigravityQuotaParser#antigravityAvailableAt} (account JSON + now epoch-ms).
+     * Returns the raw {@code double} (not JSON) so a disabled account's {@code Double.POSITIVE_INFINITY}
+     * compiles straight to JS {@code Infinity} -- {@code SimpleJsonCodec} has no JSON encoding for it.
+     */
+    @JSExport
+    public static double antigravityAvailableAt(String accountJson, double now) {
+        JsonCodec json = new SimpleJsonCodec();
+        return AntigravityQuotaParser.antigravityAvailableAt(asMap(json.parse(accountJson)), (long) now);
+    }
+
+    /** Exercises {@link AntigravityQuotaParser#antigravityQuota} via JsonCodec (JSON out, {@code null} when uncached). */
+    @JSExport
+    public static String antigravityQuota(String accountJson) {
+        JsonCodec json = new SimpleJsonCodec();
+        List<Map<String, Object>> result = AntigravityQuotaParser.antigravityQuota(asMap(json.parse(accountJson)));
+        return result == null ? null : json.stringify(result);
+    }
+
     // ---- AntigravityModelResolver (T7b) -----------------------------------------------------------
 
     /** Exercises {@link AntigravityModelResolver#resolveModelWithTier} (JSON out). */

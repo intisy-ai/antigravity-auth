@@ -1,12 +1,10 @@
 // @ts-nocheck
-// T7g2 — the DORMANT delegation shell that runs antigravity-auth's `handle` decision loop through
-// the TeaVM-compiled Java orchestrator (`AntigravityHandleOrchestrator`, exported as
-// `handleAntigravityRequestAsync` from :antigravity-teavm) instead of the pure-TS path in index.ts.
-//
-// This module is loaded ONLY when the flag is ON (index.ts dynamically imports it inside `handle`),
-// and the TeaVM ESM is loaded ONLY on the first delegated request (lazily-memoized dynamic import
-// below). So with the flag OFF nothing here — and none of the ~MB of TeaVM output — ever evaluates:
-// zero runtime risk to live `oc` (mirrors claude-code-auth's T6c2 javaHandle).
+// The delegation shell that runs antigravity-auth's `handle` decision loop (and the account-view
+// quota/catalog helpers below) through the TeaVM-compiled Java orchestrator
+// (`AntigravityHandleOrchestrator` + `AntigravityProviderJs`'s other exports from :antigravity-teavm)
+// instead of duplicated TS. index.ts's `handle` dynamically imports this module on the first request;
+// the TeaVM ESM itself is loaded via the lazily-memoized `loadOrchestrator()` below, so the ~MB
+// compiled bundle is never bundled statically and only evaluates once actually needed.
 //
 // Split of responsibility (mirrors AntigravityHandleOrchestrator's javadoc):
 //   - The Java orchestrator owns EVERY decision: model resolve + Auto candidate walk, the
@@ -61,9 +59,24 @@ const PROVIDER_ID = "antigravity";
 // at build time and bundled (deferred) by esbuild. Exported (read-only usage) so the parity test can
 // load the same memoized module instance without re-importing it.
 let orchestratorPromise = null;
+let orchestratorLoaded = null;   // synchronously readable once loadOrchestrator() resolves (Task 7a)
 export function loadOrchestrator() {
-  if (!orchestratorPromise) orchestratorPromise = import("../generated/antigravity-orchestrator.teavm.js");
+  if (!orchestratorPromise) {
+    orchestratorPromise = import("../generated/antigravity-orchestrator.teavm.js").then((m) => (orchestratorLoaded = m));
+  }
   return orchestratorPromise;
+}
+// For callback contracts that can't await (accounts-controller.ts's synchronous status/availableAt/
+// quota view) — null until the first loadOrchestrator() resolves.
+export function getLoadedOrchestrator() {
+  return orchestratorLoaded;
+}
+
+// Task 7a — routes fetchModels' catalog build through the Java buildCatalog export
+// (AntigravityCatalog.buildAntigravityCatalog), replacing the deleted TS buildAntigravityCatalog.
+export async function buildCatalogViaJava(payload) {
+  const orchestrator = await loadOrchestrator();
+  return JSON.parse(orchestrator.buildCatalog(JSON.stringify(payload)));
 }
 
 // index.ts:82 — the antigravity rate-limit statuses.
@@ -108,12 +121,10 @@ const jsCacheSignatureFn = (sessionKey, text, signature) => cacheSignature(sessi
 // own `mimeType || 'image/png'` / `if (!data) return null` treat "" and undefined identically.
 const jsImageSink = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
 
-// Task 3d — the Gemini-3 SSE-reconnect thought-dedup seam, bridging request.ts:79's
-// `sessionDisplayedThinkingHashes` (a module-private, process-lifetime `Set<string>`) into the Java
-// SERVE streaming transform. request.ts's Set isn't exported, so this is a SEPARATE module-level Set
-// with the SAME process lifetime (created once, never reset) rather than the literal same instance —
-// in production only one of the TS/Java paths is ever active per process (feature-flag gated), so two
-// independently-scoped process-lifetime Sets are behaviorally equivalent to sharing one.
+// Task 3d — the Gemini-3 SSE-reconnect thought-dedup seam: a process-lifetime `Set<string>` (created
+// once, never reset) feeding the Java SERVE streaming transform, mirroring the deleted TS path's own
+// module-private `sessionDisplayedThinkingHashes` (request.ts, removed with the rest of the pure-TS
+// decision loop — this is now the only implementation).
 const javaSessionDisplayedThinkingHashes = new Set();
 const jsThoughtDedup = {
   has(hash) { return javaSessionDisplayedThinkingHashes.has(hash); },

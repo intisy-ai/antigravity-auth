@@ -1,0 +1,61 @@
+{
+  "now": 1753000000000,
+  "accounts": {
+    "disabled": { "id": "a1", "enabled": false, "meta": {} },
+    "verificationRequired": { "id": "a2", "enabled": true, "meta": { "verificationRequired": true } },
+    "coolingDown": { "id": "a3", "enabled": true, "meta": {}, "coolingDownUntil": 1753000060000 },
+    "activeWithQuota": {
+      "id": "a4",
+      "enabled": true,
+      "meta": {
+        "cachedQuota": {
+          "Claude": { "remainingFraction": 0.4, "resetTime": "2026-07-18T00:00:00.000Z" },
+          "Gemini": { "remainingFraction": 0.9, "resetTime": "2026-07-18T01:00:00.000Z" }
+        }
+      }
+    },
+    "exhaustedQuota": {
+      "id": "a5",
+      "enabled": true,
+      "meta": {
+        "cachedQuota": {
+          "Claude": { "remainingFraction": 0, "resetTime": "2026-07-18T02:00:00.000Z" },
+          "Gemini": { "remainingFraction": 0, "resetTime": "2026-07-18T00:30:00.000Z" }
+        }
+      }
+    },
+    "laneRateLimited": { "id": "a6", "enabled": true, "meta": {}, "rateLimitResetTimes": { "gemini-cli": 1753000120000 } },
+    "freshNoQuota": { "id": "a7", "enabled": true, "meta": {} },
+    "noMeta": { "id": "a8", "enabled": true }
+  },
+  "results": {
+    "disabled": { "status": "disabled", "availableAt": "Infinity", "quota": null },
+    "verificationRequired": { "status": "verification-required", "availableAt": 1753000000000, "quota": null },
+    "coolingDown": { "status": "cooling-down", "availableAt": 1753000060000, "quota": null },
+    "activeWithQuota": {
+      "status": "active",
+      "availableAt": 1753000000000,
+      "quota": [
+        { "label": "Claude", "remainingFraction": 0.4, "resetTime": "2026-07-18T00:00:00.000Z" },
+        { "label": "Gemini", "remainingFraction": 0.9, "resetTime": "2026-07-18T01:00:00.000Z" }
+      ]
+    },
+    "exhaustedQuota": {
+      "status": "rate-limited",
+      "availableAt": 1784334600000,
+      "quota": [
+        { "label": "Claude", "remainingFraction": 0, "resetTime": "2026-07-18T02:00:00.000Z" },
+        { "label": "Gemini", "remainingFraction": 0, "resetTime": "2026-07-18T00:30:00.000Z" }
+      ]
+    },
+    "laneRateLimited": { "status": "rate-limited", "availableAt": 1753000000000, "quota": null },
+    "freshNoQuota": { "status": "active", "availableAt": 1753000000000, "quota": null },
+    "noMeta": { "status": "active", "availableAt": 1753000000000, "quota": null }
+  },
+  "familyLabels": {
+    "claude": "Claude",
+    "gptOss": "GPT-OSS",
+    "gemini": "Gemini",
+    "unknown": null
+  }
+}

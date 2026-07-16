@@ -7,7 +7,7 @@
 import { defineProvider, AccountManager, proxyManager } from "../../core-auth/dist/index.js";
 import { generateSyntheticProjectId } from "../plugin/request.js";
 import { ensureProjectContext } from "../plugin/project.js";
-import { fetchAvailableModels, buildAntigravityCatalog } from "../plugin/models-fetch.js";
+import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, driftVersion, nextVersionDriftDelay } from "../plugin/versions.js";
 import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
 import { models } from "./models.js";
@@ -151,7 +151,8 @@ async function fetchModels(ctx) {
   const projectId = await resolveProjectId(account, access, log, proxyUrl);
   const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
   if (!payload) return null;
-  return buildAntigravityCatalog(payload);
+  const { buildCatalogViaJava } = await import("./javaHandle.js");
+  return buildCatalogViaJava(payload);
 }
 
 // Settings shown in core-auth's settings UI. ONLY options actually consumed by
