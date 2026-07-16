@@ -372,7 +372,10 @@ final class AntigravityHostSeams {
             return null;
         }
 
-        private static Map<String, String> loadHeaders(String accessToken) {
+        // Package-visible (not private): AntigravityModelsFetch reuses this exact header set for
+        // its own v1internal:fetchAvailableModels POST rather than re-deriving the User-Agent/
+        // X-Goog-Api-Client strings.
+        static Map<String, String> loadHeaders(String accessToken) {
             Map<String, String> h = new LinkedHashMap<>();
             h.put("Content-Type", "application/json");
             h.put("Authorization", "Bearer " + accessToken);

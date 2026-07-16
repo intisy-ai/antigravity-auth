@@ -118,6 +118,14 @@ public final class AntigravityProvider implements Provider {
 
     @Override
     public HttpResponse handle(HttpRequest request, HandlerCtx ctx) {
+        // Model-map Task 2: GET /v1/models is a discovery call, not a chat turn -- handle it
+        // before any of the messages-path plumbing (model resolution/orchestrator) below.
+        if (request != null && "GET".equalsIgnoreCase(request.method) && request.url != null
+                && request.url.endsWith("/v1/models")) {
+            return AntigravityModelsFetch.fetch(
+                    AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null), ctx);
+        }
+
         String model = resolveModel(ctx);
         AntigravityBackend backend = AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null);
         Logger log = loggerFor(ctx);
