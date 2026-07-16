@@ -80,7 +80,7 @@ function tryOpenBrowser(url) {
   } catch {}
 }
 
-function toCoreAccount(result) {
+async function toCoreAccount(result) {
   const parts = parseRefreshParts(result.refresh);
   const account = {
     id: result.email || parts.refreshToken.slice(0, 16),
@@ -94,7 +94,7 @@ function toCoreAccount(result) {
     rateLimitResetTimes: {},
     meta: { projectId: result.projectId || parts.projectId, managedProjectId: parts.managedProjectId },
   };
-  try { account.meta.fingerprint = generateFingerprint(); } catch {}
+  try { account.meta.fingerprint = await generateFingerprint(); } catch {}
   return account;
 }
 
@@ -132,7 +132,7 @@ export async function loginFlow() {
         process.stderr.write("antigravity login failed — token exchange error: " + (result.error || "unknown") + "\n");
         return null;
       }
-      const account = toCoreAccount(result);
+      const account = await toCoreAccount(result);
       // gate: confirm Antigravity actually accepts this account before saving it
       const projectId = account.meta.managedProjectId || account.meta.projectId || result.projectId || "";
       const check = await checkAntigravityAccess(result.access, projectId, boundProxy);

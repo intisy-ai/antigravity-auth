@@ -8,7 +8,7 @@ import { defineProvider, AccountManager, proxyManager } from "../../core-auth/di
 import { generateSyntheticProjectId } from "../plugin/request.js";
 import { ensureProjectContext } from "../plugin/project.js";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
-import { refreshVersions, driftVersion, nextVersionDriftDelay } from "../plugin/versions.js";
+import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
 import { models } from "./models.js";
 import { oauthConfig } from "./config.js";
@@ -87,31 +87,32 @@ async function resolveProjectId(account, access, log, proxy) {
 // update in lockstep — versions roll forward gradually. The first time an account is
 // seen it's only SCHEDULED (no change), which is what staggers the initial migration
 // off the old hardcoded version. Never downgrades; platform/arch preserved.
-function driftAccountVersions(log) {
+// The DECISION (Option-B: Java decides, host applies) is AntigravityHandleRouting.
+// driftAccountVersions (real jsRandom); this just applies the returned mutations + logs.
+async function driftAccountVersions(log) {
+  const { loadOrchestrator } = await import("./javaHandle.js");
+  const orchestrator = await loadOrchestrator();
   const now = Date.now();
-  for (const account of manager.list()) {
-    const fp = account.meta && account.meta.fingerprint;
-    if (!fp || !fp.userAgent) continue;
-
-    // First sight under the scheduler: assign a staggered due date, change nothing yet.
-    if (typeof fp.nextVersionDriftAt !== "number") {
-      const delay = nextVersionDriftDelay(!!fp.version);
-      manager.mutate(account.id, (a) => { const f = a.meta && a.meta.fingerprint; if (f) f.nextVersionDriftAt = now + delay; });
-      continue;
-    }
-    if (now < fp.nextVersionDriftAt) continue;   // not due yet
-
-    const current = fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "";
-    const next = driftVersion(current);
-    manager.mutate(account.id, (a) => {
+  const accounts = manager.list();
+  const drifts = JSON.parse(orchestrator.driftAccountVersionsProd(
+    JSON.stringify(accounts), now, JSON.stringify(getVersionList()), () => Math.random(),
+  ));
+  for (const d of drifts) {
+    const account = accounts.find((a) => a.id === d.accountId);
+    const fp = account && account.meta && account.meta.fingerprint;
+    const current = fp ? (fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "") : "";
+    manager.mutate(d.accountId, (a) => {
       const f = a.meta && a.meta.fingerprint;
       if (!f) return;
-      f.userAgent = String(f.userAgent).replace(/antigravity\/[^ ]+/, "antigravity/" + next);
-      f.version = next;
-      f.versionPickedAt = now;
-      f.nextVersionDriftAt = now + nextVersionDriftDelay(true);   // reschedule, jittered
+      if (d.scheduleOnly) { f.nextVersionDriftAt = d.nextVersionDriftAt; return; }
+      f.userAgent = d.userAgent;
+      f.version = d.version;
+      f.versionPickedAt = d.versionPickedAt;
+      f.nextVersionDriftAt = d.nextVersionDriftAt;
     });
-    if (log && next !== current) log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + next);
+    if (!d.scheduleOnly && log && d.version !== current) {
+      log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + d.version);
+    }
   }
 }
 

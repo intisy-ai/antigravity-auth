@@ -112,13 +112,63 @@ public final class AntigravityProviderJs {
         return String.valueOf(AntigravityLanes.calculateBackoffMs(classified, consecutiveFailures, null, FIXED_RANDOM));
     }
 
-    // ---- AntigravityVersions ----------------------------------------------------------------------
+    // ---- AntigravityVersions (Task 7b-1: production exports, real jsRandom) ------------------------
 
-    /** Exercises {@link AntigravityVersions#driftVersion} over the curated fallback pool (+ Random SPI). */
+    /** JS {@code (versionListJson, min, jsRandom) => string} -- {@link AntigravityVersions#pickVersion}
+     *  (fingerprint.ts's new-account version pick; {@code min} empty/{@code null} = no floor). */
     @JSExport
-    public static String driftVersion(String current) {
-        List<String> pool = new ArrayList<>(AntigravityVersions.FALLBACK_VERSIONS);
-        return AntigravityVersions.driftVersion(current, pool, FIXED_RANDOM);
+    public static String pickVersionProd(String versionListJson, String min, JsRandomFn jsRandom) {
+        JsonCodec json = new SimpleJsonCodec();
+        Random random = () -> jsRandom.next();
+        return AntigravityVersions.pickVersion(parseVersionList(json, versionListJson),
+                (min != null && !min.isEmpty()) ? min : null, random);
+    }
+
+    /**
+     * JS {@code (accountsJson, now, versionListJson, jsRandom) => string} (JSON array of {@code
+     * {accountId,scheduleOnly,nextVersionDriftAt,userAgent,version,versionPickedAt}}) -- {@link
+     * AntigravityHandleRouting#driftAccountVersions}, the per-account UA version-drift scheduler
+     * (index.ts's {@code driftAccountVersions}). Returns the ordered mutations only; the host applies
+     * each via {@code manager.mutate} (Option-B: Java decides, host applies).
+     */
+    @JSExport
+    public static String driftAccountVersionsProd(String accountsJson, double now, String versionListJson, JsRandomFn jsRandom) {
+        JsonCodec json = new SimpleJsonCodec();
+        Random random = () -> jsRandom.next();
+        List<AntigravityHandleRouting.VersionDrift> drifts = AntigravityHandleRouting.driftAccountVersions(
+                parseMapList(json, accountsJson), (long) now, random, parseVersionList(json, versionListJson));
+        List<Object> out = new ArrayList<>();
+        for (AntigravityHandleRouting.VersionDrift d : drifts) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("accountId", d.accountId);
+            m.put("scheduleOnly", d.scheduleOnly);
+            m.put("nextVersionDriftAt", d.nextVersionDriftAt);
+            m.put("userAgent", d.userAgent);
+            m.put("version", d.version);
+            m.put("versionPickedAt", d.versionPickedAt);
+            out.add(m);
+        }
+        return json.stringify(out);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> parseVersionList(JsonCodec json, String versionListJson) {
+        List<String> out = new ArrayList<>();
+        Object parsed = versionListJson != null ? json.parse(versionListJson) : null;
+        if (parsed instanceof List) {
+            for (Object v : (List<Object>) parsed) if (v instanceof String) out.add((String) v);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> parseMapList(JsonCodec json, String listJson) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Object parsed = listJson != null ? json.parse(listJson) : null;
+        if (parsed instanceof List) {
+            for (Object v : (List<Object>) parsed) if (v instanceof Map) out.add((Map<String, Object>) v);
+        }
+        return out;
     }
 
     // ---- AntigravityCatalog -----------------------------------------------------------------------

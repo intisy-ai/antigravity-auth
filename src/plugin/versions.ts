@@ -1,9 +1,12 @@
 // @ts-nocheck
 // Antigravity version pool for the User-Agent. A real user runs one of many
 // released versions — mostly recent ones — and auto-updates over time, so a single
-// hardcoded version is an obvious fingerprint. This keeps a list of real released
-// versions (a curated fallback, refreshed at runtime from the public release feed),
-// picks weighted toward newer for each account, and drifts accounts forward.
+// hardcoded version is an obvious fingerprint. This module owns the pool itself
+// (curated fallback + runtime refresh from the public release feed); the entropy-
+// bearing pick/drift decisions (weighted-newer pick, per-account drift + jittered
+// scheduling) are OWNED by Java (AntigravityVersions.java / AntigravityHandleRouting.
+// driftAccountVersions), called via the TeaVM prod exports `pickVersionProd` (fingerprint.ts)
+// and `driftAccountVersionsProd` (driver/index.ts) — see Task 7b-1.
 
 // Curated fallback (newest-first) — real Antigravity releases. Used before/if the
 // live refresh fails so the pool is never empty or stale-to-one-value.
@@ -16,8 +19,6 @@ const FALLBACK_VERSIONS = [
 // Public release mirror (tag_name = "v2.1.1", …). GitHub API, no auth needed.
 const RELEASES_URL = "https://api.github.com/repos/BOTOOM/google-antigravity-bin-arch/releases";
 const REFRESH_TTL_MS = 6 * 60 * 60 * 1000;   // re-fetch at most every 6h per process
-const CONSIDER_NEWEST = 10;                   // only pick among the newest N (nobody runs ancient builds)
-const NEWER_BIAS = 0.6;                       // geometric weight ratio: newer strongly preferred
 
 let versionList = FALLBACK_VERSIONS.slice();
 let lastFetchAt = 0;
@@ -47,46 +48,12 @@ export function getVersionList() {
   return versionList;
 }
 
+// Pure/deterministic (no entropy) — intentionally KEPT in TS rather than routed through Java: its
+// only consumer (constants.ts's getAntigravityHeaders, used synchronously across ~7 call sites)
+// would otherwise need an async ripple (or a circular import back into driver/javaHandle.ts) for a
+// one-line, zero-correlation-risk accessor. The entropy-bearing pick/drift live in Java exclusively.
 export function getNewestVersion() {
   return versionList[0] || FALLBACK_VERSIONS[0];
-}
-
-// Weighted-random toward newer, restricted to versions >= min (min omitted = any).
-export function pickVersion(min) {
-  let pool = versionList.slice(0, CONSIDER_NEWEST);
-  if (min) {
-    const newer = pool.filter((v) => cmpSemver(v, min) >= 0);
-    if (newer.length) pool = newer;
-  }
-  const weights = pool.map((_, i) => Math.pow(NEWER_BIAS, i));
-  const total = weights.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pool[i];
-  }
-  return pool[0] || getNewestVersion();
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// Per-account delay until the NEXT User-Agent version change, randomized so accounts
-// never update in lockstep — they roll forward gradually. Accounts still on the old
-// hardcoded UA (no stored version) migrate soon but SPREAD across the first week;
-// already-versioned accounts re-drift on a wide 2–5 week window. Independent random
-// per account => their due dates scatter and stay scattered.
-export function nextVersionDriftDelay(hasVersion) {
-  const min = hasVersion ? 14 * DAY_MS : 0;
-  const max = hasVersion ? 35 * DAY_MS : 7 * DAY_MS;
-  return min + Math.floor(Math.random() * (max - min));
-}
-
-// Forward-only pick for an account that already has a version (simulates an IDE
-// auto-update): weighted-newer among versions >= current; never downgrades.
-export function driftVersion(current) {
-  if (!current) return pickVersion();
-  const pick = pickVersion(current);
-  return cmpSemver(pick, current) >= 0 ? pick : getNewestVersion();
 }
 
 // Best-effort, throttled, non-blocking refresh of the pool from the release feed.
