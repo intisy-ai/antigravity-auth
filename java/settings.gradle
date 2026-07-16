@@ -30,3 +30,21 @@ include ":antigravity-provider"
 // :antigravity-teavm - trivial TeaVM JS export surface proving all five T7a classes are
 // TeaVM-transpilable (generateJavaScript). Reuses :teavm's js-base instead of duplicating it.
 include ":antigravity-teavm"
+
+// ---- test-only composite build -------------------------------------------------------------
+// Pulls ai-java's own Gradle build in (Phase 2 of the JVM antigravity provider plan) so
+// :antigravity-provider can `compileOnly`/`testImplementation "io.github.intisy:jvm:0.1.0"` --
+// AccountManager/AccountStore/OAuthConfig (:accounts) and the JVM backends (FileStore/
+// UrlConnectionHttpClient/GsonJsonCodec/SystemClock/SecureRandomAdapter) that Phase 2's
+// self-assembled AntigravityBackend depends on. Mirrors stub-auth's identical recipe exactly
+// (stub-auth/java/settings.gradle) -- LOCAL DEV-ONLY: only resolves when ai-java is checked out
+// side by side on the same machine. Override with -PaiJavaDir=<path> if your checkout isn't at
+// the default (the unified ai/ tree's java/ai-java, per the 2026-07-15 ecosystem move).
+def aiJavaDir = file(providers.gradleProperty("aiJavaDir").getOrElse("F:/Documents/GitHub/ai/java/ai-java"))
+if (aiJavaDir.isDirectory()) {
+    includeBuild(aiJavaDir)
+} else {
+    logger.warn("antigravity-auth java: ai-java not found at ${aiJavaDir} -- the includeBuild-based " +
+            "io.github.intisy:jvm dependency (AntigravityBackend's self-assembled backend) will fail to " +
+            "resolve. Pass -PaiJavaDir=<path-to-ai-java> to point at a different checkout.")
+}
