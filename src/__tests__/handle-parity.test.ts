@@ -1,20 +1,29 @@
 // @ts-nocheck
-// T7g2 PARITY HARNESS — runs BOTH the live pure-TS `handle` (driver.handle, flag OFF) and the
-// Java-orchestrator delegation (handleViaJavaOrchestrator) against the SAME scripted scenarios,
-// asserting IDENTICAL outcomes: final Response (status + headers + streamed body), the IDENTICAL
-// ordered sequence of manager.* / proxyManager.* calls (incl. the reportRateLimit ipSuspected proxy
-// re-fire and the rate-limit cooldown resetMs), AND — the claude T6c2 review lesson — the
-// byte-identical OUTBOUND fetch requests (url/method/headers/body/proxy) each path hands to fetch.
-// This offline diff is the evidence that flipping the flag in T7h is safe.
+// JAVA-PATH REGRESSION (post flag removal): `driver.handle` unconditionally delegates to the
+// TeaVM-compiled Java orchestrator now, so there is no second TS path to diff against. Instead this
+// asserts driver.handle's output — final Response (status/headers/streamed body), the ordered
+// manager.*/proxyManager.* call sequence, and the byte-identical outbound fetch requests — against
+// the FROZEN fixture `handle-scenarios.expected.json` (captured from this same Java path). Any
+// unintended behavior drift in the orchestrator or its host seams fails this test.
 //
-// Fakes: core-auth's AccountManager + proxyManager + getAutoCandidates are replaced (so both paths
-// share ONE instrumented manager/proxy); the REAL prepareAntigravityRequest / transformAntigravityResponse
-// / anthropic bridge / chatError all stay. Global fetch is scripted per scenario. Date, Math.random,
-// and crypto.randomUUID are pinned so the real prepare is fully deterministic AND both paths agree on
-// cooldowns (Java bakes random=0.5; we pin Math.random=0.5 so the TS jitter matches it exactly).
+// Fakes: core-auth's AccountManager + proxyManager + getAutoCandidates are replaced with an
+// instrumented harness; global fetch is scripted per scenario. Date, Math.random, and
+// crypto.randomUUID are pinned so the run is fully deterministic and matches the fixture capture.
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import crypto, { randomUUID as realRandomUuid } from "node:crypto";
+import { getPluginSessionId } from "../plugin/request.js";
+import fixture from "./handle-scenarios.expected.json";
+
+// PLUGIN_SESSION_ID (request.ts) is minted once via crypto.randomUUID() at module load, BEFORE any
+// per-test mock is installed, so it differs across process runs. Redact it to a stable placeholder
+// so the outbound body compares equal to the frozen fixture regardless of the real value.
+const SESSION_PLACEHOLDER = "SESSION_ID";
+function redactSession(text: string | null) {
+  if (typeof text !== "string") return text;
+  const id = getPluginSessionId();
+  return id ? text.split(id).join(SESSION_PLACEHOLDER) : text;
+}
 
 const H = vi.hoisted(() => {
   const harness: any = {
@@ -90,22 +99,21 @@ vi.mock("../../core-auth/dist/index.js", async (importOriginal) => {
 
 // Neutralize the fire-and-forget version-feed refresh (maybeMaintainVersions in index.ts): it is an
 // unrelated background host side-effect, NOT part of the decision loop, and left live it would do a
-// real network fetch (consuming a scripted fetch on the first driver.handle call and polluting only
-// the TS run). Rejecting refreshVersions makes driftAccountVersions never run (no fetch, no mutate).
+// real network fetch (consuming a scripted fetch and polluting the run).
 vi.mock("../plugin/versions.js", async (importOriginal) => {
   const actual: any = await importOriginal();
   return { ...actual, refreshVersions: () => Promise.reject(new Error("noop-in-test")) };
 });
 
-import { driver, manager } from "../driver/index.js";
+import { driver } from "../driver/index.js";
 import { handleViaJavaOrchestrator } from "../driver/javaHandle.js";
 
 const harness = H.harness;
 const PROD = "https://cloudcode-pa.googleapis.com";
 const jsonHeaders = { "content-type": "application/json" };
 
-// A fixed fingerprint so prepareAntigravityRequest's headers are deterministic (bypasses
-// getSessionFingerprint), identical across both runs.
+// A fixed fingerprint so prepareAntigravityRequestProd's headers are deterministic (bypasses
+// getSessionFingerprint).
 const FIXED_FP = {
   deviceId: "dev-fixed", sessionToken: "sess-fixed", userAgent: "antigravity/1.2.3",
   apiClient: "cli-fixed", clientMetadata: { ideType: "ANTIGRAVITY", platform: "LINUX_AMD64", pluginType: "GEMINI" },
@@ -142,15 +150,15 @@ function resetForRun(sc: any) {
   harness.outbound = [];
 }
 
-// Capture the OUTBOUND request each path hands to fetch, so the harness can assert the TS and Java
-// prepareAntigravityRequest calls produce byte-identical wire requests (url/method/headers/body +
-// host-set proxy). Header keys sorted (order not wire-significant); case preserved.
+// Capture the OUTBOUND request driver.handle hands to fetch, so the harness can assert the Java
+// prepare path produces the SAME wire request each run (url/method/headers/body + host-set proxy).
+// Header keys sorted (order not wire-significant); case preserved.
 function captureOutbound(url: any, init: any) {
   init = init || {};
   const rawHeaders = init.headers || {};
   const headers: Record<string, string> = {};
   for (const k of Object.keys(rawHeaders).sort()) headers[k] = String(rawHeaders[k]);
-  return { url: String(url), method: init.method ?? null, headers, body: init.body ?? null, proxy: init.proxy ?? null };
+  return { url: String(url), method: init.method ?? null, headers, body: redactSession(init.body ?? null), proxy: init.proxy ?? null };
 }
 
 async function snapshotResponse(r: Response) {
@@ -161,7 +169,7 @@ async function snapshotResponse(r: Response) {
   };
 }
 
-async function runBothPaths(sc: any) {
+async function runOnce(sc: any) {
   const makeReq = () =>
     new Request(sc.url || (PROD + "/v1internal/models/antigravity-claude-sonnet-4-6:generateContent"), {
       method: "POST",
@@ -171,26 +179,13 @@ async function runBothPaths(sc: any) {
   const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };
 
   resetForRun(sc);
-  const tsResp = await driver.handle(makeReq(), ctx);
-  const tsSnap = await snapshotResponse(tsResp);
-  const tsCalls = harness.calls.slice();
-  const tsOutbound = harness.outbound.slice();
-
-  resetForRun(sc);
-  const jvResp = await handleViaJavaOrchestrator(makeReq(), ctx);
-  const jvSnap = await snapshotResponse(jvResp);
-  const jvCalls = harness.calls.slice();
-  const jvOutbound = harness.outbound.slice();
-
-  return { tsSnap, jvSnap, tsCalls, jvCalls, tsOutbound, jvOutbound };
+  const r = await driver.handle(makeReq(), ctx);
+  const snap = await snapshotResponse(r);
+  return { snap, calls: harness.calls.slice(), outbound: harness.outbound.slice() };
 }
 
-// The two paths read DIFFERENT clock primitives: the TS path calls Date.now(), while the TeaVM
-// orchestrator's System.currentTimeMillis compiles to new Date().getTime() (and/or Date.now()).
-// Freeze BOTH via a Date subclass whose no-arg construction and static now() are pinned to
-// harness.now, while new Date(arg) still delegates to the real Date (so resetTime parse + the
-// toLocaleString quota-reset formatting are unaffected). Makes every now-dependent reset identical
-// across paths.
+// The Java orchestrator's System.currentTimeMillis compiles to a real-clock read; freeze it (and
+// Date.now) to the fixture-capture instant so every now-dependent reset/jitter matches the fixture.
 const RealDate = globalThis.Date;
 class FrozenDate extends RealDate {
   constructor(...args: any[]) {
@@ -202,9 +197,8 @@ class FrozenDate extends RealDate {
 
 let realFetch: any;
 beforeEach(() => {
-  delete process.env.HUB_ANTIGRAVITY_JAVA_HANDLE;
   globalThis.Date = FrozenDate as any;
-  vi.spyOn(Math, "random").mockReturnValue(0.5);               // Java bakes random=0.5; match it
+  vi.spyOn(Math, "random").mockReturnValue(0.5);               // matches the fixture capture's pin
   vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-0000-0000-000000000000"); // per-call requestId
   realFetch = globalThis.fetch;
   globalThis.fetch = (async (url: any, init: any) => {
@@ -219,7 +213,7 @@ afterAll(() => { globalThis.fetch = realFetch; globalThis.Date = RealDate; vi.re
 // A minimal gemini SSE body so the streaming transform + anthropic bridge produce real bytes.
 const GEMINI_SSE = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}]}}\n\n';
 
-// --- scenarios --------------------------------------------------------------
+// --- scenarios (kept identical to the pre-conversion dual-path harness) ----------------------
 
 const scenarios: any[] = [
   {
@@ -339,23 +333,30 @@ const scenarios: any[] = [
   },
 ];
 
-describe("handle parity: TS path vs Java-orchestrator delegation", () => {
+describe("handle regression: Java path (driver.handle) vs frozen fixture", () => {
   for (const sc of scenarios) {
     it(sc.name, async () => {
-      const { tsSnap, jvSnap, tsCalls, jvCalls, tsOutbound, jvOutbound } = await runBothPaths(sc);
-      expect(jvSnap, "final Response must be identical").toEqual(tsSnap);
-      expect(jvCalls, "ordered manager/proxy call sequence (incl. cooldown resetMs + ipSuspected) must be identical").toEqual(tsCalls);
-      expect(jvOutbound, "outbound fetch requests must be byte-identical").toEqual(tsOutbound);
+      const expected = (fixture as any)[sc.name];
+      expect(expected, "fixture must have an entry for every scenario").toBeTruthy();
+      const { snap, calls, outbound } = await runOnce(sc);
+      expect(snap, "final Response must match the frozen fixture").toEqual(expected.snap);
+      expect(calls, "ordered manager/proxy call sequence must match the frozen fixture").toEqual(expected.calls);
+      expect(outbound, "outbound fetch requests must match the frozen fixture").toEqual(expected.outbound);
     });
   }
+
+  it("fixture has no stale entries beyond the current scenario set", () => {
+    const names = new Set(scenarios.map((sc) => sc.name));
+    for (const key of Object.keys(fixture as any)) {
+      expect(names.has(key), `fixture entry "${key}" has no matching scenario`).toBe(true);
+    }
+  });
 });
 
 // CRITICAL-1 regression guard: fresh accounts (no discovered managed project, no pre-set synthetic id)
 // must mint a UNIQUE per-account synthetic project id — otherwise every such account gets the SAME
-// x-goog-user-project-equivalent (the outbound body `project` field) and gets correlated (index.ts:108-109).
-// Before the fix the live export baked FIXED_RANDOM(0.5)+counterIds, so this ALWAYS produced
-// "swift-spark-00000" for every account → this test FAILS. After injecting real Math.random/crypto.randomUUID
-// into the orchestrator it produces distinct ids → PASSES. Uses REAL entropy (not the deterministic pin).
+// x-goog-user-project-equivalent (the outbound body `project` field) and gets correlated. Uses REAL
+// entropy (not the deterministic pin) via handleViaJavaOrchestrator directly.
 describe("CRITICAL-1: fresh-account synthetic project id is unique per account (no correlation)", () => {
   it("two fresh accounts get DISTINCT persisted meta.syntheticProjectId AND distinct outbound body project on the Java path", async () => {
     vi.spyOn(crypto, "randomUUID").mockImplementation(() => realRandomUuid()); // un-pin -> real entropy
@@ -393,24 +394,5 @@ describe("CRITICAL-1: fresh-account synthetic project id is unique per account (
     expect(results[0].bodyProject, "synthetic id must reach the outbound body project field").toBe(results[0].persisted);
     expect(results[1].persisted, "two fresh accounts must NOT share a synthetic project id (correlation)").not.toBe(results[0].persisted);
     expect(results[1].bodyProject, "two fresh accounts must NOT share the outbound body project").not.toBe(results[0].bodyProject);
-  });
-});
-
-describe("flag routing", () => {
-  it("HUB_ANTIGRAVITY_JAVA_HANDLE=1 makes driver.handle delegate identically to the direct Java path", async () => {
-    const sc = scenarios[0];
-    resetForRun(sc);
-    const direct = await snapshotResponse(await handleViaJavaOrchestrator(
-      new Request(PROD + "/v1internal/models/antigravity-claude-sonnet-4-6:generateContent", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ contents: [] }) }),
-      { model: "antigravity-claude-sonnet-4-6", log: () => {} },
-    ));
-    process.env.HUB_ANTIGRAVITY_JAVA_HANDLE = "1";
-    resetForRun(sc);
-    const viaFlag = await snapshotResponse(await driver.handle(
-      new Request(PROD + "/v1internal/models/antigravity-claude-sonnet-4-6:generateContent", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ contents: [] }) }),
-      { model: "antigravity-claude-sonnet-4-6", log: () => {} },
-    ));
-    delete process.env.HUB_ANTIGRAVITY_JAVA_HANDLE;
-    expect(viaFlag).toEqual(direct);
   });
 });
