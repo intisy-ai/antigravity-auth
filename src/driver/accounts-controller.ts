@@ -190,14 +190,6 @@ async function refreshToken(manager, view) {
   catch (error) { out("✗ refresh failed for " + name + ": " + (error && error.message || error)); }
 }
 
-// Quota still remaining? Used to decide a rate-limit is an IP limit (proxy signal),
-// not real account exhaustion. Unknown quota -> false (never blame the proxy).
-export function accountHasQuota(account) {
-  const cq = account && account.meta && account.meta.cachedQuota;
-  if (!cq) return false;
-  return Object.values(cq).some((q) => q && typeof q.remainingFraction === "number" && q.remainingFraction > 0);
-}
-
 export function createAntigravityAccounts(manager) {
   return accountControllerFromManager(manager, {
     status: antigravityStatus,

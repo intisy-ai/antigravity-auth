@@ -70,10 +70,6 @@ export interface FingerprintVersion {
   reason: 'initial' | 'regenerated' | 'restored';
 }
 
-export interface FingerprintHeaders {
-  "User-Agent": string;
-}
-
 const PLATFORM_CHOICES = ["darwin", "win32"] as const;
 type PlatformChoice = typeof PLATFORM_CHOICES[number];
 
@@ -116,20 +112,6 @@ export function generateFingerprint(): Fingerprint {
     createdAt: Date.now(),
     version,
     versionPickedAt: Date.now(),
-  };
-}
-
-/**
- * Build HTTP headers from a fingerprint object.
- * These headers are used to identify the "device" making API requests.
- */
-export function buildFingerprintHeaders(fingerprint: Fingerprint | null): Partial<FingerprintHeaders> {
-  if (!fingerprint) {
-    return {};
-  }
-
-  return {
-    "User-Agent": fingerprint.userAgent,
   };
 }
 
