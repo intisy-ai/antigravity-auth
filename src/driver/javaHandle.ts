@@ -47,6 +47,7 @@ import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/in
 import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
 import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
 import { processImageData } from "../plugin/image-saver.js";
+import { isGemini3Model } from "../plugin/transform/index.js";
 import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
 // Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives
@@ -112,6 +113,18 @@ const jsCacheSignatureFn = (sessionKey, text, signature) => cacheSignature(sessi
 // mimeType/data arrives as "" (Java's bridge never sends raw null across the boundary); processImageData's
 // own `mimeType || 'image/png'` / `if (!data) return null` treat "" and undefined identically.
 const jsImageSink = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
+
+// Task 3d — the Gemini-3 SSE-reconnect thought-dedup seam, bridging request.ts:79's
+// `sessionDisplayedThinkingHashes` (a module-private, process-lifetime `Set<string>`) into the Java
+// SERVE streaming transform. request.ts's Set isn't exported, so this is a SEPARATE module-level Set
+// with the SAME process lifetime (created once, never reset) rather than the literal same instance —
+// in production only one of the TS/Java paths is ever active per process (feature-flag gated), so two
+// independently-scoped process-lifetime Sets are behaviorally equivalent to sharing one.
+const javaSessionDisplayedThinkingHashes = new Set();
+const jsThoughtDedup = {
+  has(hash) { return javaSessionDisplayedThinkingHashes.has(hash); },
+  add(hash) { javaSessionDisplayedThinkingHashes.add(hash); },
+};
 
 // request.ts's regex-extracted `rawModel` (the debug-only `requestedModel` field) — Java's prod
 // export intentionally doesn't return it (only the driver-relevant fields), so it's re-derived here
@@ -408,9 +421,11 @@ export async function transformServeViaJava(orchestrator, response, p) {
     // request.ts:1751-1780 — headers pass through UNCHANGED (no usage-header mutation on this path).
     const headers = new Headers(response.headers);
     const cacheSignatures = shouldCacheThinkingSignatures(p.effectiveModel);
+    // request.ts:1770's exact gate: `effectiveModel && isGemini3Model(effectiveModel) ? <set> : undefined`.
+    const thoughtDedupSeam = p.effectiveModel && isGemini3Model(p.effectiveModel) ? jsThoughtDedup : null;
     const sseHandle = orchestrator.newResponseSseTransformer(
       p.sessionId ?? "", debugText, cacheSignatures,
-      jsSignatureStore, jsCacheSignatureFn, jsImageSink,
+      jsSignatureStore, jsCacheSignatureFn, jsImageSink, thoughtDedupSeam,
     );
     const stream = response.body.pipeThrough(makeResponseTransformStream(sseHandle));
     return new Response(stream, { status: response.status, statusText: response.statusText, headers });

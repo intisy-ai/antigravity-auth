@@ -39,10 +39,13 @@ import org.teavm.jso.core.JSArray;
 import org.teavm.jso.core.JSPromise;
 import org.teavm.jso.core.JSString;
 
+import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * TeaVM JS export surface over antigravity-auth's Java port (T7a) -- proves all five ported
@@ -1164,6 +1167,48 @@ public final class AntigravityProviderJs {
         void onCacheSignature(JSString sessionKey, JSString text, JSString signature);
     }
 
+    /**
+     * Host-owned Gemini-3 SSE-reconnect thought-dedup set (request.ts:79's {@code
+     * sessionDisplayedThinkingHashes}) -- has/add over hash strings, grouped like {@link
+     * JsSignatureStoreFns} (multi-method, so not a {@code @JSFunctor}). The host passes {@code null}
+     * for every non-Gemini-3 {@code effectiveModel} (request.ts:1770's exact gate), matching TS.
+     */
+    public interface JsThoughtDedupFns extends JSObject {
+        boolean has(JSString hash);
+
+        void add(JSString hash);
+    }
+
+    // Bridges a nullable JsThoughtDedupFns to the java.util.Set<String> that
+    // AntigravityStreamTransform#transformSseLine/deduplicateThinkingText expect. Only contains()/add()
+    // are ever invoked by that pure logic (never iterated/sized) -- those are the only AbstractSet
+    // methods overridden.
+    private static Set<String> bridgeThoughtDedup(JsThoughtDedupFns fns) {
+        if (fns == null) return null;
+        return new AbstractSet<String>() {
+            @Override
+            public boolean contains(Object o) {
+                return o instanceof String && fns.has(JSString.valueOf((String) o));
+            }
+
+            @Override
+            public boolean add(String hash) {
+                fns.add(JSString.valueOf(hash));
+                return true;
+            }
+
+            @Override
+            public Iterator<String> iterator() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int size() {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
     // A missing mimeType/data maps to "" (not null): both are equally falsy in JS, matching
     // processImageData's own `mimeType || 'image/png'` / `if (!data) return null;` fallbacks exactly.
     private static AntigravityThinkingBlocks.ImageSink bridgeImageSink(JsImageSinkFn sink) {
@@ -1238,23 +1283,23 @@ public final class AntigravityProviderJs {
      * decision runs here. {@code jsSignatureStore} is the SAME adapter {@link
      * #prepareAntigravityRequestProd} uses (bridges the real {@code defaultSignatureStore});
      * {@code jsCacheSignature} bridges the real on-disk {@code cacheSignature}; {@code jsImageSink}
-     * bridges the real {@code processImageData}.
-     *
-     * <p>Disclosed deviation: the Gemini-3 SSE-reconnect {@code sessionDisplayedThinkingHashes} dedup
-     * set (request.ts:79,1770) is NOT wired -- {@code displayedThinkingHashes} is always passed as
-     * {@code null} (matches TS behavior for every NON-Gemini-3 model already, since the TS only passes
-     * the set when {@code isGemini3Model(effectiveModel)}). A future task can add a persistent
-     * host-Set seam for the Gemini-3 case; no fixture in this task exercises it.
+     * bridges the real {@code processImageData}; {@code jsThoughtDedup} bridges the real Gemini-3
+     * SSE-reconnect {@code sessionDisplayedThinkingHashes} dedup set (request.ts:79) -- the host passes
+     * {@code null} here for every non-Gemini-3 {@code effectiveModel}, exactly mirroring TS's own
+     * {@code effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes :
+     * undefined} gate (request.ts:1770); this method never re-derives that gate itself.
      */
     @JSExport
     public static JsResponseSseHandle newResponseSseTransformer(
             String signatureSessionKey, String debugText, boolean cacheSignatures,
-            JsSignatureStoreFns jsSignatureStore, JsCacheSignatureFn jsCacheSignature, JsImageSinkFn jsImageSink) {
+            JsSignatureStoreFns jsSignatureStore, JsCacheSignatureFn jsCacheSignature, JsImageSinkFn jsImageSink,
+            JsThoughtDedupFns jsThoughtDedup) {
         JsonCodec json = new SimpleJsonCodec();
         AntigravityStreamTransform.ThoughtBuffer thoughtBuffer = AntigravityStreamTransform.createThoughtBuffer();
         AntigravityStreamTransform.ThoughtBuffer sentBuffer = AntigravityStreamTransform.createThoughtBuffer();
         AntigravityStreamTransform.DebugState debugState = new AntigravityStreamTransform.DebugState(false);
         String resolvedDebugText = debugText != null && !debugText.isEmpty() ? debugText : null;
+        Set<String> displayedThinkingHashes = bridgeThoughtDedup(jsThoughtDedup);
 
         AntigravityStreamTransform.SignatureStore store = (sessionKey, text, signature) ->
                 jsSignatureStore.set(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
@@ -1273,7 +1318,7 @@ public final class AntigravityProviderJs {
                 String out = AntigravityStreamTransform.transformSseLine(
                         json, line, store, thoughtBuffer, sentBuffer,
                         onCacheSignature, onInjectDebug, transformThinkingParts, imageSink,
-                        signatureSessionKey, resolvedDebugText, cacheSignatures, null, debugState);
+                        signatureSessionKey, resolvedDebugText, cacheSignatures, displayedThinkingHashes, debugState);
                 return JSString.valueOf(out);
             }
         };

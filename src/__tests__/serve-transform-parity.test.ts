@@ -167,4 +167,73 @@ describe("SERVE-transform parity: TS transformAntigravityResponse vs Java-driven
       }
     });
   });
+
+  describe("streaming SSE — Gemini-3 thought-dedup seam (Task 3d)", () => {
+    // Proves the Java-driven path now honors the SSE-reconnect `displayedThinkingHashes` gate exactly
+    // like TS (request.ts:1770): a gemini-3 `effectiveModel` gets a REAL persistent dedup set (not the
+    // hard-coded `null` this task closes), so an exact-repeat of a thinking part across two SEPARATE
+    // streams (simulating a reconnect, each with its own fresh per-stream sent/thought buffers) is
+    // dropped entirely the second time. A non-gemini-3 model must NOT dedup across streams at all
+    // (the seam stays gated off, matching TS's `isGemini3Model` check exactly).
+    it("gemini-3: first stream passes the thinking text through, second (reconnect) stream drops the exact repeat", async () => {
+      const thinkingText = "reconsidering the approach to this particular problem";
+      const thinkingLine = JSON.stringify({ response: { candidates: [{ content: { parts: [{ thought: true, text: thinkingText }] } }] } });
+      const answerLine = JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "final answer" }] } }] } });
+      const sseBody = `data: ${thinkingLine}\n\ndata: ${answerLine}\n\n`;
+      const makeResponse = () => new Response(sseBody, { status: 200, headers: sseHeaders });
+
+      const params = {
+        requestedModel: "antigravity-gemini-3-pro", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
+        effectiveModel: "gemini-3-pro", sessionId: "sess-6",
+      };
+      const orchestrator = await loadOrchestrator();
+
+      // Stream 1 (first occurrence): the thinking text is new to the process-lifetime dedup set on
+      // BOTH paths, so it passes through unchanged.
+      const tsSnap1 = await snapshotResponse(
+        await transformAntigravityResponse(makeResponse(), true, null, params.requestedModel, params.projectId, params.endpoint, params.effectiveModel, params.sessionId),
+      );
+      const jvSnap1 = await snapshotResponse(
+        await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+      );
+      expect(tsSnap1.body).toContain(thinkingText);
+      expect(jvSnap1).toEqual(tsSnap1);
+
+      // Stream 2 (simulated SSE reconnect): a brand-new stream (fresh per-stream buffers) resends the
+      // EXACT same thinking text. Only the process-lifetime hash set (populated by stream 1) can catch
+      // this -- the per-stream delta buffers alone would treat it as brand new.
+      const tsSnap2 = await snapshotResponse(
+        await transformAntigravityResponse(makeResponse(), true, null, params.requestedModel, params.projectId, params.endpoint, params.effectiveModel, params.sessionId),
+      );
+      const jvSnap2 = await snapshotResponse(
+        await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+      );
+      expect(tsSnap2.body).not.toContain(thinkingText);
+      expect(jvSnap2).toEqual(tsSnap2);
+    });
+
+    it("non-gemini-3: the dedup gate stays off, so an exact repeat across two streams passes through both times", async () => {
+      const thinkingText = "a distinct non-gemini-3 thinking snippet";
+      const thinkingLine = JSON.stringify({ response: { candidates: [{ content: { parts: [{ thought: true, text: thinkingText }] } }] } });
+      const sseBody = `data: ${thinkingLine}\n\n`;
+      const makeResponse = () => new Response(sseBody, { status: 200, headers: sseHeaders });
+
+      const params = {
+        requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
+        effectiveModel: "claude-sonnet-4-6-thinking", sessionId: "sess-7",
+      };
+      const orchestrator = await loadOrchestrator();
+
+      for (let i = 0; i < 2; i++) {
+        const tsSnap = await snapshotResponse(
+          await transformAntigravityResponse(makeResponse(), true, null, params.requestedModel, params.projectId, params.endpoint, params.effectiveModel, params.sessionId),
+        );
+        const jvSnap = await snapshotResponse(
+          await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+        );
+        expect(tsSnap.body).toContain(thinkingText);
+        expect(jvSnap).toEqual(tsSnap);
+      }
+    });
+  });
 });
