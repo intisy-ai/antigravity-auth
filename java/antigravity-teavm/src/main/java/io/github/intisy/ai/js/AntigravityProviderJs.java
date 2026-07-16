@@ -754,6 +754,111 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
+    /** JS {@code (jsRandom, jsUuid) => string} -- {@link AntigravityRequestPrep#generateSyntheticProjectId}
+     *  (real seams; login.ts/accounts-controller.ts's ad-hoc verify-ping ids + fetchModels' fallback). */
+    @JSExport
+    public static String generateSyntheticProjectIdProd(JsRandomFn jsRandom, JsUuidFn jsUuid) {
+        Random random = () -> jsRandom.next();
+        AntigravityRequestPrep.IdGenerator ids = () -> {
+            JSString u = jsUuid.uuid();
+            return u == null ? "" : u.stringValue();
+        };
+        return AntigravityRequestPrep.generateSyntheticProjectId(ids, random);
+    }
+
+    /**
+     * Task 7b-2: standalone project-id resolution for ONE account -- {@code fetchModels}' host entry
+     * point. Calls the SAME {@link AntigravityHandleOrchestrator#resolveProjectId} the live SERVE path
+     * (via {@link #handleAntigravityRequestAsync}) already uses, so this shares that Java decision
+     * verbatim instead of re-implementing it. {@code accounts.mutate} is implemented by mutating the
+     * SAME account {@code Map} parsed from {@code accountJson} in place (there is only ever the one
+     * account in scope here) -- the returned {@code meta} reflects the post-mutation state; the host
+     * persists {@code syntheticProjectId}/{@code managedProjectId} into its own account store.
+     * Preparer/executor/modelCache are never invoked by {@code resolveProjectId} -- unreachable stubs.
+     *
+     * @return {@code Promise<string>} resolving to JSON {@code {projectId, meta}}
+     */
+    @JSExport
+    public static JSPromise<JSString> resolveProjectIdProd(
+            String accountJson, String access,
+            JsRandomFn jsRandom, JsUuidFn jsUuid,
+            JsProjectLoaderBridge.JsLoadFn jsProjectLoader,
+            JsProjectOnboarderBridge.JsOnboardFn jsProjectOnboarder,
+            String configJson) {
+        return new JSPromise<>((resolve, reject) -> new Thread(() -> {
+            try {
+                JsonCodec json = new SimpleJsonCodec();
+                AntigravityProjectContext.Platform platform = parsePlatform(json, configJson);
+                Random random = () -> jsRandom.next();
+                AntigravityRequestPrep.IdGenerator ids = () -> {
+                    JSString u = jsUuid.uuid();
+                    return u == null ? "" : u.stringValue();
+                };
+                Map<String, Object> account = asMap(accountJson != null ? json.parse(accountJson) : null);
+
+                AntigravityHandleOrchestrator.AccountOps accounts = new AntigravityHandleOrchestrator.AccountOps() {
+                    @Override
+                    public AntigravityHandleOrchestrator.Acquired acquire(String lane) {
+                        return null;
+                    }
+
+                    @Override
+                    public Long nextAvailableAt(String lane) {
+                        return null;
+                    }
+
+                    @Override
+                    public void reportError(String accountId, int attempt, String message) {
+                    }
+
+                    @Override
+                    public void reportRateLimit(String accountId, String lane, long resetMs) {
+                    }
+
+                    @Override
+                    public void reportSuccess(String accountId) {
+                    }
+
+                    @Override
+                    public void reportProxyRateLimit(String accountId, boolean ipSuspected) {
+                    }
+
+                    @Override
+                    public List<Map<String, Object>> list() {
+                        return new ArrayList<>();
+                    }
+
+                    @Override
+                    public void mutate(String accountId, AntigravityHandleOrchestrator.Mutator mutator) {
+                        mutator.apply(account);
+                    }
+                };
+                AntigravityHandleOrchestrator.RequestPreparer preparer = (url, bodyText, method, headers,
+                        acc, projectId, endpoint, headerStyle, acct) -> {
+                    throw new UnsupportedOperationException("resolveProjectIdProd never prepares a request");
+                };
+                AntigravityHandleOrchestrator.AttemptExecutor executor = (accountId, ref) -> {
+                    throw new UnsupportedOperationException("resolveProjectIdProd never executes a request");
+                };
+
+                AntigravityHandleOrchestrator orchestrator = new AntigravityHandleOrchestrator(
+                        json, SYSTEM_CLOCK, random, ids, accounts, preparer, executor, modelId -> null,
+                        new JsProjectLoaderBridge(jsProjectLoader, json),
+                        new JsProjectOnboarderBridge(jsProjectOnboarder, json),
+                        platform);
+
+                String projectId = orchestrator.resolveProjectId(account, access, NOOP_LOGGER);
+
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("projectId", projectId);
+                out.put("meta", account.get("meta"));
+                resolve.accept(JSString.valueOf(json.stringify(out)));
+            } catch (Throwable e) {
+                reject.accept(JSString.valueOf("resolveProjectIdProd failed: " + e));
+            }
+        }).start());
+    }
+
     /**
      * Drives a full {@link AntigravityHandleOrchestrator#handle} through the no-account terminal
      * branch under TeaVM (proves the orchestrator + its JsonCodec body builders + attemptModel

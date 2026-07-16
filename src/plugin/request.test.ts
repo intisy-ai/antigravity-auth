@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
+import crypto from "node:crypto";
 import {
   getPluginSessionId,
-  generateSyntheticProjectId,
   isGenerativeLanguageRequest,
   materializeGenerativeLanguageFetchInput,
 } from "./request";
+import { loadOrchestrator } from "../driver/javaHandle.js";
 
 describe("request.ts", () => {
   describe("getPluginSessionId", () => {
@@ -16,16 +17,20 @@ describe("request.ts", () => {
     });
   });
 
-  describe("generateSyntheticProjectId", () => {
-    it("generates a string in expected format", () => {
-      const id = generateSyntheticProjectId();
+  // Task 7b-2: generateSyntheticProjectId is deleted from TS; the same shape/uniqueness
+  // properties now assert against the Java prod export (AntigravityRequestPrep.generateSyntheticProjectId).
+  describe("generateSyntheticProjectIdProd (Java, via generateSyntheticProjectIdViaJava)", () => {
+    it("generates a string in expected format", async () => {
+      const orchestrator = await loadOrchestrator();
+      const id = orchestrator.generateSyntheticProjectIdProd(() => Math.random(), () => crypto.randomUUID());
       expect(id).toMatch(/^[a-z]+-[a-z]+-[a-z0-9]{5}$/);
     });
 
-    it("generates unique IDs on each call", () => {
+    it("generates unique IDs on each call", async () => {
+      const orchestrator = await loadOrchestrator();
       const ids = new Set<string>();
       for (let i = 0; i < 10; i++) {
-        ids.add(generateSyntheticProjectId());
+        ids.add(orchestrator.generateSyntheticProjectIdProd(() => Math.random(), () => crypto.randomUUID()));
       }
       expect(ids.size).toBe(10);
     });

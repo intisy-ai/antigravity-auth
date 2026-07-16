@@ -5,7 +5,6 @@
 
 import { accountControllerFromManager, proxyManager } from "../../core-auth/dist/index.js";
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
-import { generateSyntheticProjectId } from "../plugin/request.js";
 import { login } from "./login.js";
 
 function out(message) { process.stdout.write(message + "\n"); }
@@ -118,7 +117,11 @@ async function verify(manager, view) {
     if (!access) { out("✗ " + name + ": no access token"); return; }
     const account = manager.list().find((a) => a.id === view.id);
     const meta = (account && account.meta) || {};
-    const projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId || generateSyntheticProjectId();
+    let projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId;
+    if (!projectId) {
+      const { generateSyntheticProjectIdViaJava } = await import("./javaHandle.js");
+      projectId = await generateSyntheticProjectIdViaJava();
+    }
     const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
     if (projectId) headers["x-goog-user-project"] = projectId;
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });

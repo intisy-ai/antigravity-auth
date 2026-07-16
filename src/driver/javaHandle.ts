@@ -79,6 +79,43 @@ export async function buildCatalogViaJava(payload) {
   return JSON.parse(orchestrator.buildCatalog(JSON.stringify(payload)));
 }
 
+// Task 7b-2 — generateSyntheticProjectId's real-seam replacement (login.ts's checkAntigravityAccess
+// verify-ping + accounts-controller.ts's verify() diagnostic; both ad-hoc, unpersisted ids).
+export async function generateSyntheticProjectIdViaJava() {
+  const orchestrator = await loadOrchestrator();
+  return orchestrator.generateSyntheticProjectIdProd(jsRandom, jsUuid);
+}
+
+// Task 7b-2 — fetchModels' project-id resolution, routed through the SAME Java
+// AntigravityHandleOrchestrator.resolveProjectId the live SERVE path (runGeminiViaJava) already uses
+// — no re-implementation. jsLoad/jsOnboard mirror runGeminiViaJava's (project.ts's loadManagedProject/
+// onboardManagedProject), fixed to the ALREADY-SELECTED `proxy` (fetchModels picks one proxy up front,
+// unlike the per-attempt-account proxy the SERVE loop resolves via a closure).
+export async function resolveProjectIdViaJava(manager, account, access, log, proxy) {
+  const orchestrator = await loadOrchestrator();
+  const jsLoad = async (accessToken, projectId) => {
+    const payload = await loadManagedProject(accessToken, projectId || undefined, proxy || undefined);
+    return payload ? JSON.stringify(payload) : null;
+  };
+  const jsOnboard = async (accessToken, tierId, projectId) => {
+    const managedId = await onboardManagedProject(accessToken, tierId, projectId || undefined, undefined, undefined, proxy || undefined);
+    return managedId ? JSON.stringify(managedId) : null;
+  };
+  const configJson = JSON.stringify({ platform: process.platform, arch: process.arch });
+  const resultJson = await orchestrator.resolveProjectIdProd(
+    JSON.stringify(account), access, jsRandom, jsUuid, jsLoad, jsOnboard, configJson,
+  );
+  const result = JSON.parse(resultJson);
+  const meta = result.meta || {};
+  // Mirrors runGeminiViaJava's jsAccountOps.mutate: the orchestrator only ever sets these two fields.
+  manager.mutate(account.id, (a) => {
+    a.meta = a.meta || {};
+    if ("syntheticProjectId" in meta) a.meta.syntheticProjectId = meta.syntheticProjectId;
+    if ("managedProjectId" in meta) a.meta.managedProjectId = meta.managedProjectId;
+  });
+  return result.projectId;
+}
+
 // index.ts:82 — the antigravity rate-limit statuses.
 function isRateLimitStatus(status) {
   return status === 429 || status === 503 || status === 529;

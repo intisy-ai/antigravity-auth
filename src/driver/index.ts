@@ -5,11 +5,8 @@
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
 import { defineProvider, AccountManager, proxyManager } from "../../core-auth/dist/index.js";
-import { generateSyntheticProjectId } from "../plugin/request.js";
-import { ensureProjectContext } from "../plugin/project.js";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
-import { formatRefreshParts, parseRefreshParts } from "../plugin/auth.js";
 import { models } from "./models.js";
 import { oauthConfig } from "./config.js";
 import { login, loginFlow } from "./login.js";
@@ -42,45 +39,6 @@ const manager = new AccountManager(PROVIDER_ID, {
 // Exported so javaHandle.ts (the Java-orchestrator delegation shell) shares this ONE
 // AccountManager instance (state consistency).
 export { manager };
-
-// reconstruct the OAuthAuthDetails the existing project/transform code expects;
-// the legacy refresh string packs the project ids that ensureProjectContext reads.
-// Kept for resolveProjectId, which fetchModels (below) still needs.
-function buildAuth(account, access) {
-  const meta = account.meta || {};
-  return {
-    type: "oauth",
-    access,
-    expires: account.expires,
-    refresh: formatRefreshParts({ refreshToken: account.refresh, projectId: meta.projectId, managedProjectId: meta.managedProjectId }),
-  };
-}
-
-// a stable per-account project id, so accounts without a discovered managed
-// project never share the same x-goog-user-project (which would correlate them)
-function syntheticProjectFor(account) {
-  let synthetic = account.meta && account.meta.syntheticProjectId;
-  if (!synthetic) {
-    synthetic = generateSyntheticProjectId();
-    manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.syntheticProjectId = synthetic; });
-  }
-  return synthetic;
-}
-
-async function resolveProjectId(account, access, log, proxy) {
-  const meta = account.meta || {};
-  const fallbackProjectId = syntheticProjectFor(account);
-  let projectId = meta.managedProjectId || meta.projectId || "";
-  try {
-    const result = await ensureProjectContext(buildAuth(account, access), { proxy, fallbackProjectId });
-    if (result && result.effectiveProjectId) projectId = result.effectiveProjectId;
-    const discovered = parseRefreshParts(result.auth.refresh).managedProjectId;
-    if (discovered && discovered !== meta.managedProjectId) {
-      manager.mutate(account.id, (a) => { a.meta = a.meta || {}; a.meta.managedProjectId = discovered; });
-    }
-  } catch (error) { log("ensureProjectContext failed: " + error); }
-  return projectId || fallbackProjectId;
-}
 
 // Bump accounts' stored UA version FORWARD over time, simulating an IDE auto-update.
 // Each account has its OWN randomized due date (fp.nextVersionDriftAt), so they never
@@ -149,10 +107,10 @@ async function fetchModels(ctx) {
   try { access = await manager.ensureAccess(account.id); } catch (error) { log("fetchModels token refresh failed: " + error); return null; }
   if (!access) return null;
   const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
-  const projectId = await resolveProjectId(account, access, log, proxyUrl);
+  const { resolveProjectIdViaJava, buildCatalogViaJava } = await import("./javaHandle.js");
+  const projectId = await resolveProjectIdViaJava(manager, account, access, log, proxyUrl);
   const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
   if (!payload) return null;
-  const { buildCatalogViaJava } = await import("./javaHandle.js");
   return buildCatalogViaJava(payload);
 }
 
