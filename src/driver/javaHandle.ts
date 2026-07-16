@@ -27,21 +27,32 @@
 // cache lookup, a `defaultSignatureStore` adapter, real Math.random/crypto.randomUUID). The
 // Anthropic bridge (`handleAnthropicMessagesViaJava`) now calls the Java `anthropicToGemini` export
 // and pipes through `javaStream.ts`'s `makeAnthropicStream` (Java `newStreamMapper`) instead of the
-// TS `anthropicToGemini`/`geminiToAnthropicStream`. The SERVE transform (`materializeDecision`)
-// deliberately still calls the retained TS `transformAntigravityResponse` — see javaStream.ts's
-// trailing comment and the Task 3 report for why (no real-seamed Java export exists yet for it).
+// TS `anthropicToGemini`/`geminiToAnthropicStream`.
+// Task 3c: closes the 3 Task-3 gaps. (1) `prepareAntigravityRequestProd` now takes `endpointOverride`
+// directly (the `applyEndpointOverride` URL-substitution workaround is gone). (2)
+// `claudeToolHardening`/`claudePromptAutoCaching` are read from the SAME `loadConfig()` the TS path
+// uses and threaded through. (3) `materializeDecision`'s SERVE case now routes through the Java
+// response-transform exports (`transformServeBodyProd` / `newResponseSseTransformer`, real-seamed:
+// real `defaultSignatureStore`, real `processImageData`, real `cacheSignature`/`getCachedSignature`,
+// real `getKeepThinking()`) instead of the retained TS `transformAntigravityResponse` — see
+// javaStream.ts's `makeResponseTransformStream` for the streaming shell.
 
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
 import { manager } from "./index.js";
-import { transformAntigravityResponse, getPluginSessionId } from "../plugin/request.js";
+import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
 import { isAnthropicMessages } from "../plugin/anthropic-bridge.js";
-import { getKeepThinking } from "../plugin/config/index.js";
+import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
-import { getCachedSignature } from "../plugin/cache.js";
-import { ANTIGRAVITY_ENDPOINT_PROD } from "../constants.js";
-import { makeAnthropicStream, jsIds } from "./javaStream.js";
+import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
+import { processImageData } from "../plugin/image-saver.js";
+import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
+
+// Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives
+// both paths identically; a runtime config edit needs a process restart for either path).
+let config;
+try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 
 const PROVIDER_ID = "antigravity";
 
@@ -92,6 +103,16 @@ function makeJsSignatureStore(store) {
 }
 const jsSignatureStore = makeJsSignatureStore(defaultSignatureStore);
 
+// Task 3c gap 3 seams — the real response-transform seams (mirrors the prepare seams above).
+// cache.ts's cacheSignature -> JsCacheSignatureFn (the on-disk signature-cache WRITE; distinct from
+// jsCacheLookup above, which is the READ).
+const jsCacheSignatureFn = (sessionKey, text, signature) => cacheSignature(sessionKey, text, signature);
+// image-saver.ts's processImageData -> JsImageSinkFn: real fs write to ~/.opencode|.claude/generated-
+// images/, returning a markdown link (never DATA_URL_SINK's fake data-URL stand-in). A missing
+// mimeType/data arrives as "" (Java's bridge never sends raw null across the boundary); processImageData's
+// own `mimeType || 'image/png'` / `if (!data) return null` treat "" and undefined identically.
+const jsImageSink = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
+
 // request.ts's regex-extracted `rawModel` (the debug-only `requestedModel` field) — Java's prod
 // export intentionally doesn't return it (only the driver-relevant fields), so it's re-derived here
 // from the SAME url the export parses; this is substring extraction, not decision logic.
@@ -100,14 +121,14 @@ function extractRequestedModel(url) {
   return m ? m[1] : undefined;
 }
 
-// The orchestrator retries the SAME model across multiple base endpoints (prod -> daily ->
-// autopush, constants.ts's ANTIGRAVITY_ENDPOINT_FALLBACKS), passing each as `endpointOverride` into
-// jsPreparer. prepareAntigravityRequestProd has no endpointOverride param (it always builds the URL
-// against the prod default) — swap the known, fixed default-endpoint PREFIX for the requested
-// override; the model/action/query-suffix segment it computed is untouched.
-function applyEndpointOverride(url, endpointOverride) {
-  if (typeof url !== "string" || !endpointOverride || !url.startsWith(ANTIGRAVITY_ENDPOINT_PROD)) return url;
-  return endpointOverride + url.slice(ANTIGRAVITY_ENDPOINT_PROD.length);
+// transformAntigravityResponse's debugText resolution (request.ts:1735-1740), specialized to this
+// call site: materializeDecision never passes debugLines (the debug-TUI transcript), matching the
+// pure-TS driver's OWN call site (driver/index.ts:235-239, also debugLines-less) — so
+// `isDebugTuiEnabled() && Array.isArray(debugLines) && ...` is always false here, leaving only the
+// getKeepThinking() fallback. Returns "" (not undefined) for "no debug text" — the Java exports treat
+// an empty string as "none", matching JS truthiness.
+function computeDebugText() {
+  return getKeepThinking() ? SYNTHETIC_THINKING_PLACEHOLDER : "";
 }
 
 // Calls the Java prod prepare export and reassembles the SAME result shape
@@ -116,24 +137,26 @@ function applyEndpointOverride(url, endpointOverride) {
 export function prepareViaJava(
   orchestrator, url, method, headersJson, bodyText,
   accessToken, projectId, endpointOverride, headerStyle, fingerprint,
+  claudeToolHardening = DEFAULT_CONFIG.claude_tool_hardening,
+  claudePromptAutoCaching = DEFAULT_CONFIG.claude_prompt_auto_caching,
 ) {
   const fingerprintJson = JSON.stringify(fingerprint ?? null);
   const resultJson = orchestrator.prepareAntigravityRequestProd(
     url, method, headersJson, bodyText ?? "",
     accessToken, projectId, headerStyle, fingerprintJson,
-    getKeepThinking(), getPluginSessionId(),
+    getKeepThinking(), getPluginSessionId(), endpointOverride ?? "",
+    !!claudeToolHardening, !!claudePromptAutoCaching,
     jsRandom, jsUuid, jsHasher, jsCacheLookup, jsSignatureStore,
   );
   const r = JSON.parse(resultJson);
-  const request = applyEndpointOverride(r.request, endpointOverride);
   return {
-    request,
+    request: r.request,
     init: { method, headers: new Headers(r.headers || {}), body: r.body },
     streaming: !!r.streaming,
     requestedModel: extractRequestedModel(url),
     effectiveModel: r.effectiveModel,
     projectId: r.projectId,
-    endpoint: request,
+    endpoint: r.request,
     sessionId: r.sessionId,
     headerStyle: r.headerStyle,
   };
@@ -201,18 +224,20 @@ async function runGeminiViaJava(request, ctx) {
   // host-side and hands Java only an opaque requestRef + the response-transform params. A prepare
   // throw returns null, which the JsRequestPreparerBridge re-raises so the orchestrator skips the
   // endpoint (index.ts:169).
-  // NOTE (known gap, see Task 3 report): prepareAntigravityRequestProd has no params for
-  // config.claude_tool_hardening / claude_prompt_auto_caching (both DEFAULT-matching if unset —
-  // true/false respectively — so this only diverges for accounts with a NON-default override) or
-  // debug_gemini_payloads (a local debug-log side channel the Java port already documents as
-  // dropped). Fixing this needs a Task-2 amendment (2 more boolean params on the export).
+  // Task 3c: threads config.claude_tool_hardening / claude_prompt_auto_caching through (previously
+  // silently dropped). debug_gemini_payloads is still not threaded — it is a local fs-debug-log side
+  // channel with no effect on the upstream request (the Java port drops it deliberately, per its own
+  // docs), not a request-shaping option.
   const jsPreparer = (url, bodyText2, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
     let account;
     try { account = accountJson ? JSON.parse(accountJson) : {}; } catch { account = {}; }
     const fingerprint = (account.meta && account.meta.fingerprint) ?? null;
     let prepared;
     try {
-      prepared = prepareViaJava(orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint);
+      prepared = prepareViaJava(
+        orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint,
+        config.claude_tool_hardening, config.claude_prompt_auto_caching,
+      );
     } catch (error) {
       log("prepare failed: " + error);
       return null;
@@ -362,22 +387,56 @@ async function runGeminiViaJava(request, ctx) {
     jsRandom, jsUuid,
   );
   const decision = JSON.parse(decisionJson);
-  return materializeDecision(decision, responses, log);
+  return materializeDecision(decision, responses, log, orchestrator);
+}
+
+// Task 3c — routes SERVE's response transform through Java (transformAntigravityResponse's ok-branch,
+// request.ts:1711-1926). response.ok is always true here (the orchestrator only ever emits SERVE on a
+// 2xx attempt — confirmed by AntigravityResponseTransform's own javadoc and this module's TS twin call
+// site, driver/index.ts:233-239, which is likewise gated by `if (response.ok)`), so the giant
+// !response.ok branch (request.ts:1788-1861, error-body debug-info/recovery/retry-after handling) is
+// unreachable here and intentionally not reproduced.
+export async function transformServeViaJava(orchestrator, response, p) {
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJsonResponse = contentType.includes("application/json");
+  const isEventStreamResponse = contentType.includes("text/event-stream");
+  if (!isJsonResponse && !isEventStreamResponse) return response; // request.ts:1743-1748 passthrough
+
+  const debugText = computeDebugText();
+
+  if (p.streaming && isEventStreamResponse && response.body) {
+    // request.ts:1751-1780 — headers pass through UNCHANGED (no usage-header mutation on this path).
+    const headers = new Headers(response.headers);
+    const cacheSignatures = shouldCacheThinkingSignatures(p.effectiveModel);
+    const sseHandle = orchestrator.newResponseSseTransformer(
+      p.sessionId ?? "", debugText, cacheSignatures,
+      jsSignatureStore, jsCacheSignatureFn, jsImageSink,
+    );
+    const stream = response.body.pipeThrough(makeResponseTransformStream(sseHandle));
+    return new Response(stream, { status: response.status, statusText: response.statusText, headers });
+  }
+
+  // request.ts:1782-1926 — buffered JSON path (parse -> preview-error rewrite -> usage headers ->
+  // debug-inject -> transformThinkingParts), fully reproduced by transformServeBodyProd.
+  const headersJson = JSON.stringify(Object.fromEntries(new Headers(response.headers)));
+  const text = await response.text();
+  const resultJson = orchestrator.transformServeBodyProd(
+    text, response.status, headersJson, p.requestedModel ?? "", debugText, jsImageSink,
+  );
+  const result = JSON.parse(resultJson);
+  return new Response(result.body, { status: result.status, statusText: response.statusText, headers: result.headers || {} });
 }
 
 // Build the final Response from a HandleDecision — the 5 decision kinds. NO response bytes crossed
 // into Java: SERVE/SERVE_RAW/BRIDGE_STREAM return the host-retained live Response.
-async function materializeDecision(decision, responses, log) {
+async function materializeDecision(decision, responses, log, orchestrator) {
   switch (decision.kind) {
     case "SERVE": {
-      // ok upstream response through the TS transform (index.ts:222-226), SSE/stream intact.
+      // ok upstream response through the Java-driven transform (Task 3c), SSE/stream intact.
       const retained = responses[decision.attemptRef];
       if (!retained) return serveRefError();
       const p = decision.params || {};
-      return await transformAntigravityResponse(
-        retained, p.streaming, null,
-        p.requestedModel, p.projectId, p.endpoint, p.effectiveModel, p.sessionId,
-      );
+      return await transformServeViaJava(orchestrator, retained, p);
     }
     case "SERVE_RAW": {
       // a real 429/non-ok fallback, or the transient-limit passthrough (index.ts:236/442) — verbatim.

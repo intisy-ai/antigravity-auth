@@ -16,15 +16,15 @@ import java.util.Map;
  * (L1788-1861, non-ok attempts never reach SERVE) and the streaming SSE branch (L1751-1780, Phase 4)
  * are out of scope.
  *
- * <p>Disclosed deviations: (1) {@code debugText} (the {@code isDebugTuiEnabled}/{@code
- * getKeepThinking} placeholder injected via {@code AntigravityRequestSignatures.injectDebugThinking})
- * is NOT wired -- deferred past Phase 3b, matching this provider's existing Bucket-C deferrals (e.g.
- * {@code AntigravityProvider}'s {@code NO_CACHED_SIGNATURE}/{@code NOOP_SIGNATURE_STORE}). (2) {@code
- * logCacheStats}/{@code logAntigravityDebugResponse} are logging-only TS calls with no bearing on the
- * returned response and are omitted. (3) The {@link AntigravityThinkingBlocks.ImageSink} passed to
- * {@code transformThinkingParts} is a no-op (returns {@code null}, so an {@code inlineData} part
- * falls through unchanged) -- the real {@code processImageData} fs write is Bucket C and is not yet
- * wired anywhere in this provider (no production caller constructs a non-no-op sink today).
+ * <p>Disclosed deviations: (1) {@code logCacheStats}/{@code logAntigravityDebugResponse} are
+ * logging-only TS calls with no bearing on the returned response and are omitted. (2) the
+ * {@code sessionDisplayedThinkingHashes} Gemini-3 SSE-reconnect thought-dedup set (streaming-only,
+ * request.ts:1770) is out of scope for this (non-streaming) class. (3) {@code debugText} (the
+ * {@code isDebugTuiEnabled}/{@code getKeepThinking} placeholder) is now an injected parameter (TeaVM
+ * de-dup Task 3c) -- the caller resolves it exactly like request.ts:1735-1740; the
+ * {@code processImageData} fs write is now an injectable {@link AntigravityThinkingBlocks.ImageSink}
+ * too (Task 3c) -- a caller that needs neither uses the 3-arg overload below ({@code null}/
+ * {@link #NO_OP_IMAGE_SINK}).
  */
 public final class AntigravityResponseTransform {
 
@@ -33,13 +33,21 @@ public final class AntigravityResponseTransform {
     private AntigravityResponseTransform() {
     }
 
+    /** 3-arg convenience overload: no debug-text injection, no image persistence (transpilability/legacy callers). */
+    public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
+                                               AntigravityHandleOrchestrator.TransformParams params) {
+        return transformServe(json, upstream, params, null, NO_OP_IMAGE_SINK);
+    }
+
     /**
      * Transforms one {@code SERVE}-decision upstream response. A non-JSON/event-stream content type
      * is returned verbatim (request.ts:1743-1748); any exception during the transform falls back to
      * returning {@code upstream} verbatim, mirroring request.ts:1927-1937's {@code responseFallback}.
+     * {@code debugText} (nullable/empty for "none") and {@code imageSink} are the Task 3c seams.
      */
     public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
-                                               AntigravityHandleOrchestrator.TransformParams params) {
+                                               AntigravityHandleOrchestrator.TransformParams params,
+                                               String debugText, AntigravityThinkingBlocks.ImageSink imageSink) {
         if (upstream == null) {
             return null;
         }
@@ -53,14 +61,15 @@ public final class AntigravityResponseTransform {
         }
 
         try {
-            return transformOkBody(json, upstream, params);
+            return transformOkBody(json, upstream, params, debugText, imageSink);
         } catch (RuntimeException e) {
             return upstream;
         }
     }
 
     private static HttpResponse transformOkBody(JsonCodec json, HttpResponse upstream,
-                                                 AntigravityHandleOrchestrator.TransformParams params) {
+                                                 AntigravityHandleOrchestrator.TransformParams params,
+                                                 String debugText, AntigravityThinkingBlocks.ImageSink imageSink) {
         String text = upstream.body;
         Object parsed = AntigravityResponseParse.parseAntigravityApiBody(json, text);
         if (!(parsed instanceof Map)) {
@@ -86,12 +95,14 @@ public final class AntigravityResponseTransform {
         // `!== undefined` in the TS and must take this branch, per request.ts:1911.
         if (effectiveBody.containsKey("response")) {
             Object responseBody = effectiveBody.get("response");
-            // TODO Phase 4: wire the debugText path (isDebugTuiEnabled()/getKeepThinking() ->
-            // AntigravityRequestSignatures.injectDebugThinking) -- deferred, not reachable in 3b.
+            // request.ts:1914-1916: `if (debugText) responseBody = injectDebugThinking(responseBody, debugText);`
+            if (debugText != null && !debugText.isEmpty()) {
+                responseBody = AntigravityRequestSignatures.injectDebugThinking(responseBody, debugText);
+            }
             Object transformed = AntigravityThinkingBlocks.transformThinkingParts(
                     responseBody,
                     value -> AntigravityResponseParse.recursivelyParseJsonStrings(json, value),
-                    NO_OP_IMAGE_SINK);
+                    imageSink);
             return buildResponse(upstream.status, headers, json.stringify(transformed));
         }
 

@@ -102,7 +102,7 @@ function buildSignatureSessionKey(
 
 
 
-function shouldCacheThinkingSignatures(model?: string): boolean {
+export function shouldCacheThinkingSignatures(model?: string): boolean {
   if (typeof model !== "string") return false;
   const lower = model.toLowerCase();
 
@@ -273,7 +273,7 @@ function injectDebugThinking(response: unknown, debugText: string): unknown {
  * Injected via the same path as debug text (injectDebugThinking) to ensure consistent
  * signature caching and multi-turn handling.
  */
-const SYNTHETIC_THINKING_PLACEHOLDER = "[Thinking preserved]\n";
+export const SYNTHETIC_THINKING_PLACEHOLDER = "[Thinking preserved]\n";
 
 function stripInjectedDebugFromParts(parts: unknown): unknown {
   if (!Array.isArray(parts)) {

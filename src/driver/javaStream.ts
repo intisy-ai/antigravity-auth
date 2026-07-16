@@ -53,14 +53,71 @@ export function makeAnthropicStream(newStreamMapperFn, model, ids) {
   });
 }
 
-// NOTE (Task 3 scope decision — see the task report): a `makeResponseTransformStream` for SERVE's
-// OWN streaming branch (transformAntigravityResponse's createStreamingTransformer, Gemini-SSE ->
-// Gemini-SSE) is intentionally NOT implemented here. The only Java export that could drive it
-// (`transformSseLine`) is wired with STUB seams (a no-op SignatureStore + a data-URL ImageSink
-// stand-in for the real disk-saving `processImageData`) -- confirmed by reading
-// AntigravityProviderJs.java, where every seam besides Task 2's three production exports is
-// documented as "proves transpilability, not real behavior". Routing SERVE's transform through it
-// would silently drop signature caching (breaks multi-turn Claude thinking) and break the
-// generated-image file-save feature. materializeDecision therefore still calls the retained TS
-// `transformAntigravityResponse` for SERVE — see the Task 3 report for the follow-up (a Task-2
-// amendment exporting a real-seamed prod variant, mirroring `prepareAntigravityRequestProd`).
+// Task 3c — the streaming half of SERVE's response transform (transformAntigravityResponse's
+// createStreamingTransformer, request.ts:1758-1780). This shell owns exactly what stays host-side:
+// the TextEncoder/TextDecoder + '\n'-buffering loop, the 45s silence watchdog, and the
+// no-usageMetadata-seen synthetic-usage flush (transformer.ts:290-396) — byte-for-byte the same
+// framing the retained TS `createStreamingTransformer` uses. Every line's dedup/signature-cache/
+// debug-inject/thinking-transform decision runs in Java via the `sseHandle` (built by
+// `newResponseSseTransformer`, real-seamed: real defaultSignatureStore + real cacheSignature + real
+// processImageData — see javaHandle.ts).
+export function makeResponseTransformStream(sseHandle, onComplete, onWatchdogTimeout) {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  let hasSeenUsageMetadata = false;
+
+  let watchdogTimer = null;
+  let isDone = false;
+  let controllerRef = null;
+
+  const resetWatchdog = () => {
+    if (isDone || !controllerRef) return;
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    watchdogTimer = setTimeout(() => {
+      if (isDone) return;
+      isDone = true;
+      const finish = () => {
+        try { controllerRef?.terminate(); } catch {}
+        onComplete?.();
+      };
+      if (onWatchdogTimeout) Promise.resolve(onWatchdogTimeout()).finally(finish);
+      else finish();
+    }, 45000);
+  };
+
+  return new TransformStream({
+    start(controller) {
+      controllerRef = controller;
+      resetWatchdog();
+    },
+    transform(chunk, controller) {
+      resetWatchdog();
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.includes("usageMetadata")) hasSeenUsageMetadata = true;
+        const transformedLine = sseHandle.handle(line);
+        controller.enqueue(encoder.encode(transformedLine + "\n"));
+      }
+    },
+    flush(controller) {
+      isDone = true;
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      buffer += decoder.decode();
+      if (buffer) {
+        if (buffer.includes("usageMetadata")) hasSeenUsageMetadata = true;
+        const transformedLine = sseHandle.handle(buffer);
+        controller.enqueue(encoder.encode(transformedLine));
+      }
+      if (!hasSeenUsageMetadata) {
+        const syntheticUsage = {
+          response: { usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 } },
+        };
+        controller.enqueue(encoder.encode(`\ndata: ${JSON.stringify(syntheticUsage)}\n\n`));
+      }
+      onComplete?.();
+    },
+  });
+}

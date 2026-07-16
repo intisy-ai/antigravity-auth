@@ -14,6 +14,7 @@ import io.github.intisy.ai.antigravity.AntigravityLanes;
 import io.github.intisy.ai.antigravity.AntigravityModelResolver;
 import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravityResponseParse;
+import io.github.intisy.ai.antigravity.AntigravityResponseTransform;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
 import io.github.intisy.ai.antigravity.AntigravityStreamMapper;
 import io.github.intisy.ai.antigravity.AntigravityStreamTransform;
@@ -29,6 +30,7 @@ import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.Random;
+import io.github.intisy.ai.shared.spi.http.HttpResponse;
 
 import org.teavm.jso.JSExport;
 import org.teavm.jso.JSFunctor;
@@ -995,13 +997,17 @@ public final class AntigravityProviderJs {
      * Production variant of {@link #prepareAntigravityRequest}: same pipeline, but every {@link
      * AntigravityRequestPrep.Deps} seam is bridged to a real JS host implementation instead of a
      * deterministic stub. {@code thinkingRecovery} is the internal {@link AntigravityThinkingRecovery}
-     * (Task 1 port) -- not a JS seam.
+     * (Task 1 port) -- not a JS seam. {@code endpointOverride} (empty/{@code null} for "use default"),
+     * {@code claudeToolHardening} and {@code claudePromptAutoCaching} close the Task 3 report's gaps
+     * #1/#2 -- the host resolves the config-driven booleans (defaults true/false) and the per-attempt
+     * endpoint override exactly as {@code prepareAntigravityRequest}'s callers do.
      */
     @JSExport
     public static String prepareAntigravityRequestProd(
             String url, String method, String headersJson, String body,
             String accessToken, String projectId, String headerStyle, String fingerprintJson,
-            boolean keepThinking, String pluginSessionId,
+            boolean keepThinking, String pluginSessionId, String endpointOverride,
+            boolean claudeToolHardening, boolean claudePromptAutoCaching,
             JsRandomFn jsRandom, JsUuidFn jsUuid, JsHasherFn jsHasher,
             JsCacheLookupFn jsCacheLookup, JsSignatureStoreFns jsSignatureStore) {
         JsonCodec json = new SimpleJsonCodec();
@@ -1016,6 +1022,9 @@ public final class AntigravityProviderJs {
         in.projectId = projectId;
         in.headerStyle = headerStyle;
         in.fingerprint = fp;
+        in.endpointOverride = (endpointOverride != null && !endpointOverride.isEmpty()) ? endpointOverride : null;
+        in.claudeToolHardening = claudeToolHardening;
+        in.claudePromptAutoCaching = claudePromptAutoCaching;
 
         AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
         deps.json = json;
@@ -1133,5 +1142,140 @@ public final class AntigravityProviderJs {
         AntigravityStreamTransform.SignatureStore store = (sessionKey, text, signature) ->
                 jsSignatureStore.set(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
         AntigravityStreamTransform.cacheThinkingSignaturesFromResponse(response, signatureSessionKey, store, thoughtBuffer, null);
+    }
+
+    // ---- Real-seamed response-transform exports (Task 3c: route SERVE through Java) ----------------
+
+    /**
+     * JS {@code (mimeType, base64Data) => string|null} -- production: the real {@code processImageData}
+     * (image-saver.ts), which SAVES the decoded image to {@code ~/.opencode|.claude/generated-images/}
+     * and returns a markdown link (or a data-URL fallback on a write failure). Replaces the
+     * transpilability-only {@code DATA_URL_SINK} stand-in for every production response-transform export
+     * below.
+     */
+    @JSFunctor
+    public interface JsImageSinkFn extends JSObject {
+        JSString save(JSString mimeType, JSString base64Data);
+    }
+
+    /** JS {@code (sessionKey, text, signature) => void} -- production: {@code cacheSignature} (cache.ts), the on-disk signature cache write. */
+    @JSFunctor
+    public interface JsCacheSignatureFn extends JSObject {
+        void onCacheSignature(JSString sessionKey, JSString text, JSString signature);
+    }
+
+    // A missing mimeType/data maps to "" (not null): both are equally falsy in JS, matching
+    // processImageData's own `mimeType || 'image/png'` / `if (!data) return null;` fallbacks exactly.
+    private static AntigravityThinkingBlocks.ImageSink bridgeImageSink(JsImageSinkFn sink) {
+        return (mimeType, data) -> {
+            String mt = mimeType instanceof String ? (String) mimeType : "";
+            String d = data instanceof String ? (String) data : "";
+            JSString r = sink.save(JSString.valueOf(mt), JSString.valueOf(d));
+            return r == null ? null : r.stringValue();
+        };
+    }
+
+    /**
+     * Production non-streaming SERVE-transform export: the "OK JSON body" half of
+     * {@code transformAntigravityResponse} (request.ts:1782-1926, real-seamed via {@link
+     * AntigravityResponseTransform#transformServe}). {@code debugText} is the host-resolved
+     * {@code isDebugTuiEnabled()}/{@code getKeepThinking()} placeholder (empty/{@code null} for
+     * "none" -- request.ts:1735-1740); {@code jsImageSink} bridges the real {@code processImageData}.
+     * Returns {@code {status, headers, body}} JSON for the host to build the final {@code Response}.
+     */
+    @JSExport
+    public static String transformServeBodyProd(
+            String bodyText, int status, String headersJson, String requestedModel,
+            String debugText, JsImageSinkFn jsImageSink) {
+        JsonCodec json = new SimpleJsonCodec();
+        HttpResponse upstream = new HttpResponse();
+        upstream.status = status;
+        upstream.headers = asStringHeaders(json, headersJson);
+        upstream.body = bodyText;
+
+        AntigravityHandleOrchestrator.TransformParams params =
+                new AntigravityHandleOrchestrator.TransformParams(requestedModel, null, null, null, null, false);
+        String resolvedDebugText = debugText != null && !debugText.isEmpty() ? debugText : null;
+
+        HttpResponse result = AntigravityResponseTransform.transformServe(
+                json, upstream, params, resolvedDebugText, bridgeImageSink(jsImageSink));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", (long) (result != null ? result.status : status));
+        out.put("headers", result != null ? result.headers : upstream.headers);
+        out.put("body", result != null ? result.body : bodyText);
+        return json.stringify(out);
+    }
+
+    private static Map<String, String> asStringHeaders(JsonCodec json, String headersJson) {
+        Map<String, String> out = new LinkedHashMap<>();
+        Object parsed = headersJson != null ? json.parse(headersJson) : null;
+        if (parsed instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) parsed).entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    out.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Stateful JS handle over ONE streaming SERVE-transform "session" (thought/sent buffers +
+     * debug-injected flag persist across lines, mirroring {@code createStreamingTransformer}'s
+     * per-stream closures) -- {@link #newResponseSseTransformer}'s return.
+     */
+    public interface JsResponseSseHandle extends JSObject {
+        JSString handle(JSString line);
+    }
+
+    /**
+     * Factory for the streaming half of {@code transformAntigravityResponse}
+     * (request.ts:1758-1774's {@code createStreamingTransformer} options, real-seamed via {@link
+     * AntigravityStreamTransform#transformSseLine}). The host {@code TransformStream} shell (line
+     * buffering + the 45s watchdog + the synthetic-usage flush) stays TS (Task 3c's
+     * {@code javaStream.ts}); every line's dedup/signature-cache/debug-inject/thinking-transform
+     * decision runs here. {@code jsSignatureStore} is the SAME adapter {@link
+     * #prepareAntigravityRequestProd} uses (bridges the real {@code defaultSignatureStore});
+     * {@code jsCacheSignature} bridges the real on-disk {@code cacheSignature}; {@code jsImageSink}
+     * bridges the real {@code processImageData}.
+     *
+     * <p>Disclosed deviation: the Gemini-3 SSE-reconnect {@code sessionDisplayedThinkingHashes} dedup
+     * set (request.ts:79,1770) is NOT wired -- {@code displayedThinkingHashes} is always passed as
+     * {@code null} (matches TS behavior for every NON-Gemini-3 model already, since the TS only passes
+     * the set when {@code isGemini3Model(effectiveModel)}). A future task can add a persistent
+     * host-Set seam for the Gemini-3 case; no fixture in this task exercises it.
+     */
+    @JSExport
+    public static JsResponseSseHandle newResponseSseTransformer(
+            String signatureSessionKey, String debugText, boolean cacheSignatures,
+            JsSignatureStoreFns jsSignatureStore, JsCacheSignatureFn jsCacheSignature, JsImageSinkFn jsImageSink) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityStreamTransform.ThoughtBuffer thoughtBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.ThoughtBuffer sentBuffer = AntigravityStreamTransform.createThoughtBuffer();
+        AntigravityStreamTransform.DebugState debugState = new AntigravityStreamTransform.DebugState(false);
+        String resolvedDebugText = debugText != null && !debugText.isEmpty() ? debugText : null;
+
+        AntigravityStreamTransform.SignatureStore store = (sessionKey, text, signature) ->
+                jsSignatureStore.set(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
+        AntigravityStreamTransform.CacheSignatureCallback onCacheSignature = (sessionKey, text, signature) ->
+                jsCacheSignature.onCacheSignature(JSString.valueOf(sessionKey), JSString.valueOf(text), JSString.valueOf(signature));
+        AntigravityStreamTransform.InjectDebug onInjectDebug = AntigravityRequestSignatures::injectDebugThinking;
+        AntigravityThinkingBlocks.ImageSink imageSink = bridgeImageSink(jsImageSink);
+        AntigravityStreamTransform.ThinkingPartsTransform transformThinkingParts = response ->
+                AntigravityThinkingBlocks.transformThinkingParts(
+                        response, value -> AntigravityResponseParse.recursivelyParseJsonStrings(json, value), imageSink);
+
+        return new JsResponseSseHandle() {
+            @Override
+            public JSString handle(JSString lineJs) {
+                String line = lineJs == null ? "" : lineJs.stringValue();
+                String out = AntigravityStreamTransform.transformSseLine(
+                        json, line, store, thoughtBuffer, sentBuffer,
+                        onCacheSignature, onInjectDebug, transformThinkingParts, imageSink,
+                        signatureSessionKey, resolvedDebugText, cacheSignatures, null, debugState);
+                return JSString.valueOf(out);
+            }
+        };
     }
 }
