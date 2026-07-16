@@ -2,7 +2,6 @@ package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.shared.model.Account;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
-import io.github.intisy.ai.shared.spi.http.HttpRequest;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
 
 import java.util.LinkedHashMap;
@@ -27,7 +26,6 @@ final class AntigravityModelsFetch {
     // Distinct wording from the orchestrator's own no-account message (this is a discovery call,
     // not a chat turn) but the same synthetic invalid_request_error/x-hub-chat-error shape.
     private static final String NO_ACCOUNT_MESSAGE = "No enabled antigravity account — seed one first.";
-    private static final String FETCH_MODELS_PATH = "/v1internal:fetchAvailableModels";
 
     private AntigravityModelsFetch() {
     }
@@ -62,27 +60,13 @@ final class AntigravityModelsFetch {
         // A light read only: whatever project id an account already has cached (managedProjectId
         // preferred, then the raw projectId). No project discovery/onboarding runs on this path --
         // when neither is present the request body simply omits "project" (matches the TS
-        // `projectId ? {project} : {}` guard).
-        String projectId = projectIdFromMeta(account.meta);
-        String body = requestBody(backend, projectId);
-
-        HttpResponse resp = sendToFirstSuccessfulEndpoint(backend, access, body);
-        if (resp == null) {
+        // `projectId ? {project} : {}` guard). Shared with AntigravityQuotaFetch via
+        // AntigravityUpstream instead of two separate copies of this transport.
+        Map<String, Object> payload = AntigravityUpstream.fetchAvailableModels(backend, access, account);
+        if (payload == null) {
             return AntigravityProvider.errorResponse(502, "api_error", "fetchAvailableModels failed");
         }
 
-        Object parsed;
-        try {
-            parsed = backend.json.parse(resp.body);
-        } catch (RuntimeException e) {
-            return AntigravityProvider.errorResponse(502, "api_error", "unparsable fetchAvailableModels response");
-        }
-        if (!(parsed instanceof Map)) {
-            return AntigravityProvider.errorResponse(502, "api_error", "unparsable fetchAvailableModels response");
-        }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> payload = (Map<String, Object>) parsed;
         Map<String, Object> catalog = AntigravityCatalog.buildAntigravityCatalog(payload);
 
         HttpResponse out = new HttpResponse();
@@ -91,49 +75,6 @@ final class AntigravityModelsFetch {
         out.headers.put("content-type", "application/json");
         out.body = backend.json.stringify(catalog);
         return out;
-    }
-
-    private static HttpResponse sendToFirstSuccessfulEndpoint(AntigravityBackend backend, String access, String body) {
-        for (String base : AntigravityHandleRouting.endpointsFor("antigravity")) {
-            HttpRequest req = new HttpRequest();
-            req.method = "POST";
-            req.url = base + FETCH_MODELS_PATH;
-            req.headers = AntigravityHostSeams.HostProjectLoader.loadHeaders(access);
-            req.body = body;
-            try {
-                HttpResponse resp = backend.http.send(req);
-                if (resp.status / 100 == 2) {
-                    return resp;
-                }
-            } catch (RuntimeException e) {
-                // try the next endpoint fallback
-            }
-        }
-        return null;
-    }
-
-    // {"project":"<id>"} when a project id is known, else {} (matches the TS
-    // `projectId ? {project} : {}` guard) -- built via the same JsonCodec used everywhere else in
-    // this backend rather than hand-assembled JSON.
-    private static String requestBody(AntigravityBackend backend, String projectId) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        if (projectId != null && !projectId.trim().isEmpty()) {
-            map.put("project", projectId);
-        }
-        return backend.json.stringify(map);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static String projectIdFromMeta(Map<String, Object> meta) {
-        if (meta == null) {
-            return null;
-        }
-        Object managed = meta.get("managedProjectId");
-        if (managed instanceof String && !((String) managed).trim().isEmpty()) {
-            return (String) managed;
-        }
-        Object raw = meta.get("projectId");
-        return raw instanceof String && !((String) raw).trim().isEmpty() ? (String) raw : null;
     }
 
     private static Account firstEnabledAccount(AntigravityBackend backend) {

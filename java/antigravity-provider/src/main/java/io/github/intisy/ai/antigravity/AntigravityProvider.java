@@ -126,6 +126,14 @@ public final class AntigravityProvider implements Provider {
                     AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null), ctx);
         }
 
+        // Quota-display Task 2: GET /v1/quota, same "discovery, not a chat turn" precedence as
+        // the /v1/models branch above.
+        if (request != null && "GET".equalsIgnoreCase(request.method) && request.url != null
+                && request.url.endsWith("/v1/quota")) {
+            return AntigravityQuotaFetch.fetch(
+                    AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null), ctx);
+        }
+
         String model = resolveModel(ctx);
         AntigravityBackend backend = AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null);
         Logger log = loggerFor(ctx);
