@@ -47,7 +47,7 @@ import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/in
 import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
 import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
 import { processImageData } from "../plugin/image-saver.js";
-import { isGemini3Model } from "../plugin/transform/index.js";
+import { isGemini3Model } from "../plugin/transform-java.js";
 import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
 // Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives

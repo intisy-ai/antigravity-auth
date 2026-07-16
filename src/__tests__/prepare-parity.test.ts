@@ -1,13 +1,12 @@
 // @ts-nocheck
-// Task 3 parity gate: proves jsPreparer's Java-driven prepare (prepareAntigravityRequestProd, via
-// javaHandle.ts's exported prepareViaJava) produces the SAME driver-relevant output as the retained
-// TS prepareAntigravityRequest, for a representative Gemini body and a representative Claude
-// (thinking) body. Both are also asserted against a frozen fixture (prepare-scenarios.expected.json,
-// captured from the live TS function) so a regression in EITHER implementation trips this test, not
-// just a live TS-vs-Java diff that could drift silently if both changed together.
+// Task 3 parity gate (converted by Task 6a — the TS prepareAntigravityRequest this test used to
+// compare against is deleted, superseded by Java): proves jsPreparer's Java-driven prepare
+// (prepareAntigravityRequestProd, via javaHandle.ts's exported prepareViaJava) produces the frozen
+// output (prepare-scenarios.expected.json, captured from the TS function before its deletion) for a
+// representative Gemini body and a representative Claude (thinking) body.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
-import { prepareAntigravityRequest, getPluginSessionId } from "../plugin/request.js";
+import { getPluginSessionId } from "../plugin/request.js";
 import { prepareViaJava, loadOrchestrator } from "../driver/javaHandle.js";
 import expected from "./prepare-scenarios.expected.json";
 
@@ -72,17 +71,8 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
-describe("prepare parity: Java prepareAntigravityRequestProd vs TS prepareAntigravityRequest", () => {
+describe("prepare parity: Java prepareAntigravityRequestProd vs the frozen TS fixture", () => {
   for (const [name, sc] of Object.entries(scenarios)) {
-    it(`${name}: TS output matches the frozen fixture`, () => {
-      const tsResult = prepareAntigravityRequest(
-        sc.url, { method: sc.method, headers: sc.headers, body: sc.body },
-        sc.accessToken, sc.projectId, sc.endpointOverride, sc.headerStyle, false,
-        { fingerprint: FIXED_FP },
-      );
-      expect(normalize(comparable(tsResult))).toEqual(expected[name]);
-    });
-
     it(`${name}: Java jsPreparer output (prepareViaJava) byte-matches the frozen TS fixture`, async () => {
       const orchestrator = await loadOrchestrator();
       const javaResult = prepareViaJava(

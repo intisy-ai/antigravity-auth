@@ -1,0 +1,69 @@
+{
+  "plain": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello there\"}]},\"finishReason\":\"STOP\"}]}"
+  },
+  "thinking": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"let me think about this\",\"type\":\"reasoning\"},{\"text\":\"here is the answer\"}]},\"finishReason\":\"STOP\",\"reasoning_content\":\"let me think about this\"}]}"
+  },
+  "usage": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "x-antigravity-cached-content-token-count": "3",
+      "x-antigravity-candidates-token-count": "5",
+      "x-antigravity-prompt-token-count": "10",
+      "x-antigravity-total-token-count": "15"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello there\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":5,\"totalTokenCount\":15,\"cachedContentTokenCount\":3}}"
+  },
+  "image": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"![Generated Image](C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-4fzzzx.png)\\n\\nImage saved to: `C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-4fzzzx.png`\\n\\nTo view: `open \\\"C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-4fzzzx.png\\\"`\"}]},\"finishReason\":\"STOP\"}]}"
+  },
+  "streamingDedup": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"thinking about the\",\"thinking\":\"thinking about the\",\"type\":\"reasoning\"}]},\"reasoning_content\":\"thinking about the\"}]}\n\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\" problem\",\"thinking\":\" problem\",\"type\":\"reasoning\"},{\"text\":\"![Generated Image](C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-zk0000.png)\\n\\nImage saved to: `C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-zk0000.png`\\n\\nTo view: `open \\\"C:\\\\Users\\\\finn\\\\.opencode\\\\generated-images\\\\image-2026-07-16T00-00-00-000Z-zk0000.png\\\"`\"}]},\"reasoning_content\":\" problem\"}]}\n\n\ndata: {\"response\":{\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}}\n\n"
+  },
+  "gemini3Stream1": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"reconsidering the approach to this particular problem\",\"thinking\":\"reconsidering the approach to this particular problem\",\"type\":\"reasoning\"}]},\"reasoning_content\":\"reconsidering the approach to this particular problem\"}]}\n\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"final answer\"}]}}]}\n\n\ndata: {\"response\":{\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}}\n\n"
+  },
+  "gemini3Stream2": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[]}}]}\n\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"final answer\"}]}}]}\n\n\ndata: {\"response\":{\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}}\n\n"
+  },
+  "nonGemini3Pass1": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"a distinct non-gemini-3 thinking snippet\",\"thinking\":\"a distinct non-gemini-3 thinking snippet\",\"type\":\"reasoning\"}]},\"reasoning_content\":\"a distinct non-gemini-3 thinking snippet\"}]}\n\n\ndata: {\"response\":{\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}}\n\n"
+  },
+  "nonGemini3Pass2": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"a distinct non-gemini-3 thinking snippet\",\"thinking\":\"a distinct non-gemini-3 thinking snippet\",\"type\":\"reasoning\"}]},\"reasoning_content\":\"a distinct non-gemini-3 thinking snippet\"}]}\n\n\ndata: {\"response\":{\"usageMetadata\":{\"promptTokenCount\":0,\"candidatesTokenCount\":0,\"totalTokenCount\":0}}}\n\n"
+  }
+}
