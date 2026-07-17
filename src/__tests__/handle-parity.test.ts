@@ -333,13 +333,21 @@ const scenarios: any[] = [
   },
 ];
 
+// The terminal quota-reset message embeds a host `Date.toLocaleString(undefined, …)` render of a fixed
+// epoch, so its exact text varies by the runner's locale/timezone (dev vs CI). Scrub that one volatile
+// span (anchored on the stable ". Try again" tail) on BOTH sides so the fixture stays machine-portable.
+function scrubResetDate(snap: any) {
+  if (!snap || typeof snap.body !== "string") return snap;
+  return { ...snap, body: snap.body.replace(/Quota resets .*?\. Try again/g, "Quota resets <RESET>. Try again") };
+}
+
 describe("handle regression: Java path (driver.handle) vs frozen fixture", () => {
   for (const sc of scenarios) {
     it(sc.name, async () => {
       const expected = (fixture as any)[sc.name];
       expect(expected, "fixture must have an entry for every scenario").toBeTruthy();
       const { snap, calls, outbound } = await runOnce(sc);
-      expect(snap, "final Response must match the frozen fixture").toEqual(expected.snap);
+      expect(scrubResetDate(snap), "final Response must match the frozen fixture").toEqual(scrubResetDate(expected.snap));
       expect(calls, "ordered manager/proxy call sequence must match the frozen fixture").toEqual(expected.calls);
       expect(outbound, "outbound fetch requests must match the frozen fixture").toEqual(expected.outbound);
     });
