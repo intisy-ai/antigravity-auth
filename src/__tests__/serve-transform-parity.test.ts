@@ -7,7 +7,20 @@
 // (inlineData -> processImageData) case, plus the Gemini-3 SSE-reconnect thought-dedup gate.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { transformServeViaJava, loadOrchestrator } from "../driver/javaHandle.js";
-import expected from "./serve-transform-scenarios.expected.json";
+import rawExpected from "./serve-transform-scenarios.expected.json";
+
+// The real processImageData sink writes under the runner's home dir, so the saved-image path in the
+// body varies by machine (dev vs CI). Scrub the directory prefix (keeping the deterministic filename)
+// on BOTH the live snapshot and the frozen fixture so the parity stays machine-portable.
+const IMG_DIR_RE = /[^"\s()`]*generated-images[\/\\]+/g;
+function scrubImagePath(snap: any) {
+  return snap && typeof snap.body === "string"
+    ? { ...snap, body: snap.body.replace(IMG_DIR_RE, "<IMGDIR>/") }
+    : snap;
+}
+const expected: any = Object.fromEntries(
+  Object.entries(rawExpected as any).map(([k, v]) => [k, scrubImagePath(v)]),
+);
 
 // image-saver.ts's saveImageToDisk does a REAL `fs.writeFileSync` — stub the fs write so the test
 // stays hermetic (no real file touches disk) while the CODE PATH stays the real processImageData +
@@ -47,11 +60,11 @@ function unfreezeImageDeps() {
 }
 
 async function snapshotResponse(r) {
-  return {
+  return scrubImagePath({
     status: r.status,
     headers: Object.fromEntries([...r.headers.entries()].sort()),
     body: await r.text(),
-  };
+  });
 }
 
 describe("SERVE-transform parity: Java-driven transformServeViaJava vs the frozen TS fixture", () => {
@@ -126,8 +139,8 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
       }));
       // Sanity: the real code path actually ran (a markdown image link with a real saved path), not
       // the transpilability-only DATA_URL_SINK fallback (`data:...;base64,...`).
-      expect(expected.image.body).toContain("generated-images");
-      expect(expected.image.body).not.toContain("data:image/png;base64,");
+      expect((rawExpected as any).image.body).toContain("generated-images");
+      expect((rawExpected as any).image.body).not.toContain("data:image/png;base64,");
       expect(jvSnap).toEqual(expected.image);
     });
   });
@@ -147,7 +160,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
           requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
           effectiveModel: "claude-sonnet-4-6-thinking", sessionId: "sess-5", streaming: true,
         }));
-        expect(expected.streamingDedup.body).toContain("generated-images");
+        expect((rawExpected as any).streamingDedup.body).toContain("generated-images");
         expect(jvSnap).toEqual(expected.streamingDedup);
       } finally {
         unfreezeImageDeps();
