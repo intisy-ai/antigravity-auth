@@ -101,7 +101,6 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
   "soft_quota_threshold_percent": 90,
   "quota_refresh_interval_minutes": 15,
   "soft_quota_cache_ttl_minutes": "auto",
-  "auto_update": true,
   "signature_cache": {
     "enabled": true,
     "memory_ttl_seconds": 3600,
@@ -159,7 +158,6 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
 | `soft_quota_threshold_percent` | `90` |
 | `quota_refresh_interval_minutes` | `15` |
 | `soft_quota_cache_ttl_minutes` | `"auto"` |
-| `auto_update` | `true` |
 | `signature_cache` | `{"enabled":true,"memory_ttl_seconds":3600,"disk_ttl_seconds":172800,"write_interval_seconds":60}` |
 | `health_score` | `{"initial":70,"success_reward":1,"rate_limit_penalty":-10,"failure_penalty":-20,"recovery_rate_per_hour":2,"min_usable":50,"max_score":100}` |
 | `token_bucket` | `{"max_tokens":50,"regeneration_rate_per_minute":6,"initial_tokens":50}` |

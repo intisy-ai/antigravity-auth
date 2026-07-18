@@ -137,9 +137,6 @@ export interface AntigravityConfig {
     regeneration_rate_per_minute: number;
     initial_tokens: number;
   };
-
-  /** Enable automatic plugin updates. */
-  auto_update: boolean;
 }
 
 /**
@@ -177,7 +174,6 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   soft_quota_threshold_percent: 90,
   quota_refresh_interval_minutes: 15,
   soft_quota_cache_ttl_minutes: "auto",
-  auto_update: true,
   signature_cache: {
     enabled: true,
     memory_ttl_seconds: 3600,

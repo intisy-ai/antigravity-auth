@@ -6,7 +6,6 @@ import io.github.intisy.ai.shared.routing.ConfigSchema;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,9 +99,7 @@ final class AntigravityConfig {
             new GroupDef("Token Bucket", Arrays.asList(
                     field("token_bucket.max_tokens", "Max tokens", "number", null, 50L),
                     field("token_bucket.regeneration_rate_per_minute", "Regeneration rate/min", "number", null, 6L),
-                    field("token_bucket.initial_tokens", "Initial tokens", "number", null, 50L))),
-            new GroupDef("Updates", Collections.singletonList(
-                    field("auto_update", "Auto-update plugin", "bool", null, Boolean.TRUE))));
+                    field("token_bucket.initial_tokens", "Initial tokens", "number", null, 50L))));
 
     private AntigravityConfig() {
     }
