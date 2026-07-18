@@ -121,6 +121,19 @@ function isRateLimitStatus(status) {
   return status === 429 || status === 503 || status === 529;
 }
 
+// config.request_jitter_max_ms (E-wiring) — a small random pre-request delay to desynchronize
+// concurrent requests across accounts/sessions. Default 0 = disabled, no behavior change.
+// Exported so request-jitter.test.ts can exercise it directly (with a mocked config) without
+// standing up the full orchestrator harness.
+export function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+export async function applyRequestJitter() {
+  const maxMs = config.request_jitter_max_ms;
+  if (!maxMs || maxMs <= 0) return;
+  await sleepMs(Math.random() * maxMs);
+}
+
 // ---- Task 3: real host seams for prepareAntigravityRequestProd / cacheSignaturesFromResponse -----
 // REAL entropy (CRITICAL-1): production Math.random / crypto.randomUUID, never baked.
 const jsRandom = () => Math.random();
@@ -194,13 +207,14 @@ export function prepareViaJava(
   accessToken, projectId, endpointOverride, headerStyle, fingerprint,
   claudeToolHardening = DEFAULT_CONFIG.claude_tool_hardening,
   claudePromptAutoCaching = DEFAULT_CONFIG.claude_prompt_auto_caching,
+  cliFirst = DEFAULT_CONFIG.cli_first,
 ) {
   const fingerprintJson = JSON.stringify(fingerprint ?? null);
   const resultJson = orchestrator.prepareAntigravityRequestProd(
     url, method, headersJson, bodyText ?? "",
     accessToken, projectId, headerStyle, fingerprintJson,
     getKeepThinking(), getPluginSessionId(), endpointOverride ?? "",
-    !!claudeToolHardening, !!claudePromptAutoCaching,
+    !!claudeToolHardening, !!claudePromptAutoCaching, !!cliFirst,
     jsRandom, jsUuid, jsHasher, jsCacheLookup, jsSignatureStore,
   );
   const r = JSON.parse(resultJson);
@@ -280,9 +294,10 @@ async function runGeminiViaJava(request, ctx) {
   // throw returns null, which the JsRequestPreparerBridge re-raises so the orchestrator skips the
   // endpoint (index.ts:169).
   // Task 3c: threads config.claude_tool_hardening / claude_prompt_auto_caching through (previously
-  // silently dropped). debug_gemini_payloads is still not threaded — it is a local fs-debug-log side
-  // channel with no effect on the upstream request (the Java port drops it deliberately, per its own
-  // docs), not a request-shaping option.
+  // silently dropped). config.cli_first is threaded the same way (E-wiring): it reaches
+  // AntigravityModelResolver.resolveModelForHeaderStyle's 3-arg overload via Input.cliFirst, so the
+  // two-arg resolveModelWithTier(model, cliFirst) path is actually exercised with the configured
+  // value instead of the hardcoded `false` every live call previously used.
   const jsPreparer = (url, bodyText2, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
     let account;
     try { account = accountJson ? JSON.parse(accountJson) : {}; } catch { account = {}; }
@@ -291,7 +306,7 @@ async function runGeminiViaJava(request, ctx) {
     try {
       prepared = prepareViaJava(
         orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint,
-        config.claude_tool_hardening, config.claude_prompt_auto_caching,
+        config.claude_tool_hardening, config.claude_prompt_auto_caching, config.cli_first,
       );
     } catch (error) {
       log("prepare failed: " + error);
@@ -311,8 +326,9 @@ async function runGeminiViaJava(request, ctx) {
     });
   };
 
-  // jsExec — pure transport, reproducing index.ts:170-218 exactly: apply the account's proxy → fetch
-  // → on a proxy fetch error reportResult(false)+retry-direct → on direct/no-proxy error return
+  // jsExec — pure transport, reproducing index.ts:170-218 exactly: apply the account's proxy →
+  // (E-wiring) apply config.request_jitter_max_ms's pre-fetch delay → fetch → on a proxy fetch
+  // error reportResult(false)+retry-direct → on direct/no-proxy error return
   // transportFailed → log the non-ok snippet → on rate-limit extract {errorMessage, errorReason}
   // (unwrapping the cloudcode-pa [{error}] array). Retains the live Response host-side; NO body bytes
   // cross to Java. The rate-limit reset regex + classification + reporting are the orchestrator's.
@@ -324,6 +340,8 @@ async function runGeminiViaJava(request, ctx) {
 
     const proxyUrl = proxyForAccount(accountId);
     if (proxyUrl) prepared.init.proxy = proxyUrl; // Bun fetch honors .proxy
+
+    await applyRequestJitter();
 
     let response;
     const started = Date.now();

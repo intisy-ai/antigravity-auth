@@ -13,6 +13,7 @@ import { login, loginFlow } from "./login.js";
 import { createAntigravityAccounts } from "./accounts-controller.js";
 import { getConfigValue, setConfigValue, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
+import { initSignatureCache } from "../plugin/cache.js";
 
 const PROVIDER_ID = "antigravity";
 const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
@@ -25,6 +26,7 @@ const lastAccountByLane = {};   // lane -> last account id, to notify only on re
 let config;
 try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 initializeDebug(config);     // enables the log.debug(...) calls in request/project (debug, debug_tui, log_dir)
+initSignatureCache(config.signature_cache); // constructs the disk-backed SignatureCache when enabled (inert otherwise)
 
 // core-auth account engine. The driver availability hook keeps antigravity's
 // "skip accounts pending Google verification" behavior without leaking it into core.
@@ -118,8 +120,12 @@ async function fetchModels(ctx) {
 // this provider at runtime are listed — verified by tracing each to its consumer:
 //   account_selection_strategy -> AccountManager(selection) above
 //   keep_thinking              -> request transform via getKeepThinking() (initRuntimeConfig above)
-//   claude_tool_hardening / claude_prompt_auto_caching / debug_gemini_payloads
+//   claude_tool_hardening / claude_prompt_auto_caching
 //                              -> read by javaHandle.ts's Java prepare path
+//   cli_first                  -> threaded into prepareViaJava -> Java's resolveModelForHeaderStyle
+//                                 (AntigravityRequestPrep.Input.cliFirst -> resolveModelWithTier)
+//   request_jitter_max_ms      -> pre-fetch delay in javaHandle.ts's jsExec transport
+//   signature_cache.*          -> initSignatureCache() at startup (plugin/cache.ts's diskCache)
 // The other historical AntigravityConfig keys (scheduling/rate-limit/quota/health/
 // token-bucket/recovery/notifications/etc.) have NO consumer in the core-auth
 // provider form — their behavior is owned by core-auth's own engine — so exposing
@@ -136,6 +142,13 @@ const settingsGroups = [
     fields: [
       { key: "default_retry_after_seconds", label: "Base retry delay (s)", type: "number", min: 1, max: 300, hint: "Base cooldown after a transient account error; doubles per attempt (AccountManager backoff)." },
       { key: "max_backoff_seconds", label: "Max backoff (s)", type: "number", min: 5, max: 300, hint: "Caps how long the per-account error backoff can grow." },
+      { key: "request_jitter_max_ms", label: "Request jitter (ms)", type: "number", min: 0, max: 10000, hint: "Random delay (0 to this many ms) added before each outbound request; 0 disables it." },
+    ],
+  },
+  {
+    title: "Model routing",
+    fields: [
+      { key: "cli_first", label: "Prefer gemini-cli routing", type: "bool", hint: "Route eligible Gemini models through the gemini-cli quota pool before Antigravity." },
     ],
   },
   {
@@ -147,12 +160,20 @@ const settingsGroups = [
     ],
   },
   {
+    title: "Signature cache",
+    fields: [
+      { key: "signature_cache.enabled", label: "Enable disk cache", type: "bool", hint: "Persist thinking-block signatures to disk (in addition to the in-memory cache)." },
+      { key: "signature_cache.memory_ttl_seconds", label: "Memory TTL (s)", type: "number", min: 1, max: 86400, hint: "How long a signature stays valid in the in-memory cache." },
+      { key: "signature_cache.disk_ttl_seconds", label: "Disk TTL (s)", type: "number", min: 1, max: 2592000, hint: "How long a signature stays valid in the on-disk cache." },
+      { key: "signature_cache.write_interval_seconds", label: "Disk write interval (s)", type: "number", min: 1, max: 3600, hint: "How often dirty entries are flushed to disk." },
+    ],
+  },
+  {
     title: "Debug",
     fields: [
       { key: "debug", label: "Debug logging", type: "bool", hint: "Enable debug logging to a file." },
       { key: "debug_tui", label: "Debug in TUI", type: "bool", hint: "Show debug logs in the TUI log panel (independent of file logging)." },
       { key: "log_dir", label: "Log directory", type: "string", hint: "Custom directory for debug logs." },
-      { key: "debug_gemini_payloads", label: "Debug Gemini payloads", type: "bool", hint: "Write the raw payload sent to Gemini models to a debug log file." },
     ],
   },
 ];

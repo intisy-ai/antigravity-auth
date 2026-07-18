@@ -47,9 +47,10 @@ class AntigravityConfigTest {
                 if (f.key.contains(".")) sawNestedKey = true;
             }
         }
-        // schema.ts's AntigravityConfig has ~50 settings once its nested groups (signature_cache/
-        // health_score/token_bucket) are flattened to dotted keys.
-        assertTrue(totalFields >= 40, "expected ~50 settings, found " + totalFields);
+        // schema.ts's AntigravityConfig surface was pruned to only the keys with a real runtime
+        // consumer (9 pre-existing functional keys + the 3 E-wired features), so the field count
+        // is much smaller than the old ~50-setting historical schema.
+        assertTrue(totalFields >= 12, "expected >= 12 settings, found " + totalFields);
         assertTrue(sawNestedKey, "nested TS groups must flatten to dotted ConfigField keys");
     }
 
@@ -59,11 +60,11 @@ class AntigravityConfigTest {
 
         Map<String, Object> values = AntigravityConfig.getValues(backend);
 
-        assertEquals(Boolean.FALSE, values.get("quiet_mode"));
+        assertEquals(Boolean.FALSE, values.get("debug"));
         assertEquals("hybrid", values.get("account_selection_strategy"));
         assertEquals(Boolean.TRUE, values.get("signature_cache.enabled"));
-        assertEquals(70L, ((Number) values.get("health_score.initial")).longValue());
-        assertEquals("auto", values.get("soft_quota_cache_ttl_minutes"));
+        assertEquals(0L, ((Number) values.get("request_jitter_max_ms")).longValue());
+        assertEquals(Boolean.FALSE, values.get("cli_first"));
     }
 
     @Test
@@ -72,13 +73,13 @@ class AntigravityConfigTest {
         AntigravityBackend backend = AntigravityBackend.forTest(store, noopHttp());
 
         Map<String, Object> incoming = new LinkedHashMap<>();
-        incoming.put("quiet_mode", Boolean.TRUE);
+        incoming.put("debug", Boolean.TRUE);
         incoming.put("signature_cache.enabled", Boolean.FALSE);
         incoming.put("account_selection_strategy", "round-robin");
         incoming.put("bogus_unknown_key", "ignored"); // not a declared field -> must be dropped
 
         Map<String, Object> updated = AntigravityConfig.putValues(backend, incoming);
-        assertEquals(Boolean.TRUE, updated.get("quiet_mode"));
+        assertEquals(Boolean.TRUE, updated.get("debug"));
         assertEquals(Boolean.FALSE, updated.get("signature_cache.enabled"));
         assertEquals("round-robin", updated.get("account_selection_strategy"));
         assertFalse(updated.containsKey("bogus_unknown_key"));
@@ -87,7 +88,7 @@ class AntigravityConfigTest {
         // persistence went through the store the test injected, not a per-instance cache.
         AntigravityBackend reread = AntigravityBackend.forTest(store, noopHttp());
         Map<String, Object> values = AntigravityConfig.getValues(reread);
-        assertEquals(Boolean.TRUE, values.get("quiet_mode"));
+        assertEquals(Boolean.TRUE, values.get("debug"));
         assertEquals(Boolean.FALSE, values.get("signature_cache.enabled"));
         // An untouched sibling of the same nested group must keep its default.
         assertEquals(3600L, ((Number) values.get("signature_cache.memory_ttl_seconds")).longValue());
@@ -133,13 +134,13 @@ class AntigravityConfigTest {
         ctx.store = store; // ...but store-threading requires the injected store to win.
 
         AntigravityProvider provider = new AntigravityProvider();
-        provider.putConfigValues(ctx, singleton("quiet_mode", Boolean.TRUE));
+        provider.putConfigValues(ctx, singleton("debug", Boolean.TRUE));
         Map<String, Object> values = provider.getConfigValues(ctx);
 
-        assertEquals(Boolean.TRUE, values.get("quiet_mode"));
+        assertEquals(Boolean.TRUE, values.get("debug"));
         String raw = store.raw("antigravity.json");
         assertNotNull(raw, "putConfigValues via HandlerCtx.store must write to the INJECTED store");
-        assertTrue(raw.contains("quiet_mode"));
+        assertTrue(raw.contains("debug"));
         // No file should ever appear under configDir -- proves no FileStore was self-assembled.
         assertFalse(configDir.resolve("antigravity.json").toFile().exists());
     }

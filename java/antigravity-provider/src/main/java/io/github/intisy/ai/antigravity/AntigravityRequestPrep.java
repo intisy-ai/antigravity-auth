@@ -156,6 +156,7 @@ public final class AntigravityRequestPrep {
         public boolean forceThinkingRecovery;
         public Boolean claudeToolHardening;      // options?.claudeToolHardening (default true)
         public boolean claudePromptAutoCaching;  // options?.claudePromptAutoCaching (default false)
+        public boolean cliFirst;                 // config.cli_first -- prefer gemini-cli routing (default false)
         public Map<String, Object> fingerprint;  // options?.fingerprint ?? getSessionFingerprint() (resolved by shell)
         public String imageAspectRatio;          // process.env.OPENCODE_IMAGE_ASPECT_RATIO (Bucket C)
     }
@@ -235,7 +236,7 @@ public final class AntigravityRequestPrep {
         String rawAction = match.group(2) != null ? match.group(2) : "";
         String requestedModel = rawModel;
 
-        Map<String, Object> resolved = AntigravityModelResolver.resolveModelForHeaderStyle(rawModel, headerStyle);
+        Map<String, Object> resolved = AntigravityModelResolver.resolveModelForHeaderStyle(rawModel, headerStyle, in.cliFirst);
         String effectiveModel = (String) resolved.get("actualModel");
 
         boolean streaming = STREAM_ACTION.equals(rawAction);

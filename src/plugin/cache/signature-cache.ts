@@ -402,11 +402,17 @@ export class SignatureCache {
         this.saveToDisk();
       }
     }, this.writeIntervalMs);
-
+    // unref: a background flush/cleanup timer must never be the reason the host process stays
+    // alive (e.g. a one-shot `node dist/index.js` CLI/config/deploy invocation, which relies on
+    // natural process exit once its synchronous work is done, same as before this cache existed).
+    // In a real long-running host (opencode/claude-code-loader) other work keeps the loop alive,
+    // so unref has no effect there -- the timer still fires normally either way.
+    this.writeTimer.unref?.();
 
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpired();
     }, 30 * 60 * 1000);
+    this.cleanupTimer.unref?.();
   }
 
   /**
