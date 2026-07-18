@@ -70,56 +70,21 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
 
 ```json
 {
-  "quiet_mode": false,
-  "toast_scope": "root_only",
   "debug": false,
   "debug_tui": false,
-  "debug_gemini_payloads": false,
   "keep_thinking": false,
-  "empty_response_max_attempts": 4,
-  "empty_response_retry_delay_ms": 2000,
-  "tool_id_recovery": true,
   "claude_tool_hardening": true,
   "claude_prompt_auto_caching": false,
-  "proactive_token_refresh": true,
-  "proactive_refresh_buffer_seconds": 1800,
-  "proactive_refresh_check_interval_seconds": 300,
-  "max_rate_limit_wait_seconds": 300,
-  "quota_fallback": false,
   "cli_first": false,
-  "fallback_enabled": false,
-  "auto_mode": true,
   "account_selection_strategy": "hybrid",
-  "pid_offset_enabled": false,
-  "switch_on_first_rate_limit": true,
-  "scheduling_mode": "cache_first",
-  "max_cache_first_wait_seconds": 60,
-  "failure_ttl_seconds": 3600,
   "default_retry_after_seconds": 60,
   "max_backoff_seconds": 60,
   "request_jitter_max_ms": 0,
-  "soft_quota_threshold_percent": 90,
-  "quota_refresh_interval_minutes": 15,
-  "soft_quota_cache_ttl_minutes": "auto",
   "signature_cache": {
     "enabled": true,
     "memory_ttl_seconds": 3600,
     "disk_ttl_seconds": 172800,
     "write_interval_seconds": 60
-  },
-  "health_score": {
-    "initial": 70,
-    "success_reward": 1,
-    "rate_limit_penalty": -10,
-    "failure_penalty": -20,
-    "recovery_rate_per_hour": 2,
-    "min_usable": 50,
-    "max_score": 100
-  },
-  "token_bucket": {
-    "max_tokens": 50,
-    "regeneration_rate_per_minute": 6,
-    "initial_tokens": 50
   },
   "logging": true
 }
@@ -127,40 +92,17 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
 
 | Key | Default |
 | --- | --- |
-| `quiet_mode` | `false` |
-| `toast_scope` | `"root_only"` |
 | `debug` | `false` |
 | `debug_tui` | `false` |
-| `debug_gemini_payloads` | `false` |
 | `keep_thinking` | `false` |
-| `empty_response_max_attempts` | `4` |
-| `empty_response_retry_delay_ms` | `2000` |
-| `tool_id_recovery` | `true` |
 | `claude_tool_hardening` | `true` |
 | `claude_prompt_auto_caching` | `false` |
-| `proactive_token_refresh` | `true` |
-| `proactive_refresh_buffer_seconds` | `1800` |
-| `proactive_refresh_check_interval_seconds` | `300` |
-| `max_rate_limit_wait_seconds` | `300` |
-| `quota_fallback` | `false` |
 | `cli_first` | `false` |
-| `fallback_enabled` | `false` |
-| `auto_mode` | `true` |
 | `account_selection_strategy` | `"hybrid"` |
-| `pid_offset_enabled` | `false` |
-| `switch_on_first_rate_limit` | `true` |
-| `scheduling_mode` | `"cache_first"` |
-| `max_cache_first_wait_seconds` | `60` |
-| `failure_ttl_seconds` | `3600` |
 | `default_retry_after_seconds` | `60` |
 | `max_backoff_seconds` | `60` |
 | `request_jitter_max_ms` | `0` |
-| `soft_quota_threshold_percent` | `90` |
-| `quota_refresh_interval_minutes` | `15` |
-| `soft_quota_cache_ttl_minutes` | `"auto"` |
 | `signature_cache` | `{"enabled":true,"memory_ttl_seconds":3600,"disk_ttl_seconds":172800,"write_interval_seconds":60}` |
-| `health_score` | `{"initial":70,"success_reward":1,"rate_limit_penalty":-10,"failure_penalty":-20,"recovery_rate_per_hour":2,"min_usable":50,"max_score":100}` |
-| `token_bucket` | `{"max_tokens":50,"regeneration_rate_per_minute":6,"initial_tokens":50}` |
 | `logging` | `true` |
 
 ## Commands

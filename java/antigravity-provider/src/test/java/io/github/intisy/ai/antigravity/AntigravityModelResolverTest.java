@@ -228,6 +228,28 @@ class AntigravityModelResolverTest {
         assertEquals("claude-opus-4-6-thinking", AntigravityModelResolver.resolveModelForHeaderStyle("claude-opus-4-6-thinking", "antigravity").get("actualModel"));
     }
 
+    // E-wiring: config.cli_first now reaches this live per-request resolve path (AntigravityRequestPrep
+    // .Input.cliFirst -> resolveModelForHeaderStyle(model, headerStyle, cliFirst)), instead of every
+    // call hardcoding false. Non-gemini-3 models bypass the header-style rewrite entirely and call
+    // resolveModelWithTier(requestedModel, cliFirst) directly (the early return in
+    // resolveModelForHeaderStyle) -- the cleanest place to observe cliFirst's effect on quotaPreference.
+    @Test
+    void headerStyle_threadsCliFirst_nonGemini3Model() {
+        assertEquals("antigravity",
+                AntigravityModelResolver.resolveModelForHeaderStyle("gemini-2.5-flash", "antigravity", false).get("quotaPreference"));
+        assertEquals("gemini-cli",
+                AntigravityModelResolver.resolveModelForHeaderStyle("gemini-2.5-flash", "antigravity", true).get("quotaPreference"));
+
+        // A Claude model is never eligible for gemini-cli routing, regardless of cliFirst.
+        assertEquals("antigravity",
+                AntigravityModelResolver.resolveModelForHeaderStyle("claude-opus-4-6-thinking", "antigravity", true).get("quotaPreference"));
+
+        // The 2-arg convenience overload (used by callers that don't route the config flag) still
+        // defaults cliFirst to false -- the pre-wiring behavior, preserved.
+        assertEquals("antigravity",
+                AntigravityModelResolver.resolveModelForHeaderStyle("gemini-2.5-flash", "antigravity").get("quotaPreference"));
+    }
+
     // ---- getModelFamily / budgetToGemini3Level ---------------------------------------------------
 
     @Test

@@ -23,6 +23,22 @@ const SIGNATURE_TEXT_HASH_HEX_LEN = 16;
 let diskCache: SignatureCache | null = null;
 
 /**
+ * Construct (or, when disabled, keep inert) the disk-backed signature cache from config.
+ * Called once at driver startup (driver/index.ts) after config is loaded. `createSignatureCache`
+ * itself returns null when `config.enabled` is false (or config is absent), so a disabled/missing
+ * config leaves `diskCache` null and cacheSignature/getCachedSignature fall back to memory-only —
+ * i.e. inert, matching prior (never-constructed) behavior.
+ */
+export function initSignatureCache(config: SignatureCacheConfig | undefined): void {
+  diskCache = createSignatureCache(config);
+}
+
+/** Test-only accessor for the constructed instance (or null when disabled/uninitialized). */
+export function getDiskCacheForTesting(): SignatureCache | null {
+  return diskCache;
+}
+
+/**
  * Hashes text content into a stable, Unicode-safe key.
  *
  * Uses SHA-256 over UTF-8 bytes and truncates to keep memory usage bounded.

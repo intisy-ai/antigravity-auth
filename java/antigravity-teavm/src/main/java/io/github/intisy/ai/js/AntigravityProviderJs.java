@@ -1196,7 +1196,7 @@ public final class AntigravityProviderJs {
             String url, String method, String headersJson, String body,
             String accessToken, String projectId, String headerStyle, String fingerprintJson,
             boolean keepThinking, String pluginSessionId, String endpointOverride,
-            boolean claudeToolHardening, boolean claudePromptAutoCaching,
+            boolean claudeToolHardening, boolean claudePromptAutoCaching, boolean cliFirst,
             JsRandomFn jsRandom, JsUuidFn jsUuid, JsHasherFn jsHasher,
             JsCacheLookupFn jsCacheLookup, JsSignatureStoreFns jsSignatureStore) {
         JsonCodec json = new SimpleJsonCodec();
@@ -1214,6 +1214,7 @@ public final class AntigravityProviderJs {
         in.endpointOverride = (endpointOverride != null && !endpointOverride.isEmpty()) ? endpointOverride : null;
         in.claudeToolHardening = claudeToolHardening;
         in.claudePromptAutoCaching = claudePromptAutoCaching;
+        in.cliFirst = cliFirst;
 
         AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
         deps.json = json;

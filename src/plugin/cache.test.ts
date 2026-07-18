@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { cacheSignature, getCachedSignature } from "./cache";
+import { cacheSignature, getCachedSignature, getDiskCacheForTesting, initSignatureCache } from "./cache";
 
 describe("Signature Cache", () => {
   beforeEach(() => {
@@ -86,6 +89,78 @@ describe("Signature Cache", () => {
       vi.setSystemTime(new Date(3599999));
 
       expect(getCachedSignature("session", "text")).toBe("sig");
+    });
+  });
+
+  // signature_cache (E-wiring): the disk-backed SignatureCache module (cache/signature-cache.ts) is
+  // now actually constructed (initSignatureCache), instead of `diskCache` staying permanently null.
+  describe("initSignatureCache (disk-backed signature cache wiring)", () => {
+    // Hermetic disk dir: SignatureCache resolves its cache file from XDG_CONFIG_HOME/APPDATA
+    // at construct time, so point both at a fresh temp dir per test. Without this the cache
+    // reads/writes the REAL shared config dir, making memoryEntries/dirty non-deterministic
+    // under the parallel full-suite run (and polluting the user's real config).
+    let prevXdg;
+    let prevAppData;
+    let tmpConfigDir;
+    beforeEach(() => {
+      prevXdg = process.env.XDG_CONFIG_HOME;
+      prevAppData = process.env.APPDATA;
+      tmpConfigDir = mkdtempSync(join(tmpdir(), "antigravity-sigcache-"));
+      process.env.XDG_CONFIG_HOME = tmpConfigDir;
+      process.env.APPDATA = tmpConfigDir;
+    });
+    afterEach(() => {
+      // Always shut down any constructed instance (stops its background timers) and reset the
+      // module's diskCache handle back to null so later tests in this file see the prior (inert)
+      // behavior again.
+      getDiskCacheForTesting()?.shutdown();
+      initSignatureCache(undefined);
+      if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = prevXdg;
+      if (prevAppData === undefined) delete process.env.APPDATA; else process.env.APPDATA = prevAppData;
+      try { rmSync(tmpConfigDir, { recursive: true, force: true }); } catch {}
+    });
+
+    it("stays inert (diskCache null) when config is undefined — matches the prior never-constructed behavior", () => {
+      initSignatureCache(undefined);
+      expect(getDiskCacheForTesting()).toBeNull();
+    });
+
+    it("stays inert (diskCache null) when signature_cache.enabled is false", () => {
+      initSignatureCache({ enabled: false, memory_ttl_seconds: 3600, disk_ttl_seconds: 172800, write_interval_seconds: 60 });
+      expect(getDiskCacheForTesting()).toBeNull();
+    });
+
+    it("constructs a real SignatureCache instance when enabled", () => {
+      initSignatureCache({ enabled: true, memory_ttl_seconds: 3600, disk_ttl_seconds: 172800, write_interval_seconds: 3600 });
+      const cache = getDiskCacheForTesting();
+      expect(cache).not.toBeNull();
+      expect(cache!.getStats().diskEnabled).toBe(true);
+    });
+
+    it("cacheSignature writes through to the constructed disk cache when enabled", () => {
+      initSignatureCache({ enabled: true, memory_ttl_seconds: 3600, disk_ttl_seconds: 172800, write_interval_seconds: 3600 });
+      const cache = getDiskCacheForTesting()!;
+      // Use a unique key so a real on-disk cache file left over from a prior run (this module's
+      // cache path is the real shared config dir, by design -- one process-wide cache) can't make
+      // this entry pre-exist; compare before/after counts rather than assuming an empty cache.
+      const uniqueSession = `disk-session-${Date.now()}-${Math.random()}`;
+      const before = cache.getStats().memoryEntries;
+
+      cacheSignature(uniqueSession, "disk thinking text", "disk-sig");
+
+      // store() landed on the constructed instance (not just the module's own in-memory Map).
+      expect(cache.getStats().memoryEntries).toBe(before + 1);
+      expect(cache.getStats().dirty).toBe(true);
+    });
+
+    it("cacheSignature never touches a disk cache when disabled (inert)", () => {
+      initSignatureCache({ enabled: false, memory_ttl_seconds: 3600, disk_ttl_seconds: 172800, write_interval_seconds: 3600 });
+      expect(getDiskCacheForTesting()).toBeNull();
+
+      // Must not throw even though diskCache is null, and the in-memory (session Map) tier still works.
+      cacheSignature("inert-session", "inert text", "inert-sig");
+      expect(getCachedSignature("inert-session", "inert text")).toBe("inert-sig");
+      expect(getDiskCacheForTesting()).toBeNull();
     });
   });
 

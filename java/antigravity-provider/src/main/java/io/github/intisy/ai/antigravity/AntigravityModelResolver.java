@@ -247,15 +247,25 @@ public final class AntigravityModelResolver {
     }
 
     /**
-     * Port of {@code resolveModelForHeaderStyle} (model-resolver.ts:312-359). {@code headerStyle} is
-     * {@code "antigravity"} or {@code "gemini-cli"}.
+     * {@code resolveModelForHeaderStyle(requestedModel, headerStyle)} with {@code cliFirst} defaulted
+     * to {@code false} (pre-wiring behavior, preserved for callers that don't route the config flag).
      */
     public static Map<String, Object> resolveModelForHeaderStyle(String requestedModel, String headerStyle) {
+        return resolveModelForHeaderStyle(requestedModel, headerStyle, false);
+    }
+
+    /**
+     * Port of {@code resolveModelForHeaderStyle} (model-resolver.ts:312-359). {@code headerStyle} is
+     * {@code "antigravity"} or {@code "gemini-cli"}. {@code cliFirst} mirrors the TS
+     * {@code options.cli_first} flag and is threaded into every inner {@link #resolveModelWithTier}
+     * call so gemini-cli routing preference reaches the live per-request resolve path.
+     */
+    public static Map<String, Object> resolveModelForHeaderStyle(String requestedModel, String headerStyle, boolean cliFirst) {
         String lower = requestedModel.toLowerCase();
         boolean isGemini3 = lower.contains("gemini-3");
 
         if (!isGemini3) {
-            return resolveModelWithTier(requestedModel);
+            return resolveModelWithTier(requestedModel, cliFirst);
         }
 
         if ("antigravity".equals(headerStyle)) {
@@ -272,7 +282,7 @@ public final class AntigravityModelResolver {
                 transformedModel = transformedModel + "-low";
             }
 
-            return resolveModelWithTier("antigravity-" + transformedModel);
+            return resolveModelWithTier("antigravity-" + transformedModel, cliFirst);
         }
 
         if ("gemini-cli".equals(headerStyle)) {
@@ -285,12 +295,12 @@ public final class AntigravityModelResolver {
                 transformedModel = transformedModel + "-preview";
             }
 
-            Map<String, Object> r = resolveModelWithTier(transformedModel);
+            Map<String, Object> r = resolveModelWithTier(transformedModel, cliFirst);
             r.put("quotaPreference", "gemini-cli");
             return r;
         }
 
-        return resolveModelWithTier(requestedModel);
+        return resolveModelWithTier(requestedModel, cliFirst);
     }
 
     /** {@code resolveModelWithVariant(requestedModel)} with no variant config. */

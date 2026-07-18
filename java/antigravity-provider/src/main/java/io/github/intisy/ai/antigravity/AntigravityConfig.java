@@ -20,33 +20,28 @@ import java.util.Map;
  * {@link io.github.intisy.ai.shared.spi.Store} -- never a self-assembled {@code FileStore}), so
  * JVM and TS share one settings file.
  *
- * <p>Nested TS groups ({@code signature_cache}/{@code health_score}/{@code token_bucket}) are
- * flattened to dotted {@link ConfigField#key}s (e.g. {@code "signature_cache.enabled"}) for the
- * flat {@code ConfigField} wire shape, then un-flattened back into the SAME nested JSON structure
- * on read/persist so the on-disk file stays byte-compatible with what the TS side writes. {@code
- * model_ranking} (a string array) and {@code $schema} are NOT exposed here -- {@link ConfigField}
- * has no array-typed value, an intentional gap (see the migration report).
+ * <p>The nested TS group {@code signature_cache} is flattened to dotted {@link ConfigField#key}s
+ * (e.g. {@code "signature_cache.enabled"}) for the flat {@code ConfigField} wire shape, then
+ * un-flattened back into the SAME nested JSON structure on read/persist so the on-disk file stays
+ * byte-compatible with what the TS side writes.
  */
 final class AntigravityConfig {
 
     // Matches the TS config-file name (config/antigravity.json) exactly -- see loader.ts/edit.ts.
     private static final String STORE_KEY = "antigravity.json";
 
-    private static final List<String> TOAST_SCOPES = Arrays.asList("root_only", "all");
     private static final List<String> ACCOUNT_STRATEGIES = Arrays.asList("sticky", "round-robin", "hybrid");
-    private static final List<String> SCHEDULING_MODES = Arrays.asList("cache_first", "balance", "performance_first");
-    private static final List<String> AUTO_MODE_STAGES = Arrays.asList("best", "high", "balanced", "fastest");
 
     // Mirrors schema.ts's AntigravityConfig shape + DEFAULT_CONFIG exactly, grouped by the
     // sections schema.ts's own comments already delineate. Dotted keys are the flattened form of
-    // a nested TS group (see class doc).
+    // a nested TS group (see class doc). ONLY keys with a real runtime consumer are exposed here
+    // (the 9 pre-existing functional keys + the 3 E-wired features: request_jitter_max_ms,
+    // cli_first, signature_cache.*) -- the rest of the historical schema.ts surface was dead
+    // (no consumer in either the TS driver or this JVM provider) and was deleted, not just hidden.
     private static final List<GroupDef> GROUPS = Arrays.asList(
             new GroupDef("General", Arrays.asList(
-                    field("quiet_mode", "Quiet mode", "bool", null, Boolean.FALSE),
-                    field("toast_scope", "Toast scope", "select", TOAST_SCOPES, "root_only"),
                     field("debug", "Debug logging", "bool", null, Boolean.FALSE),
                     field("debug_tui", "Debug in TUI", "bool", null, Boolean.FALSE),
-                    field("debug_gemini_payloads", "Debug Gemini payloads", "bool", null, Boolean.FALSE),
                     field("log_dir", "Log directory", "text", null, null))),
             new GroupDef("Thinking", Arrays.asList(
                     field("keep_thinking", "Preserve thinking blocks", "bool", null, Boolean.FALSE),
@@ -54,52 +49,17 @@ final class AntigravityConfig {
                     field("signature_cache.memory_ttl_seconds", "Signature cache memory TTL (s)", "number", null, 3600L),
                     field("signature_cache.disk_ttl_seconds", "Signature cache disk TTL (s)", "number", null, 172800L),
                     field("signature_cache.write_interval_seconds", "Signature cache write interval (s)", "number", null, 60L))),
-            new GroupDef("Reliability", Arrays.asList(
-                    field("empty_response_max_attempts", "Empty response max attempts", "number", null, 4L),
-                    field("empty_response_retry_delay_ms", "Empty response retry delay (ms)", "number", null, 2000L),
-                    field("tool_id_recovery", "Tool ID orphan recovery", "bool", null, Boolean.TRUE))),
             new GroupDef("Claude Compatibility", Arrays.asList(
                     field("claude_tool_hardening", "Claude tool hardening", "bool", null, Boolean.TRUE),
                     field("claude_prompt_auto_caching", "Claude prompt auto-caching", "bool", null, Boolean.FALSE))),
-            new GroupDef("Token Refresh", Arrays.asList(
-                    field("proactive_token_refresh", "Proactive token refresh", "bool", null, Boolean.TRUE),
-                    field("proactive_refresh_buffer_seconds", "Proactive refresh buffer (s)", "number", null, 1800L),
-                    field("proactive_refresh_check_interval_seconds", "Proactive refresh check interval (s)", "number", null, 300L))),
-            new GroupDef("Rate Limiting", Arrays.asList(
-                    field("max_rate_limit_wait_seconds", "Max rate-limit wait (s)", "number", null, 300L),
-                    field("quota_fallback", "Quota fallback (deprecated)", "bool", null, Boolean.FALSE),
+            new GroupDef("Model Routing", Arrays.asList(
                     field("cli_first", "Prefer gemini-cli routing", "bool", null, Boolean.FALSE))),
-            new GroupDef("Model Fallback", Arrays.asList(
-                    field("fallback_enabled", "Model fallback enabled", "bool", null, Boolean.FALSE),
-                    field("auto_mode", "Auto mode enabled", "bool", null, Boolean.TRUE),
-                    field("auto_mode_stage", "Auto mode stage", "select", AUTO_MODE_STAGES, null))),
             new GroupDef("Account Selection", Arrays.asList(
-                    field("account_selection_strategy", "Account selection strategy", "select", ACCOUNT_STRATEGIES, "hybrid"),
-                    field("pid_offset_enabled", "PID-based account offset", "bool", null, Boolean.FALSE),
-                    field("switch_on_first_rate_limit", "Switch on first rate limit", "bool", null, Boolean.TRUE),
-                    field("scheduling_mode", "Scheduling mode", "select", SCHEDULING_MODES, "cache_first"),
-                    field("max_cache_first_wait_seconds", "Max cache-first wait (s)", "number", null, 60L),
-                    field("failure_ttl_seconds", "Failure TTL (s)", "number", null, 3600L))),
+                    field("account_selection_strategy", "Account selection strategy", "select", ACCOUNT_STRATEGIES, "hybrid"))),
             new GroupDef("Retry/Backoff", Arrays.asList(
                     field("default_retry_after_seconds", "Default retry-after (s)", "number", null, 60L),
                     field("max_backoff_seconds", "Max backoff (s)", "number", null, 60L),
-                    field("request_jitter_max_ms", "Request jitter max (ms)", "number", null, 0L))),
-            new GroupDef("Quota", Arrays.asList(
-                    field("soft_quota_threshold_percent", "Soft quota threshold (%)", "number", null, 90L),
-                    field("quota_refresh_interval_minutes", "Quota refresh interval (min)", "number", null, 15L),
-                    field("soft_quota_cache_ttl_minutes", "Soft quota cache TTL (minutes, or \"auto\")", "text", null, "auto"))),
-            new GroupDef("Health Score", Arrays.asList(
-                    field("health_score.initial", "Initial score", "number", null, 70L),
-                    field("health_score.success_reward", "Success reward", "number", null, 1L),
-                    field("health_score.rate_limit_penalty", "Rate-limit penalty", "number", null, -10L),
-                    field("health_score.failure_penalty", "Failure penalty", "number", null, -20L),
-                    field("health_score.recovery_rate_per_hour", "Recovery rate/hour", "number", null, 2L),
-                    field("health_score.min_usable", "Min usable score", "number", null, 50L),
-                    field("health_score.max_score", "Max score", "number", null, 100L))),
-            new GroupDef("Token Bucket", Arrays.asList(
-                    field("token_bucket.max_tokens", "Max tokens", "number", null, 50L),
-                    field("token_bucket.regeneration_rate_per_minute", "Regeneration rate/min", "number", null, 6L),
-                    field("token_bucket.initial_tokens", "Initial tokens", "number", null, 50L))));
+                    field("request_jitter_max_ms", "Request jitter max (ms)", "number", null, 0L))));
 
     private AntigravityConfig() {
     }
@@ -124,7 +84,7 @@ final class AntigravityConfig {
                 if (!values.containsKey(f.key)) continue;
                 Object raw = values.get(f.key);
                 if (raw == null) {
-                    // Explicit null clears an optional field (log_dir/auto_mode_stage) back to
+                    // Explicit null clears an optional field (log_dir) back to
                     // "use the default" -- matches the TS's optional (`?`) schema fields.
                     setNested(overrides, f.key, null);
                     continue;
