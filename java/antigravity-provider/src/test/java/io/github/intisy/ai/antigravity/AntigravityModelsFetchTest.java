@@ -2,8 +2,8 @@ package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.shared.model.Account;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
+import io.github.intisy.ai.shared.routing.ModelInfo;
 import io.github.intisy.ai.shared.spi.HttpClient;
-import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.http.HttpRequest;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
 import org.junit.jupiter.api.Test;
@@ -22,15 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * End-to-end test of {@link AntigravityProvider#handle}'s {@code GET /v1/models} branch
- * (model-map Task 2). Mirrors {@link AntigravityServePathTest}'s harness: a scripted
- * {@link HttpClient} injected via {@link AntigravityBackend#forTest}/{@link
- * AntigravityBackend#registerForTest} so the real provider is driven end-to-end without any real
- * network call.
+ * SP-E/E-D: {@code GET /v1/models} is RETIRED from {@link AntigravityProvider#handle} -- this now
+ * tests the typed {@link AntigravityProvider#models} capability directly (backed by {@link
+ * AntigravityModelsFetch#models}), plus a regression test proving {@code handle()} no longer
+ * intercepts a models-shaped URL.
  */
 class AntigravityModelsFetchTest {
-
-    private final JsonCodec json = new TestJsonCodec();
 
     @Test
     void happyPath_mapsUpstreamCatalog_withManagedProjectId(@TempDir Path configDir) {
@@ -42,38 +39,34 @@ class AntigravityModelsFetchTest {
 
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
 
-        HttpResponse response = handleModels(configDir);
+        List<ModelInfo> models = callModels(configDir);
 
-        assertEquals(200, response.status);
-        assertEquals("application/json", response.headers.get("content-type"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = (Map<String, Object>) json.parse(response.body);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> models = (Map<String, Object>) parsed.get("models");
-        assertTrue(models.containsKey("antigravity-gemini-3-pro-agent"), "the antigravity-prefixed id must survive the mapping");
-        assertEquals("antigravity-gemini-3-pro-agent", parsed.get("defaultModelId"));
+        ModelInfo ranked = findById(models, "antigravity-gemini-3-pro-agent");
+        assertEquals("Gemini 3 Pro (Antigravity)", ranked.name);
+        assertEquals(1000000, ranked.context);
+        assertEquals(32000, ranked.output);
+        // The fixed Auto entry and the Gemini CLI free pool are always present alongside the
+        // ranked agent models (AntigravityCatalog.buildAntigravityCatalog's catalog map).
+        assertTrue(models.stream().anyMatch(m -> "antigravity-auto".equals(m.id)));
+        assertTrue(models.stream().anyMatch(m -> "gemini-2.5-flash".equals(m.id)));
 
         assertEquals(1, http.requests.size());
         HttpRequest sent = http.requests.get(0);
         assertEquals("POST", sent.method);
         assertTrue(sent.url.endsWith("/v1internal:fetchAvailableModels"), "unexpected url: " + sent.url);
         assertEquals("Bearer access-acct-x", sent.headers.get("Authorization"));
-        assertEquals("application/json", sent.headers.get("Content-Type"));
         assertEquals("{\"project\":\"proj-x\"}", sent.body);
     }
 
     @Test
-    void noEnabledAccount_returnsNoAccountErrorShape_withoutCallingUpstream(@TempDir Path configDir) {
+    void noEnabledAccount_returnsEmptyList_withoutCallingUpstream(@TempDir Path configDir) {
         ScriptedHttpClient http = new ScriptedHttpClient();
         registerTestBackend(configDir, http);
         // No accounts seeded at all -> zero enabled accounts.
 
-        HttpResponse response = handleModels(configDir);
+        List<ModelInfo> models = callModels(configDir);
 
-        assertEquals(400, response.status);
-        assertEquals("1", response.headers.get("x-hub-chat-error"));
-        assertTrue(response.body.contains("invalid_request_error"));
+        assertTrue(models.isEmpty());
         assertTrue(http.requests.isEmpty(), "no HTTP call should be attempted with no enabled account");
     }
 
@@ -85,14 +78,14 @@ class AntigravityModelsFetchTest {
         disabled.enabled = false;
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, disabled);
 
-        HttpResponse response = handleModels(configDir);
+        List<ModelInfo> models = callModels(configDir);
 
-        assertEquals(400, response.status);
+        assertTrue(models.isEmpty());
         assertTrue(http.requests.isEmpty());
     }
 
     @Test
-    void allEndpointsNon2xx_returnsApiErrorShape_notAThrow(@TempDir Path configDir) {
+    void allEndpointsNon2xx_returnsEmptyList_notAThrow(@TempDir Path configDir) {
         int endpointCount = AntigravityHandleRouting.endpointsFor("antigravity").size();
         ScriptedHttpClient http = new ScriptedHttpClient();
         for (int i = 0; i < endpointCount; i++) {
@@ -100,10 +93,9 @@ class AntigravityModelsFetchTest {
         }
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
 
-        HttpResponse response = handleModels(configDir);
+        List<ModelInfo> models = callModels(configDir);
 
-        assertEquals(502, response.status);
-        assertTrue(response.body.contains("api_error"), "upstream failure on every endpoint must surface as an api_error shape");
+        assertTrue(models.isEmpty(), "upstream failure on every endpoint must fold into an empty list, not a throw");
         assertEquals(endpointCount, http.requests.size(), "every endpoint fallback must have been tried");
     }
 
@@ -115,15 +107,42 @@ class AntigravityModelsFetchTest {
         Account account = seededAccount("acct-noproj", null);
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, account);
 
-        HttpResponse response = handleModels(configDir);
+        List<ModelInfo> models = callModels(configDir);
 
-        assertEquals(200, response.status);
+        // No ranked agent models in this fixture, but the fixed Auto + Gemini CLI entries remain.
+        assertTrue(models.stream().anyMatch(m -> "antigravity-auto".equals(m.id)));
         assertEquals(1, http.requests.size());
         assertEquals("{}", http.requests.get(0).body);
     }
 
     @Test
-    void postMessages_regression_stillRoutesThroughOrchestrator_notInterceptedByModelsBranch(@TempDir Path configDir) {
+    void handle_getV1Models_noLongerIntercepted_fallsThroughToOrchestrator(@TempDir Path configDir) {
+        // SP-E/E-D retirement regression: a GET /v1/models request must NOT hit
+        // fetchAvailableModels via handle() any more -- it falls straight into the messages
+        // orchestrator path (which, for a GET with no matching upstream response queued, still
+        // proves the point: the request that WAS sent targets the messages endpoint, not
+        // fetchAvailableModels).
+        ScriptedHttpClient http = new ScriptedHttpClient()
+                .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
+        registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
+
+        HttpRequest request = new HttpRequest();
+        request.method = "GET";
+        request.url = "/v1/models";
+
+        HandlerCtx ctx = new HandlerCtx();
+        ctx.configDir = configDir.toString();
+        ctx.model = "antigravity-claude-sonnet-4-6";
+
+        new AntigravityProvider().handle(request, ctx);
+
+        assertEquals(1, http.requests.size());
+        assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
+                "GET /v1/models must no longer be specially intercepted by handle()");
+    }
+
+    @Test
+    void postMessages_regression_stillRoutesThroughOrchestrator_notInterceptedByModelsCapability(@TempDir Path configDir) {
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
@@ -142,7 +161,7 @@ class AntigravityModelsFetchTest {
         assertEquals(200, response.status);
         assertEquals(1, http.requests.size());
         assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
-                "a POST /v1/messages request must still hit the messages orchestrator, not the models branch");
+                "a POST /v1/messages request must still hit the messages orchestrator");
     }
 
     // ---- shared fixtures (mirrors AntigravityServePathTest) ---------------------------------------
@@ -169,15 +188,17 @@ class AntigravityModelsFetchTest {
         return a;
     }
 
-    private static HttpResponse handleModels(Path configDir) {
-        HttpRequest request = new HttpRequest();
-        request.method = "GET";
-        request.url = "/v1/models";
-
+    private static List<ModelInfo> callModels(Path configDir) {
         HandlerCtx ctx = new HandlerCtx();
         ctx.configDir = configDir.toString();
+        return new AntigravityProvider().models(ctx);
+    }
 
-        return new AntigravityProvider().handle(request, ctx);
+    private static ModelInfo findById(List<ModelInfo> models, String id) {
+        for (ModelInfo m : models) {
+            if (id.equals(m.id)) return m;
+        }
+        throw new AssertionError("no model with id " + id + " in " + models);
     }
 
     /** Scripted {@link HttpClient}: pops one queued response per {@link #send}, records every request. */

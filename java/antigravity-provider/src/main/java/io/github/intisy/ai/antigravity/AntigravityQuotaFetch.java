@@ -1,64 +1,55 @@
 package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.shared.model.Account;
-import io.github.intisy.ai.shared.routing.HandlerCtx;
-import io.github.intisy.ai.shared.spi.http.HttpResponse;
+import io.github.intisy.ai.shared.routing.AccountQuota;
+import io.github.intisy.ai.shared.routing.QuotaBar;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Quota-display Task 2: {@code GET /v1/quota} per-account quota fetch for the example-server
- * dashboard, mirroring claude-code-auth's {@code ClaudeUsageFetch}. Reuses {@link
- * AntigravityUpstream#fetchAvailableModels} for the transport (the SAME upstream call
- * {@link AntigravityModelsFetch} makes) and {@link AntigravityQuotaParser} for the pure
+ * Quota-display Task 2 / SP-E E-D: typed {@link AccountQuota} producer backing {@link
+ * AntigravityProvider#quota}, mirroring claude-code-auth's {@code ClaudeUsageFetch}. Reuses {@link
+ * AntigravityUpstream#fetchAvailableModels} for the transport (the SAME upstream call {@link
+ * AntigravityModelsFetch} makes) and {@link AntigravityQuotaParser} for the pure
  * aggregation/status logic -- this class is only the per-account iterate/persist/assemble glue.
  *
  * <p>Unlike {@link AntigravityModelsFetch} (single first-enabled-account discovery), this fetches
  * quota for EVERY enabled account and persists each one's aggregated per-family quota to {@code
  * meta.cachedQuota} so the dashboard has a durable cache even between live fetches. Never throws:
- * a failure fetching one account's quota folds into an {@code error} entry for that account only
- * -- it never aborts the whole response.
+ * a failure fetching one account's quota folds into an {@link AccountQuota} with an {@code "error"}
+ * status and NO bars for that account only -- it never drops the account or aborts the whole
+ * response ({@link AccountQuota} is exactly the shape that lets a bar-less/errored account still
+ * be represented, per the core-proxy SPI's design).
  */
 final class AntigravityQuotaFetch {
 
     private AntigravityQuotaFetch() {
     }
 
-    static HttpResponse fetch(AntigravityBackend backend, HandlerCtx ctx) {
+    static List<AccountQuota> quota(AntigravityBackend backend) {
         try {
-            return doFetch(backend);
+            return doQuota(backend);
         } catch (Throwable e) {
-            // Never throw out of a provider handle() path -- any unexpected failure folds into
-            // the same api_error shape an upstream failure would. Never include e.getMessage()
-            // here: it could echo back a header/token fragment from a lower-level failure.
-            return AntigravityProvider.errorResponse(502, "api_error", "quota fetch failed");
+            return Collections.emptyList();
         }
     }
 
-    private static HttpResponse doFetch(AntigravityBackend backend) {
-        List<Object> entries = new ArrayList<>();
+    private static List<AccountQuota> doQuota(AntigravityBackend backend) {
+        List<AccountQuota> out = new ArrayList<>();
         for (Account account : backend.accountStore.list(AntigravityBackend.PROVIDER_ID)) {
             if (account.enabled == Boolean.FALSE) continue;
-            entries.add(entryFor(backend, account));
+            out.add(entryFor(backend, account));
         }
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("accounts", entries);
-
-        HttpResponse out = new HttpResponse();
-        out.status = 200;
-        out.headers = new LinkedHashMap<>();
-        out.headers.put("content-type", "application/json");
-        out.body = backend.json.stringify(body);
         return out;
     }
 
     // Never rethrows -- any failure for THIS account (refresh, network, non-2xx, malformed body)
-    // folds into an error entry so one bad account never breaks the whole /v1/quota response.
-    private static Map<String, Object> entryFor(AntigravityBackend backend, Account account) {
+    // folds into an error AccountQuota so one bad account never breaks the whole quota() result.
+    private static AccountQuota entryFor(AntigravityBackend backend, Account account) {
         try {
             return doEntryFor(backend, account);
         } catch (Throwable e) {
@@ -67,7 +58,7 @@ final class AntigravityQuotaFetch {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> doEntryFor(AntigravityBackend backend, Account account) {
+    private static AccountQuota doEntryFor(AntigravityBackend backend, Account account) {
         String access;
         try {
             access = backend.accounts.ensureAccess(account.id);
@@ -89,12 +80,8 @@ final class AntigravityQuotaFetch {
 
         persistCachedQuota(backend, account.id, perFamily);
 
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("id", account.id);
-        if (account.email != null) entry.put("email", account.email);
-        entry.put("status", AntigravityQuotaParser.antigravityStatus(statusInput(account, perFamily), System.currentTimeMillis()));
-        entry.put("quota", buildQuotaList(perFamily));
-        return entry;
+        String status = AntigravityQuotaParser.antigravityStatus(statusInput(account, perFamily), System.currentTimeMillis());
+        return new AccountQuota(account.id, account.email, status, barsFor(perFamily));
     }
 
     // The plain-Map shape AntigravityQuotaParser.antigravityStatus expects, built from the just
@@ -118,39 +105,24 @@ final class AntigravityQuotaFetch {
         });
     }
 
-    // {family -> {remainingFraction, resetTime}} -> [{label, remainingFraction, resetTime}], with
-    // resetTime normalized from its raw ISO string to an epoch-ms Long (or null when unparsable) --
-    // the display shape the dashboard consumes. null when there is no aggregated quota at all.
-    private static List<Map<String, Object>> buildQuotaList(Map<String, Object> perFamily) {
-        if (perFamily == null) return null;
-        List<Map<String, Object>> quota = new ArrayList<>();
+    // {family -> {remainingFraction, resetTime}} -> one QuotaBar per family; resetTime is kept as
+    // the RAW upstream string (QuotaBar.resetTime is a String, not an epoch-ms Long) so no
+    // precision/format is invented here that the wire shape didn't already have.
+    private static List<QuotaBar> barsFor(Map<String, Object> perFamily) {
+        if (perFamily == null || perFamily.isEmpty()) return Collections.emptyList();
+        List<QuotaBar> bars = new ArrayList<>();
         for (Map.Entry<String, Object> e : perFamily.entrySet()) {
             Object famObj = e.getValue();
             Map<?, ?> fam = famObj instanceof Map ? (Map<?, ?>) famObj : null;
             Object remainingFraction = fam != null ? fam.get("remainingFraction") : null;
             Object resetTime = fam != null ? fam.get("resetTime") : null;
-
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("label", e.getKey());
-            entry.put("remainingFraction", remainingFraction instanceof Number ? remainingFraction : null);
-            entry.put("resetTime", normalizeResetTime(resetTime));
-            quota.add(entry);
+            double fraction = remainingFraction instanceof Number ? ((Number) remainingFraction).doubleValue() : 0;
+            bars.add(new QuotaBar(e.getKey(), fraction, resetTime != null ? String.valueOf(resetTime) : null));
         }
-        return quota;
+        return bars;
     }
 
-    private static Long normalizeResetTime(Object resetTime) {
-        if (resetTime == null) return null;
-        double epochMs = AntigravityQuotaParser.parseDateToEpochMillis(String.valueOf(resetTime));
-        return Double.isNaN(epochMs) ? null : (long) epochMs;
-    }
-
-    private static Map<String, Object> errorEntry(Account account) {
-        Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("id", account.id);
-        if (account.email != null) entry.put("email", account.email);
-        entry.put("status", "error");
-        entry.put("quota", null);
-        return entry;
+    private static AccountQuota errorEntry(Account account) {
+        return new AccountQuota(account.id, account.email, "error", Collections.<QuotaBar>emptyList());
     }
 }

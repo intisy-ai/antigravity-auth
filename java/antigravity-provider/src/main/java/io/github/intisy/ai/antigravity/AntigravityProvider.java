@@ -1,7 +1,15 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.shared.routing.AccountQuota;
+import io.github.intisy.ai.shared.routing.AuthorizeInfo;
+import io.github.intisy.ai.shared.routing.ConfigSchema;
+import io.github.intisy.ai.shared.routing.ConfigurableProvider;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
+import io.github.intisy.ai.shared.routing.ModelCatalogProvider;
+import io.github.intisy.ai.shared.routing.ModelInfo;
+import io.github.intisy.ai.shared.routing.OAuthProvider;
 import io.github.intisy.ai.shared.routing.Provider;
+import io.github.intisy.ai.shared.routing.QuotaProvider;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Logger;
 import io.github.intisy.ai.shared.spi.http.HttpRequest;
@@ -42,8 +50,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * classes bundled -- the host's {@code ProviderRegistry} classloader already has them); only the
  * seam glue lives here, no {@code AntigravityRequestPrep}/{@code AntigravityHandleOrchestrator}
  * logic is duplicated.
+ *
+ * <p>SP-E/E-D typed capability SPI: {@link #handle} now answers ONLY the messages orchestrator --
+ * the former {@code GET /v1/models}/{@code GET /v1/quota} URL branches are retired in favor of
+ * {@link ModelCatalogProvider#models}/{@link QuotaProvider#quota} (mechanical re-expose of the
+ * existing {@link AntigravityModelsFetch}/{@link AntigravityQuotaFetch} logic as typed POJOs), and
+ * {@link ConfigurableProvider}/{@link OAuthProvider} are genuinely NEW capabilities ported from the
+ * TS {@code src/plugin/config/*} and {@code src/antigravity/oauth.ts} (see {@link AntigravityConfig}/
+ * {@link AntigravityOAuth}). All four capabilities resolve their backend via {@link
+ * AntigravityBackend#forCtx}, which serves from the host's injected {@link
+ * io.github.intisy.ai.shared.spi.Store} rather than self-assembling a {@code FileStore}.
  */
-public final class AntigravityProvider implements Provider {
+public final class AntigravityProvider implements Provider, ConfigurableProvider, ModelCatalogProvider,
+        QuotaProvider, OAuthProvider {
 
     /** The provider id this instance serves; matches the {@code provider} field in a model-map assignment. */
     public static final String ID = "antigravity";
@@ -99,24 +118,11 @@ public final class AntigravityProvider implements Provider {
 
     @Override
     public HttpResponse handle(HttpRequest request, HandlerCtx ctx) {
-        // Model-map Task 2: GET /v1/models is a discovery call, not a chat turn -- handle it
-        // before any of the messages-path plumbing (model resolution/orchestrator) below.
-        if (request != null && "GET".equalsIgnoreCase(request.method) && request.url != null
-                && request.url.endsWith("/v1/models")) {
-            return AntigravityModelsFetch.fetch(
-                    AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null), ctx);
-        }
-
-        // Quota-display Task 2: GET /v1/quota, same "discovery, not a chat turn" precedence as
-        // the /v1/models branch above.
-        if (request != null && "GET".equalsIgnoreCase(request.method) && request.url != null
-                && request.url.endsWith("/v1/quota")) {
-            return AntigravityQuotaFetch.fetch(
-                    AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null), ctx);
-        }
-
+        // SP-E/E-D: the former GET /v1/models and GET /v1/quota URL branches are RETIRED here --
+        // handle() now answers only the messages orchestrator. Discovery/quota-display is served
+        // by the typed ModelCatalogProvider#models/QuotaProvider#quota capabilities below instead.
         String model = resolveModel(ctx);
-        AntigravityBackend backend = AntigravityBackend.forConfigDir(ctx != null ? ctx.configDir : null);
+        AntigravityBackend backend = AntigravityBackend.forCtx(ctx);
         Logger log = loggerFor(ctx);
         AntigravityHandleOrchestrator orchestrator = orchestratorFor(backend, log);
 
@@ -142,6 +148,49 @@ public final class AntigravityProvider implements Provider {
         } catch (RuntimeException e) {
             return errorResponse(502, "api_error", "antigravity request failed: " + e.getMessage());
         }
+    }
+
+    // ---- ModelCatalogProvider / QuotaProvider: mechanical re-expose of the retired /v1/models
+    // and /v1/quota JSON builders as typed POJOs -- AntigravityModelsFetch/AntigravityQuotaFetch
+    // hold the only copy of the fetch/aggregate logic; these are thin conversions. ----------------
+
+    @Override
+    public List<ModelInfo> models(HandlerCtx ctx) {
+        return AntigravityModelsFetch.models(AntigravityBackend.forCtx(ctx));
+    }
+
+    @Override
+    public List<AccountQuota> quota(HandlerCtx ctx) {
+        return AntigravityQuotaFetch.quota(AntigravityBackend.forCtx(ctx));
+    }
+
+    // ---- ConfigurableProvider: genuinely new capability, ported from src/plugin/config/*.ts ------
+
+    @Override
+    public ConfigSchema configSchema(HandlerCtx ctx) {
+        return AntigravityConfig.schema();
+    }
+
+    @Override
+    public Map<String, Object> getConfigValues(HandlerCtx ctx) {
+        return AntigravityConfig.getValues(AntigravityBackend.forCtx(ctx));
+    }
+
+    @Override
+    public Map<String, Object> putConfigValues(HandlerCtx ctx, Map<String, Object> values) {
+        return AntigravityConfig.putValues(AntigravityBackend.forCtx(ctx), values);
+    }
+
+    // ---- OAuthProvider: genuinely new capability, ported from src/antigravity/oauth.ts -----------
+
+    @Override
+    public AuthorizeInfo authorize(HandlerCtx ctx) {
+        return AntigravityOAuth.authorize();
+    }
+
+    @Override
+    public Map<String, Object> exchange(HandlerCtx ctx, String body) {
+        return AntigravityOAuth.exchange(AntigravityBackend.forCtx(ctx), body);
     }
 
     /**

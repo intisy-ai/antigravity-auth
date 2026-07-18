@@ -1,9 +1,10 @@
 package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.shared.model.Account;
+import io.github.intisy.ai.shared.routing.AccountQuota;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
+import io.github.intisy.ai.shared.routing.QuotaBar;
 import io.github.intisy.ai.shared.spi.HttpClient;
-import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.http.HttpRequest;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
 import org.junit.jupiter.api.Test;
@@ -18,19 +19,17 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * End-to-end test of {@link AntigravityProvider#handle}'s {@code GET /v1/quota} branch
- * (quota-display Task 2). Mirrors {@link AntigravityModelsFetchTest}'s harness: a scripted
- * {@link HttpClient} injected via {@link AntigravityBackend#forTest}/{@link
- * AntigravityBackend#registerForTest} so the real provider is driven end-to-end without any real
- * network call.
+ * SP-E/E-D: {@code GET /v1/quota} is RETIRED from {@link AntigravityProvider#handle} -- this now
+ * tests the typed {@link AntigravityProvider#quota} capability directly (backed by {@link
+ * AntigravityQuotaFetch#quota}, returning one {@link AccountQuota} per account so an errored
+ * account is still represented rather than vanishing), plus a regression test proving {@code
+ * handle()} no longer intercepts a quota-shaped URL.
  */
 class AntigravityQuotaFetchTest {
-
-    private final JsonCodec json = new TestJsonCodec();
 
     @Test
     void happyPath_aggregatesFamiliesAndPersistsCachedQuota(@TempDir Path configDir) {
@@ -42,29 +41,20 @@ class AntigravityQuotaFetchTest {
 
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acc1", "proj-x"));
 
-        HttpResponse response = handleQuota(configDir);
+        List<AccountQuota> accounts = callQuota(configDir);
 
-        assertEquals(200, response.status);
-        assertEquals("application/json", response.headers.get("content-type"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = (Map<String, Object>) json.parse(response.body);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> accounts = (List<Map<String, Object>>) parsed.get("accounts");
         assertEquals(1, accounts.size());
-        Map<String, Object> entry = accounts.get(0);
-        assertEquals("acc1", entry.get("id"));
-        assertEquals("active", entry.get("status"));
+        AccountQuota entry = accounts.get(0);
+        assertEquals("acc1", entry.accountId);
+        assertEquals("active", entry.accountStatus);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> quota = (List<Map<String, Object>>) entry.get("quota");
-        assertEquals(2, quota.size());
-        Map<String, Object> claude = findByLabel(quota, "Claude");
-        assertEquals(0.4, (Double) claude.get("remainingFraction"), 1e-9);
-        assertEquals(epochMillis("2025-07-16T12:00:00Z"), claude.get("resetTime"));
-        Map<String, Object> gemini = findByLabel(quota, "Gemini");
-        assertEquals(0.9, (Double) gemini.get("remainingFraction"), 1e-9);
-        assertEquals(epochMillis("2025-07-16T13:00:00Z"), gemini.get("resetTime"));
+        assertEquals(2, entry.bars.size());
+        QuotaBar claude = findByLabel(entry.bars, "Claude");
+        assertEquals(0.4, claude.remainingFraction, 1e-9);
+        assertEquals("2025-07-16T12:00:00Z", claude.resetTime);
+        QuotaBar gemini = findByLabel(entry.bars, "Gemini");
+        assertEquals(0.9, gemini.remainingFraction, 1e-9);
+        assertEquals("2025-07-16T13:00:00Z", gemini.resetTime);
 
         assertEquals(1, http.requests.size());
         HttpRequest sent = http.requests.get(0);
@@ -84,18 +74,13 @@ class AntigravityQuotaFetchTest {
     }
 
     @Test
-    void zeroEnabledAccounts_returnsEmptyAccountsList_withoutCallingUpstream(@TempDir Path configDir) {
+    void zeroEnabledAccounts_returnsEmptyList_withoutCallingUpstream(@TempDir Path configDir) {
         ScriptedHttpClient http = new ScriptedHttpClient();
         registerTestBackend(configDir, http);
         // No accounts seeded at all -> zero enabled accounts.
 
-        HttpResponse response = handleQuota(configDir);
+        List<AccountQuota> accounts = callQuota(configDir);
 
-        assertEquals(200, response.status);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = (Map<String, Object>) json.parse(response.body);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> accounts = (List<Map<String, Object>>) parsed.get("accounts");
         assertTrue(accounts.isEmpty());
         assertTrue(http.requests.isEmpty(), "no HTTP call should be attempted with zero enabled accounts");
     }
@@ -108,19 +93,14 @@ class AntigravityQuotaFetchTest {
         disabled.enabled = false;
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, disabled);
 
-        HttpResponse response = handleQuota(configDir);
+        List<AccountQuota> accounts = callQuota(configDir);
 
-        assertEquals(200, response.status);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = (Map<String, Object>) json.parse(response.body);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> accounts = (List<Map<String, Object>>) parsed.get("accounts");
         assertTrue(accounts.isEmpty());
         assertTrue(http.requests.isEmpty());
     }
 
     @Test
-    void allEndpointsFail_returnsErrorEntry_notAThrow_stillOverall200(@TempDir Path configDir) {
+    void allEndpointsFail_returnsErrorAccountQuota_withNoBars_notAThrow(@TempDir Path configDir) {
         int endpointCount = AntigravityHandleRouting.endpointsFor("antigravity").size();
         ScriptedHttpClient http = new ScriptedHttpClient();
         for (int i = 0; i < endpointCount; i++) {
@@ -128,23 +108,41 @@ class AntigravityQuotaFetchTest {
         }
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acc1", "proj-x"));
 
-        HttpResponse response = handleQuota(configDir);
+        List<AccountQuota> accounts = callQuota(configDir);
 
-        assertEquals(200, response.status);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = (Map<String, Object>) json.parse(response.body);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> accounts = (List<Map<String, Object>>) parsed.get("accounts");
+        // The errored account is still represented (not dropped) -- exactly what AccountQuota's
+        // per-account (not flattened) shape is designed to preserve.
         assertEquals(1, accounts.size());
-        Map<String, Object> entry = accounts.get(0);
-        assertEquals("acc1", entry.get("id"));
-        assertEquals("error", entry.get("status"));
-        assertNull(entry.get("quota"));
+        AccountQuota entry = accounts.get(0);
+        assertEquals("acc1", entry.accountId);
+        assertEquals("error", entry.accountStatus);
+        assertTrue(entry.bars.isEmpty());
         assertEquals(endpointCount, http.requests.size(), "every endpoint fallback must have been tried");
     }
 
     @Test
-    void postMessages_regression_stillRoutesThroughOrchestrator_notInterceptedByQuotaBranch(@TempDir Path configDir) {
+    void handle_getV1Quota_noLongerIntercepted_fallsThroughToOrchestrator(@TempDir Path configDir) {
+        ScriptedHttpClient http = new ScriptedHttpClient()
+                .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
+        registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acc1", "proj-x"));
+
+        HttpRequest request = new HttpRequest();
+        request.method = "GET";
+        request.url = "/v1/quota";
+
+        HandlerCtx ctx = new HandlerCtx();
+        ctx.configDir = configDir.toString();
+        ctx.model = "antigravity-claude-sonnet-4-6";
+
+        new AntigravityProvider().handle(request, ctx);
+
+        assertEquals(1, http.requests.size());
+        assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
+                "GET /v1/quota must no longer be specially intercepted by handle()");
+    }
+
+    @Test
+    void postMessages_regression_stillRoutesThroughOrchestrator_notInterceptedByQuotaCapability(@TempDir Path configDir) {
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
         registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acc1", "proj-x"));
@@ -162,8 +160,8 @@ class AntigravityQuotaFetchTest {
 
         assertEquals(200, response.status);
         assertEquals(1, http.requests.size());
-        assertTrue(!http.requests.get(0).url.contains("fetchAvailableModels"),
-                "a POST /v1/messages request must still hit the messages orchestrator, not the quota branch");
+        assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
+                "a POST /v1/messages request must still hit the messages orchestrator");
     }
 
     // ---- shared fixtures (mirrors AntigravityModelsFetchTest) -------------------------------------
@@ -198,26 +196,17 @@ class AntigravityQuotaFetchTest {
         return null;
     }
 
-    private static Map<String, Object> findByLabel(List<Map<String, Object>> quota, String label) {
-        for (Map<String, Object> entry : quota) {
-            if (label.equals(entry.get("label"))) return entry;
+    private static QuotaBar findByLabel(List<QuotaBar> bars, String label) {
+        for (QuotaBar bar : bars) {
+            if (label.equals(bar.label)) return bar;
         }
-        throw new AssertionError("no quota entry with label " + label);
+        throw new AssertionError("no quota bar with label " + label + " in " + bars);
     }
 
-    private static long epochMillis(String iso) {
-        return java.time.Instant.parse(iso).toEpochMilli();
-    }
-
-    private static HttpResponse handleQuota(Path configDir) {
-        HttpRequest request = new HttpRequest();
-        request.method = "GET";
-        request.url = "/v1/quota";
-
+    private static List<AccountQuota> callQuota(Path configDir) {
         HandlerCtx ctx = new HandlerCtx();
         ctx.configDir = configDir.toString();
-
-        return new AntigravityProvider().handle(request, ctx);
+        return new AntigravityProvider().quota(ctx);
     }
 
     /** Scripted {@link HttpClient}: pops one queued response per {@link #send}, records every request. */
