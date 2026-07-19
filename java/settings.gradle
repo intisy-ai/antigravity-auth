@@ -48,7 +48,7 @@ include ":antigravity-teavm"
 // (stub-auth/java/settings.gradle) -- LOCAL DEV-ONLY: only resolves when ai-java is checked out
 // side by side on the same machine. Override with -PaiJavaDir=<path> if your checkout isn't at
 // the default (the unified ai/ tree's java/ai-java, per the 2026-07-15 ecosystem move).
-def aiJavaDir = file(providers.gradleProperty("aiJavaDir").getOrElse("F:/Documents/GitHub/ai/java/ai-java"))
+def aiJavaDir = file(providers.gradleProperty("aiJavaDir").getOrElse("../../../java/ai-java"))
 if (aiJavaDir.isDirectory()) {
     includeBuild(aiJavaDir)
 } else {
