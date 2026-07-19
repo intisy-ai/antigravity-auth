@@ -6,6 +6,7 @@ import io.github.intisy.ai.shared.routing.AccountQuota;
 import io.github.intisy.ai.shared.routing.AuthorizeInfo;
 import io.github.intisy.ai.shared.routing.ConfigSchema;
 import io.github.intisy.ai.shared.routing.ConfigurableProvider;
+import io.github.intisy.ai.shared.routing.HandleIrException;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
 import io.github.intisy.ai.shared.routing.ModelCatalogProvider;
 import io.github.intisy.ai.shared.routing.ModelInfo;
@@ -200,28 +201,47 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
                     return AntigravityGeminiSseBridge.bufferedGeminiSseToIr(
                             backend.json, requestedModel, (HttpResponse) decision.attemptRef);
                 }
-                throw new IllegalStateException("antigravity upstream response missing");
+                throw asHandleIrException(errorResponse(502, "api_error", "antigravity upstream response missing"));
             case SERVE_RAW:
-                throw new RuntimeException(upstreamErrorMessage(backend.json, decision));
+                // Real upstream response, verbatim status/headers/body -- same raw passthrough
+                // materialize()'s own SERVE_RAW arm gives the legacy handle() path (no Anthropic
+                // rewrap here either; that only happens for the SYNTHETIC/TERMINAL_ERROR cases below,
+                // which are host-synthesized rather than a real upstream reply).
+                throw asHandleIrException(upstreamResponseOrError(decision.attemptRef));
             case SYNTHETIC:
-                throw new RuntimeException(extractGeminiErrorMessage(backend.json, decision.body));
+                // The no-account 503 / exhausted 502 the pool logic already synthesizes -- reuse
+                // materializeSynthetic (same Anthropic-shape rewrap the legacy handle() path uses)
+                // so the typed error carries the exact same status/headers/body.
+                throw asHandleIrException(materializeSynthetic(backend.json, decision));
             case TERMINAL_ERROR:
-                throw new RuntimeException(terminalErrorMessage(decision.terminal));
+                // The two lane-accurate exhaustion paths -- reuse materializeTerminal (same
+                // Anthropic rate_limit_error body + Retry-After header as the legacy path), and
+                // carry the SAME retryAfterMs the account-pool quota-reset math already computed
+                // (AntigravityHandleOrchestrator.TerminalError.retryAfterMs) so the front door's
+                // fallback logic gets an accurate reset hint.
+                throw asHandleIrException(materializeTerminal(decision.terminal),
+                        decision.terminal != null && decision.terminal.retryAfterMs > 0
+                                ? decision.terminal.retryAfterMs : null);
             case BRIDGE_STREAM:
                 // See materialize's BRIDGE_STREAM comment -- unreachable in practice, defensive only.
-                throw new RuntimeException(upstreamErrorMessage(backend.json, decision));
+                throw asHandleIrException(upstreamResponseOrError(decision.attemptRef));
             default:
-                throw new RuntimeException("unrecognized antigravity decision: " + decision.kind);
+                throw asHandleIrException(errorResponse(502, "api_error", "unrecognized antigravity decision: " + decision.kind));
         }
     }
 
-    private static String upstreamErrorMessage(JsonCodec json, AntigravityHandleOrchestrator.HandleDecision decision) {
-        if (decision.attemptRef instanceof HttpResponse) {
-            HttpResponse resp = (HttpResponse) decision.attemptRef;
-            return "antigravity upstream error " + resp.status
-                    + (resp.body != null && !resp.body.isEmpty() ? ": " + extractGeminiErrorMessage(json, resp.body) : "");
-        }
-        return "antigravity upstream response missing";
+    // T3c-2: wraps an already-built HttpResponse (status/headers/body) as the canonical typed
+    // transport error core-proxy's Router.route reconstructs a real HttpResponse from, instead of
+    // collapsing every handleIr throw to a flat 502 (which lost status fidelity and broke
+    // rate-limit fallback). Reuses the SAME response builders (materializeSynthetic/
+    // materializeTerminal/upstreamResponseOrError/errorResponse) the legacy handle() path already
+    // uses, so handleIr's error responses stay byte-identical to handle()'s.
+    private static HandleIrException asHandleIrException(HttpResponse response) {
+        return asHandleIrException(response, null);
+    }
+
+    private static HandleIrException asHandleIrException(HttpResponse response, Long retryAfterMs) {
+        return new HandleIrException(response.status, response.headers, response.body, retryAfterMs);
     }
 
     // ---- ModelCatalogProvider / QuotaProvider: mechanical re-expose of the retired /v1/models

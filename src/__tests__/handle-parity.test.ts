@@ -106,7 +106,9 @@ vi.mock("../plugin/versions.js", async (importOriginal) => {
 });
 
 import { driver } from "../driver/index.js";
-import { handleViaJavaOrchestrator } from "../driver/javaHandle.js";
+import { handleViaJavaOrchestrator, handleIrViaJavaOrchestrator } from "../driver/javaHandle.js";
+import { HandleIrError } from "../../core-proxy/dist/index.js";
+import { translators } from "../../core-ir/dist/index.js";
 
 const harness = H.harness;
 const PROD = "https://cloudcode-pa.googleapis.com";
@@ -402,5 +404,44 @@ describe("CRITICAL-1: fresh-account synthetic project id is unique per account (
     expect(results[0].bodyProject, "synthetic id must reach the outbound body project field").toBe(results[0].persisted);
     expect(results[1].persisted, "two fresh accounts must NOT share a synthetic project id (correlation)").not.toBe(results[0].persisted);
     expect(results[1].bodyProject, "two fresh accounts must NOT share the outbound body project").not.toBe(results[0].bodyProject);
+  });
+});
+
+// T3c-2: handleIrViaJavaOrchestrator now throws the canonical core-proxy HandleIrError (instead of
+// an ad-hoc enriched Error) so core-proxy's IR front door can reconstruct a real Response from it.
+// The SAME two scenarios the "anthropic bridge" fixture tests above already exercise end to end
+// (through the legacy handleAnthropicMessagesViaJava wrapper) are reused here to assert the typed
+// error's shape directly, at the point where the front door would actually catch it.
+describe("T3c-2: handleIr throws the typed HandleIrError with the real status/body/retryAfterMs", () => {
+  async function throwsFrom(scenarioName: string) {
+    const sc = scenarios.find((s) => s.name === scenarioName);
+    resetForRun(sc);
+    const ir = await translators.anthropic.decodeRequest(sc.body);
+    const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };
+    let caught: any;
+    try { await handleIrViaJavaOrchestrator(ir, ctx); } catch (e) { caught = e; }
+    return caught;
+  }
+
+  it("upstream 400 -> HandleIrError(400, api_error), verbatim upstream detail as the message", async () => {
+    const error = await throwsFrom("anthropic bridge api_error — /v1/messages -> inner non-ok 400 -> api_error passthrough");
+    expect(error).toBeInstanceOf(HandleIrError);
+    expect(error.status).toBe(400);
+    expect(JSON.parse(error.body)).toEqual({ type: "error", error: { type: "api_error", message: "bad request" } });
+    expect(error.retryAfterMs).toBeUndefined();
+  });
+
+  it("no-account terminal quota-reset -> HandleIrError(429, rate_limit_error) carrying the pool's own retryAfterMs", async () => {
+    const error = await throwsFrom("anthropic bridge rate_limit_error — /v1/messages -> inner terminal quota-reset -> 429 rate_limit_error");
+    expect(error).toBeInstanceOf(HandleIrError);
+    expect(error.status).toBe(429);
+    expect(error.headers["x-hub-rate-limited"]).toBe("1");
+    // The account's own cachedQuota.resetTime (2099-06-15T12:34:00Z) is the SAME reset the pool's
+    // soonestQuotaReset math uses — proves retryAfterMs is threaded from the real quota logic, not
+    // a made-up constant.
+    const expectedResetEpoch = new Date("2099-06-15T12:34:00Z").getTime();
+    expect(error.retryAfterMs).toBe(expectedResetEpoch - harness.now);
+    const body = JSON.parse(error.body);
+    expect(body.error.type).toBe("rate_limit_error");
   });
 });

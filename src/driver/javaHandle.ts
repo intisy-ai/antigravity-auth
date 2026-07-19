@@ -42,6 +42,7 @@
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
 import { translators } from "../../core-ir/dist/index.js";
+import { HandleIrError } from "../../core-proxy/dist/index.js";
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
@@ -572,16 +573,16 @@ function serveRefError() {
   });
 }
 
-// A thrown handleIr error carries enough classification (status/errorType/rate-limit retry hint)
-// for a caller that wants to rebuild a wire-shaped error response (handleAnthropicMessagesViaJava
-// below) to do so byte-exactly -- while a generic caller (e.g. core-proxy's Router) can still just
-// read `.message` and treat any handleIr rejection as a flat failure, per the shared contract.
-function makeHandleIrError(message, { status, errorType, retryAfterMs } = {}) {
-  const error = new Error(message);
-  error.status = status;
-  error.errorType = errorType;
-  if (retryAfterMs) error.retryAfterMs = retryAfterMs;
-  return error;
+// T3c-2: builds the canonical typed transport error (core-proxy's HandleIrError) for a handleIr
+// non-2xx outcome. The body is the SAME Anthropic-shaped error JSON handleAnthropicMessagesViaJava
+// used to reconstruct in its catch clause (moved here so the throw already carries the real
+// status/headers/body -- core-proxy's front door can reconstruct an equivalent Response from it,
+// and the legacy wrapper below can just replay it byte-identically instead of recomputing it).
+function anthropicHandleIrError(status, errorType, message, retryAfterMs) {
+  const body = JSON.stringify({ type: "error", error: { type: errorType, message } });
+  const headers = { "content-type": "application/json" };
+  if (errorType === "rate_limit_error") headers["x-hub-rate-limited"] = "1";
+  return new HandleIrError({ status, headers, body, retryAfterMs: retryAfterMs || undefined });
 }
 
 // SP-3 T2: the IR-native alternative to handleAnthropicMessagesViaJava below -- receives an
@@ -595,8 +596,10 @@ function makeHandleIrError(message, { status, errorType, retryAfterMs } = {}) {
 //
 // Errors (rate-limit exhaustion, no-account, transport failure, ...) have no IR-shaped
 // representation to return, so they are thrown instead of encoded into a Response (matching the
-// Java Provider SPI's handleIr contract) -- enriched via makeHandleIrError so handle()'s own thin
-// wrapper can still rebuild the exact legacy error shape (see its catch block below).
+// Java Provider SPI's handleIr contract) -- as the canonical core-proxy HandleIrError (T3c-2, via
+// anthropicHandleIrError) so core-proxy's front door can reconstruct the real status/headers/body,
+// and handle()'s own thin wrapper can still replay the exact legacy error shape (see its catch
+// block below).
 export async function handleIrViaJavaOrchestrator(ir, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   const orchestrator = await loadOrchestrator();
@@ -609,19 +612,24 @@ export async function handleIrViaJavaOrchestrator(ir, ctx) {
     let msg = "request failed";
     try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
     if (geminiRes.headers.get("x-hub-rate-limited") === "1") {
-      throw makeHandleIrError(msg, {
-        status: 429, errorType: "rate_limit_error", retryAfterMs: geminiRes.headers.get("x-hub-retry-after-ms"),
-      });
+      // No-account/exhaustion terminal condition (buildTerminalError's chatError, or the
+      // no-account 503 synthesized by the Java decision loop): retryAfterMs comes from the SAME
+      // x-hub-retry-after-ms hint the pool/quota logic already computed (chatError's rateLimited
+      // branch, driven by AntigravityHandleOrchestrator.TerminalError.resetEpochMs / the account
+      // pool's soonestQuotaReset).
+      const retryAfterMs = Number(geminiRes.headers.get("x-hub-retry-after-ms")) || undefined;
+      throw anthropicHandleIrError(429, "rate_limit_error", msg, retryAfterMs);
     }
-    throw makeHandleIrError(msg, { status: geminiRes.status || 400, errorType: "invalid_request_error" });
+    throw anthropicHandleIrError(geminiRes.status || 400, "invalid_request_error", msg);
   }
   if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
     let detail = "";
     try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
     log("handleIr: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
-    throw makeHandleIrError(detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)), {
-      status: (geminiRes && geminiRes.status) || 502, errorType: "api_error",
-    });
+    // Upstream non-2xx (SERVE_RAW / transport failure): real status carried through, verbatim
+    // detail text as the message (matches the pre-existing api_error reconstruction).
+    const msg = detail || ("antigravity upstream error " + (geminiRes && geminiRes.status));
+    throw anthropicHandleIrError((geminiRes && geminiRes.status) || 502, "api_error", msg);
   }
   return geminiRes.body.pipeThrough(makeIrStream(orchestrator.newIrStreamMapper, ir.model || model, jsIds));
 }
@@ -631,9 +639,10 @@ export async function handleIrViaJavaOrchestrator(ir, ctx) {
 // business logic), delegate the whole IR<->Gemini core to handleIrViaJavaOrchestrator above, then
 // re-encode the returned IR event stream to Anthropic SSE via core-ir's encodeStream. All the
 // classification (chatError passthrough → rate_limit_error 429 / invalid_request_error, the
-// api_error path) and the x-hub-* header handling stay host-side, byte-exact (rebuilt from the
-// thrown error's status/errorType/retryAfterMs) — only the Gemini-translation-plus-encode logic
-// that used to live inline here moved into the shared handleIr core.
+// api_error path) and the x-hub-* header handling stay host-side, byte-exact -- T3c-2 moved the
+// actual body/header construction into anthropicHandleIrError (up at each throw site), so this
+// catch just replays the typed error's real status/headers/body, matching the SAME reconstruction
+// core-proxy's own front door (server.ts) does for a caught HandleIrError.
 async function handleAnthropicMessagesViaJava(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   let anthropicBodyText;
@@ -644,16 +653,21 @@ async function handleAnthropicMessagesViaJava(request, ctx) {
   try {
     irEventStream = await handleIrViaJavaOrchestrator(ir, ctx);
   } catch (error) {
+    if (error instanceof HandleIrError) {
+      log("anthropic bridge: handleIr failed: " + error.message);
+      const headers = new Headers(error.headers);
+      if (error.retryAfterMs != null && !headers.has("x-hub-retry-after-ms")) {
+        headers.set("x-hub-retry-after-ms", String(error.retryAfterMs));
+      }
+      return new Response(error.body, { status: error.status, headers });
+    }
+    // Unexpected/non-typed throw -- a genuine bug, not a modeled transport outcome; keep the old
+    // defensive flat-502 fallback rather than letting it propagate raw.
     const msg = (error && error.message) || "request failed";
     log("anthropic bridge: handleIr failed: " + msg);
-    const status = (error && error.status) || 502;
-    const errorType = (error && error.errorType) || "api_error";
-    const headers = { "content-type": "application/json" };
-    if (errorType === "rate_limit_error") {
-      headers["x-hub-rate-limited"] = "1";
-      if (error.retryAfterMs) headers["x-hub-retry-after-ms"] = error.retryAfterMs;
-    }
-    return new Response(JSON.stringify({ type: "error", error: { type: errorType, message: msg } }), { status, headers });
+    return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: msg } }), {
+      status: 502, headers: { "content-type": "application/json" },
+    });
   }
 
   const encodeStream = await translators.anthropic.encodeStream();
