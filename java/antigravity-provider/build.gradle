@@ -9,6 +9,15 @@ dependencies {
     compileOnly project(":routing")
     testImplementation project(":routing")
 
+    // core-ir's IR types + AnthropicTranslator/GeminiTranslator (SP-2): AntigravityIrBridge now
+    // round-trips the Anthropic<->Gemini request format through the IR instead of the deleted
+    // bespoke AntigravityFormatBridge/AntigravityStreamMapper. Same "keep the shipped jar thin"
+    // discipline as :routing above -- ai-java does not host core-ir yet (that lands in SP-3), so
+    // compileOnly keeps :ir's classes out of antigravity-provider.jar; testImplementation re-adds
+    // it for test code.
+    compileOnly project(":ir")
+    testImplementation project(":ir")
+
     // Phase 2: AntigravityBackend self-assembles Store/HttpClient/JsonCodec/Clock/Random + a real
     // AccountManager from the JVM backends + :accounts. CI has no composite includeBuild, so the
     // MAIN compile dependency comes from the PUBLISHED ai-java release (1.0.7) via github-gradle's

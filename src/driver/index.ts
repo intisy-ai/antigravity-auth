@@ -87,14 +87,17 @@ function maybeMaintainVersions(log) {
   refreshVersions(log).then(() => driftAccountVersions(log)).catch(() => {});
 }
 
-// `handle` is a lazy delegate to the TeaVM-compiled Java orchestrator (javaHandle.ts), which
-// owns the whole decision loop (model resolve, account/endpoint retry, rate-limit handling).
-// The dynamic import keeps the ~MB TeaVM ESM out of the module graph until the first request.
-async function handle(request, ctx) {
+// `handleIr` is the provider's IR-native serving entry: a lazy delegate to the TeaVM-compiled Java
+// orchestrator (javaHandle.ts), which owns the whole decision loop (model resolve, account/endpoint
+// retry, rate-limit handling). It receives an already app-wire-decoded IR (the front-door owns
+// app<->IR translation) and returns an IR event stream; no app-wire (Anthropic) format code lives
+// in this provider. The dynamic import keeps the ~MB TeaVM ESM out of the module graph until the
+// first request.
+async function handleIr(ir, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   maybeMaintainVersions(log);
-  const { handleViaJavaOrchestrator } = await import("./javaHandle.js");
-  return handleViaJavaOrchestrator(request, ctx);
+  const { handleIrViaJavaOrchestrator } = await import("./javaHandle.js");
+  return handleIrViaJavaOrchestrator(ir, ctx);
 }
 
 // Live model discovery for core-auth: pick the first usable account, fetch the
@@ -190,7 +193,7 @@ export const driver = {
   // whose quota the antigravity API doesn't expose (fetchAvailableModels 403s under
   // the CLI header context), so it can't be graphed like the metered pools.
   quotaNote: "Gemini CLI models use a separate fallback pool. Its quota isn't reported by the API, so it can't be shown here.",
-  handle,
+  handleIr,
   login,
   loginFlow,
   accounts: createAntigravityAccounts(manager),

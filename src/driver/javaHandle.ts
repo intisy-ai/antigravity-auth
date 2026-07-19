@@ -1,8 +1,8 @@
 // @ts-nocheck
-// The delegation shell that runs antigravity-auth's `handle` decision loop (and the account-view
+// The delegation shell that runs antigravity-auth's `handleIr` decision loop (and the account-view
 // quota/catalog helpers below) through the TeaVM-compiled Java orchestrator
 // (`AntigravityHandleOrchestrator` + `AntigravityProviderJs`'s other exports from :antigravity-teavm)
-// instead of duplicated TS. index.ts's `handle` dynamically imports this module on the first request;
+// instead of duplicated TS. index.ts's `handleIr` dynamically imports this module on the first request;
 // the TeaVM ESM itself is loaded via the lazily-memoized `loadOrchestrator()` below, so the ~MB
 // compiled bundle is never bundled statically and only evaluates once actually needed.
 //
@@ -22,10 +22,11 @@
 // Task 3 (TeaVM de-dup): `jsPreparer` now calls the Java PRODUCTION export
 // `prepareAntigravityRequestProd` (see `prepareViaJava` below) instead of the TS
 // `prepareAntigravityRequest`, injecting real host seams (sha256 hasher, the disk-backed signature
-// cache lookup, a `defaultSignatureStore` adapter, real Math.random/crypto.randomUUID). The
-// Anthropic bridge (`handleAnthropicMessagesViaJava`) now calls the Java `anthropicToGemini` export
-// and pipes through `javaStream.ts`'s `makeAnthropicStream` (Java `newStreamMapper`) instead of the
-// TS `anthropicToGemini`/`geminiToAnthropicStream`.
+// cache lookup, a `defaultSignatureStore` adapter, real Math.random/crypto.randomUUID).
+// SP-2: the Java side of that bridge (`AntigravityFormatBridge`/`AntigravityStreamMapper`) has been
+// replaced by core-ir's canonical IR + AnthropicTranslator/GeminiTranslator (`AntigravityIrBridge`/
+// `AntigravityGeminiSseBridge`) -- this file's own call sites (`anthropicToGemini`, `newStreamMapper`)
+// are unchanged, since the TeaVM export surface kept the same names/shapes.
 // Task 3c: closes the 3 Task-3 gaps. (1) `prepareAntigravityRequestProd` now takes `endpointOverride`
 // directly (the `applyEndpointOverride` URL-substitution workaround is gone). (2)
 // `claudeToolHardening`/`claudePromptAutoCaching` are read from the SAME `loadConfig()` the TS path
@@ -37,16 +38,16 @@
 
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
+import { HandleIrError } from "../../core-proxy/dist/index.js";
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
-import { isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
 import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
 import { processImageData } from "../plugin/image-saver.js";
 import { isGemini3Model } from "../plugin/transform-java.js";
-import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
+import { makeIrStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
 // Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives
 // both paths identically; a runtime config edit needs a process restart for either path).
@@ -231,17 +232,12 @@ export function prepareViaJava(
   };
 }
 
-// Top-level delegated entry: mirror index.ts's routing — the Anthropic Messages bridge, else the
-// Gemini decision loop. (maybeMaintainVersions already fired host-side in index.ts before the guard.)
-export async function handleViaJavaOrchestrator(request, ctx) {
-  if (isAnthropicMessages(request.url)) return handleAnthropicMessagesViaJava(request, ctx);
-  return runGeminiViaJava(request, ctx);
-}
-
 // The Gemini-path delegation: build the orchestrator inputs, wire the host seams, run
-// handleAntigravityRequestAsync, and materialize its HandleDecision into a Response. Reused verbatim
-// for the inner request of the Anthropic bridge.
-async function runGeminiViaJava(request, ctx) {
+// handleAntigravityRequestAsync, and materialize its HandleDecision into a Response. This is the
+// provider's IR<->upstream transport core: handleIrViaJavaOrchestrator encodes the decoded IR to a
+// Gemini request and hands it here. Exported so the regression harness can drive the SAME upstream
+// decision loop (quota rotation, terminal-error, synthetic project id) directly.
+export async function runGeminiViaJava(request, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   const orchestrator = await loadOrchestrator();
   const { handleAntigravityRequestAsync } = orchestrator;
@@ -524,11 +520,10 @@ async function materializeDecision(decision, responses, log, orchestrator) {
     case "TERMINAL_ERROR":
       return buildTerminalError(decision.terminal);
     case "BRIDGE_STREAM": {
-      // The exported orchestrator.handle() never emits BRIDGE_STREAM — it is produced only by
-      // classifyAnthropicResult, which the T7g1 async surface does not expose. The Anthropic-messages
-      // bridge (incl. the geminiToAnthropicStream pipe = index.ts:347) is therefore reproduced
-      // host-side in handleAnthropicMessagesViaJava. This branch is defensive/forward-compat: serve
-      // the retained response verbatim.
+      // The exported orchestrator.handle() never emits BRIDGE_STREAM: it was produced only by
+      // classifyAnthropicResult, which the T7g1 async surface does not expose, and app-wire
+      // (Anthropic) re-encoding is now the front-door's job, not the provider's. This branch is
+      // defensive/forward-compat: serve the retained response verbatim.
       const retained = responses[decision.attemptRef];
       return retained || serveRefError();
     }
@@ -560,46 +555,59 @@ function serveRefError() {
   });
 }
 
-// Anthropic Messages bridge (index.ts:304-349) — reproduced VERBATIM, with the single inner
-// `handle(geminiReq, ctx)` call replaced by the delegated `runGeminiViaJava(geminiReq, ctx)`, and
-// (Task 3) the request/response translation routed through Java: `anthropicToGemini` -> the Java
-// export, `geminiToAnthropicStream` -> javaStream.ts's `makeAnthropicStream` over Java's
-// `newStreamMapper` (real ids minted host-side via jsIds). All the classification (chatError
-// passthrough → rate_limit_error 429 / invalid_request_error, the api_error path) and the x-hub-*
-// header handling stay host-side, byte-exact.
-async function handleAnthropicMessagesViaJava(request, ctx) {
+// T3c-2: builds the canonical typed transport error (core-proxy's HandleIrError) for a handleIr
+// non-2xx outcome, carrying the real status/headers/body so core-proxy's front door can reconstruct
+// an equivalent Response from it (rate-limit fallback / verbatim 4xx still work). The error body is
+// error-shaped JSON, not app-wire content: the front-door owns app<->IR translation.
+function anthropicHandleIrError(status, errorType, message, retryAfterMs) {
+  const body = JSON.stringify({ type: "error", error: { type: errorType, message } });
+  const headers = { "content-type": "application/json" };
+  if (errorType === "rate_limit_error") headers["x-hub-rate-limited"] = "1";
+  return new HandleIrError({ status, headers, body, retryAfterMs: retryAfterMs || undefined });
+}
+
+// SP-3 T2: the provider's IR-native serving path. Receives an already app-wire-decoded IR request
+// (the front-door owns app<->IR translation) and runs ONLY the IR<->upstream core: antigravity's
+// thinking-budget resolution + the neutral IR->Gemini encode, the SAME account-rotation/retry
+// upstream call as the Gemini path (runGeminiViaJava), then decodes the upstream Gemini SSE back
+// into a raw IR event stream. No app-wire (Anthropic) format code lives here. Always returns a
+// stream: antigravity's upstream call is always streamGenerateContent in production, so this
+// preserves true end-to-end streaming rather than buffering into an IrResponse.
+//
+// Errors (rate-limit exhaustion, no-account, transport failure, ...) have no IR-shaped
+// representation to return, so they are thrown instead of encoded into a Response (matching the
+// handleIr contract) -- as the canonical core-proxy HandleIrError (T3c-2, via anthropicHandleIrError)
+// so core-proxy's front door can reconstruct the real status/headers/body.
+export async function handleIrViaJavaOrchestrator(ir, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   const orchestrator = await loadOrchestrator();
-  let anthropicBody;
-  try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
   const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
-  const geminiBody = JSON.parse(orchestrator.anthropicToGemini(JSON.stringify(anthropicBody), model));
+  const geminiBody = orchestrator.resolveThinkingBudgetAndEncodeGemini(JSON.stringify(ir), model);
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
-  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
+  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: geminiBody });
   const geminiRes = await runGeminiViaJava(geminiReq, ctx); // geminiUrl isn't /v1/messages -> normal Gemini path
   if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
     let msg = "request failed";
     try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
     if (geminiRes.headers.get("x-hub-rate-limited") === "1") {
-      const rlHeaders = { "content-type": "application/json", "x-hub-rate-limited": "1" };
-      const ra = geminiRes.headers.get("x-hub-retry-after-ms");
-      if (ra) rlHeaders["x-hub-retry-after-ms"] = ra;
-      return new Response(
-        JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: msg } }),
-        { status: 429, headers: rlHeaders },
-      );
+      // No-account/exhaustion terminal condition (buildTerminalError's chatError, or the
+      // no-account 503 synthesized by the Java decision loop): retryAfterMs comes from the SAME
+      // x-hub-retry-after-ms hint the pool/quota logic already computed (chatError's rateLimited
+      // branch, driven by AntigravityHandleOrchestrator.TerminalError.resetEpochMs / the account
+      // pool's soonestQuotaReset).
+      const retryAfterMs = Number(geminiRes.headers.get("x-hub-retry-after-ms")) || undefined;
+      throw anthropicHandleIrError(429, "rate_limit_error", msg, retryAfterMs);
     }
-    return new Response(
-      JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: msg } }),
-      { status: geminiRes.status || 400, headers: { "content-type": "application/json" } },
-    );
+    throw anthropicHandleIrError(geminiRes.status || 400, "invalid_request_error", msg);
   }
   if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
     let detail = "";
     try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
-    log("anthropic bridge: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
-    return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)) } }), { status: (geminiRes && geminiRes.status) || 502, headers: { "content-type": "application/json" } });
+    log("handleIr: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
+    // Upstream non-2xx (SERVE_RAW / transport failure): real status carried through, verbatim
+    // detail text as the message (matches the pre-existing api_error reconstruction).
+    const msg = detail || ("antigravity upstream error " + (geminiRes && geminiRes.status));
+    throw anthropicHandleIrError((geminiRes && geminiRes.status) || 502, "api_error", msg);
   }
-  const stream = geminiRes.body.pipeThrough(makeAnthropicStream(orchestrator.newStreamMapper, anthropicBody.model || model, jsIds));
-  return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
+  return geminiRes.body.pipeThrough(makeIrStream(orchestrator.newIrStreamMapper, ir.model || model, jsIds));
 }

@@ -534,7 +534,7 @@ public final class AntigravityHandleOrchestrator {
     /**
      * The inner {@code handle} result the host extracts for the Anthropic-bridge classification
      * (index.ts:318-346). The recursion (build the Gemini request via {@code anthropicToGemini}
-     * [reused {@link AntigravityFormatBridge}], call {@code handle}) is host-driven; Java only
+     * [reused {@link AntigravityIrBridge}, SP-2], call {@code handle}) is host-driven; Java only
      * classifies. The {@code pipeThrough(geminiToAnthropicStream)} on the ok path stays host.
      */
     public static final class AnthropicInnerResult {
