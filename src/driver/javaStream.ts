@@ -20,7 +20,7 @@ export const jsIds = {
 // Drives ONE `newStreamMapper(model, jsIds)` instance across the life of a stream. SP-2: the Java
 // bridge's `handle` now takes a raw decoded text CHUNK (partial or complete SSE lines) and does its
 // own `data:` line-buffering/JSON-parsing internally (core-ir's StreamDecoder contract), so this
-// shell only decodes bytes to text and forwards them — no line/JSON handling left here.
+// shell only decodes bytes to text and forwards them -- no line/JSON handling left here.
 export function makeAnthropicStream(newStreamMapperFn, model, ids) {
   const mapper = newStreamMapperFn(model, ids);
   const enc = new TextEncoder();
