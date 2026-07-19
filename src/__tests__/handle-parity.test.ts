@@ -1,10 +1,11 @@
 // @ts-nocheck
-// JAVA-PATH REGRESSION (post flag removal): `driver.handle` unconditionally delegates to the
-// TeaVM-compiled Java orchestrator now, so there is no second TS path to diff against. Instead this
-// asserts driver.handle's output — final Response (status/headers/streamed body), the ordered
-// manager.*/proxyManager.* call sequence, and the byte-identical outbound fetch requests — against
+// JAVA-PATH REGRESSION: the provider's Gemini upstream core (`runGeminiViaJava`) delegates to the
+// TeaVM-compiled Java orchestrator, so there is no second TS path to diff against. Instead this
+// asserts runGeminiViaJava's output: final Response (status/headers/streamed body), the ordered
+// manager.*/proxyManager.* call sequence, and the byte-identical outbound fetch requests, against
 // the FROZEN fixture `handle-scenarios.expected.json` (captured from this same Java path). Any
-// unintended behavior drift in the orchestrator or its host seams fails this test.
+// unintended behavior drift in the orchestrator or its host seams fails this test. runGeminiViaJava
+// is exactly what the IR-native handleIr feeds after encoding IR to a Gemini request.
 //
 // Fakes: core-auth's AccountManager + proxyManager + getAutoCandidates are replaced with an
 // instrumented harness; global fetch is scripted per scenario. Date, Math.random, and
@@ -105,8 +106,7 @@ vi.mock("../plugin/versions.js", async (importOriginal) => {
   return { ...actual, refreshVersions: () => Promise.reject(new Error("noop-in-test")) };
 });
 
-import { driver } from "../driver/index.js";
-import { handleViaJavaOrchestrator, handleIrViaJavaOrchestrator } from "../driver/javaHandle.js";
+import { runGeminiViaJava, handleIrViaJavaOrchestrator } from "../driver/javaHandle.js";
 import { HandleIrError } from "../../core-proxy/dist/index.js";
 import { translators } from "../../core-ir/dist/index.js";
 
@@ -152,7 +152,7 @@ function resetForRun(sc: any) {
   harness.outbound = [];
 }
 
-// Capture the OUTBOUND request driver.handle hands to fetch, so the harness can assert the Java
+// Capture the OUTBOUND request runGeminiViaJava hands to fetch, so the harness can assert the Java
 // prepare path produces the SAME wire request each run (url/method/headers/body + host-set proxy).
 // Header keys sorted (order not wire-significant); case preserved.
 function captureOutbound(url: any, init: any) {
@@ -181,7 +181,7 @@ async function runOnce(sc: any) {
   const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };
 
   resetForRun(sc);
-  const r = await driver.handle(makeReq(), ctx);
+  const r = await runGeminiViaJava(makeReq(), ctx);
   const snap = await snapshotResponse(r);
   return { snap, calls: harness.calls.slice(), outbound: harness.outbound.slice() };
 }
@@ -212,10 +212,7 @@ beforeEach(() => {
 });
 afterAll(() => { globalThis.fetch = realFetch; globalThis.Date = RealDate; vi.restoreAllMocks(); });
 
-// A minimal gemini SSE body so the streaming transform + anthropic bridge produce real bytes.
-const GEMINI_SSE = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}]}}\n\n';
-
-// --- scenarios (kept identical to the pre-conversion dual-path harness) ----------------------
+// --- scenarios (Gemini upstream core, driven via runGeminiViaJava) --------------------------
 
 const scenarios: any[] = [
   {
@@ -309,14 +306,16 @@ const scenarios: any[] = [
     acquire: Array.from({ length: 6 }, (_, i) => ({ id: "acc" + i, access: "tok" + i })),
     fetch: Array.from({ length: 18 }, () => rate(429, "quota reached, resets after 30s")()),
   },
-  {
-    name: "anthropic bridge success — /v1/messages -> gemini 200 SSE piped through geminiToAnthropicStream",
-    url: "https://loader.local/v1/messages",
-    body: JSON.stringify({ model: "claude-sonnet-4", messages: [{ role: "user", content: "hi" }] }),
-    accounts: [quietAccount("acc1")],
-    acquire: [{ id: "acc1", access: "tok1" }],
-    fetch: [resp(200, { "content-type": "text/event-stream" }, GEMINI_SSE)],
-  },
+];
+
+// SP-3 T2 / T3c-2: two IR-native handleIr error scenarios. They are NOT part of the serve-path loop
+// above (that loop drives the provider's Gemini upstream core via runGeminiViaJava); the legacy
+// Anthropic-wire wrapper that used to drive them from a /v1/messages request was deleted in T4.
+// Anthropic re-encoding is now the front-door's job, so the "anthropic bridge success" scenario
+// (which only asserted Anthropic SSE encoding) was dropped. These two set up account/fetch state
+// for the handleIr throw assertions in the T3c-2 describe block below (the provider logic they
+// cover: upstream 400 -> typed error, no-account terminal quota-reset -> 429 with a real reset).
+const irErrorScenarios: any[] = [
   {
     name: "anthropic bridge api_error — /v1/messages -> inner non-ok 400 -> api_error passthrough",
     url: "https://loader.local/v1/messages",
@@ -343,7 +342,7 @@ function scrubResetDate(snap: any) {
   return { ...snap, body: snap.body.replace(/Quota resets .*?\. Try again/g, "Quota resets <RESET>. Try again") };
 }
 
-describe("handle regression: Java path (driver.handle) vs frozen fixture", () => {
+describe("serve-path regression: Java path (runGeminiViaJava) vs frozen fixture", () => {
   for (const sc of scenarios) {
     it(sc.name, async () => {
       const expected = (fixture as any)[sc.name];
@@ -366,7 +365,7 @@ describe("handle regression: Java path (driver.handle) vs frozen fixture", () =>
 // CRITICAL-1 regression guard: fresh accounts (no discovered managed project, no pre-set synthetic id)
 // must mint a UNIQUE per-account synthetic project id — otherwise every such account gets the SAME
 // x-goog-user-project-equivalent (the outbound body `project` field) and gets correlated. Uses REAL
-// entropy (not the deterministic pin) via handleViaJavaOrchestrator directly.
+// entropy (not the deterministic pin) via runGeminiViaJava directly.
 describe("CRITICAL-1: fresh-account synthetic project id is unique per account (no correlation)", () => {
   it("two fresh accounts get DISTINCT persisted meta.syntheticProjectId AND distinct outbound body project on the Java path", async () => {
     vi.spyOn(crypto, "randomUUID").mockImplementation(() => realRandomUuid()); // un-pin -> real entropy
@@ -391,7 +390,7 @@ describe("CRITICAL-1: fresh-account synthetic project id is unique per account (
         acquire: [{ id, access: "tok-" + id }],
         fetch: freshFetch(),
       });
-      await handleViaJavaOrchestrator(geminiReq(), { model: "antigravity-claude-sonnet-4-6", log: () => {} });
+      await runGeminiViaJava(geminiReq(), { model: "antigravity-claude-sonnet-4-6", log: () => {} });
       const persisted = harness.accounts[0].meta.syntheticProjectId;
       const mainOut = harness.outbound.find((o) => String(o.url).includes(":generateContent"));
       let bodyProject = "";
@@ -407,14 +406,13 @@ describe("CRITICAL-1: fresh-account synthetic project id is unique per account (
   });
 });
 
-// T3c-2: handleIrViaJavaOrchestrator now throws the canonical core-proxy HandleIrError (instead of
-// an ad-hoc enriched Error) so core-proxy's IR front door can reconstruct a real Response from it.
-// The SAME two scenarios the "anthropic bridge" fixture tests above already exercise end to end
-// (through the legacy handleAnthropicMessagesViaJava wrapper) are reused here to assert the typed
-// error's shape directly, at the point where the front door would actually catch it.
+// T3c-2: handleIrViaJavaOrchestrator throws the canonical core-proxy HandleIrError (instead of an
+// ad-hoc enriched Error) so core-proxy's IR front door can reconstruct a real Response from it. This
+// is the provider's IR-native serving path exercised directly (no legacy Anthropic-wire wrapper),
+// at the point where the front door would actually catch the throw.
 describe("T3c-2: handleIr throws the typed HandleIrError with the real status/body/retryAfterMs", () => {
   async function throwsFrom(scenarioName: string) {
-    const sc = scenarios.find((s) => s.name === scenarioName);
+    const sc = irErrorScenarios.find((s) => s.name === scenarioName);
     resetForRun(sc);
     const ir = await translators.anthropic.decodeRequest(sc.body);
     const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };

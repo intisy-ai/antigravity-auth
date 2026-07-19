@@ -21,7 +21,7 @@ defineReadme({
     end
 
     subgraph Driver [antigravity-auth driver]
-        HANDLE["handle(request, ctx) - delegates to the Java orchestrator"]
+        HANDLE["handleIr(ir, ctx) - delegates to the Java orchestrator"]
         LOGIN["login - CLI: antigravity login"]
         HANDLE -->|POST + endpoint fallback| GOOGLE[(Cloud Code Assist API)]
         LOGIN -->|Google PKCE OAuth| GOOGLE
@@ -38,9 +38,9 @@ defineReadme({
   structure: {
     src: [
       "`index.ts` — OpenCode entry (the core-auth provider plugin)",
-      "`handler.ts` — Claude Code entry (`handle()` for the claude-code-loader proxy)",
+      "`handler.ts` — Claude Code entry (`handleIr()` for the claude-code-loader proxy front-door)",
       "`cli.ts` — `antigravity login | list | remove`",
-      "`driver/` — `index.ts` (driver + `handle`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)",
+      "`driver/` — `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)",
       "`antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts` — the host I/O this driver still owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform + decision logic itself lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)",
       "`commands.ts` — cross-app slash-command definitions + their CLI actions",
       "`core-auth/` — the core-auth library (git submodule, bundled into the output)",
@@ -57,7 +57,7 @@ defineReadme({
       id: "arch-detail",
       title: "Driver Detail",
       after: "architecture",
-      body: "`handle` delegates every decision — model/lane resolve, the account/endpoint retry+rotation loop, request/response transform, and rate-limit classification — to the Java orchestrator (`java/antigravity-provider`, TeaVM-compiled, called via `driver/javaHandle.ts`/`javaStream.ts`). This TS layer owns only host I/O: the fetch + proxy transport, `AccountManager` acquisition/reporting, project-context discovery, OAuth login, device fingerprinting, and the version pool.",
+      body: "`handleIr` delegates every decision (model/lane resolve, the account/endpoint retry+rotation loop, IR<->Gemini request/response translation, and rate-limit classification) to the Java orchestrator (`java/antigravity-provider`, TeaVM-compiled, called via `driver/javaHandle.ts`/`javaStream.ts`). The provider is IR-native: the front-door owns app<->IR translation, so no app-wire (Anthropic) format code lives here. This TS layer owns only host I/O: the fetch + proxy transport, `AccountManager` acquisition/reporting, project-context discovery, OAuth login, device fingerprinting, and the version pool.",
     },
   ],
 });

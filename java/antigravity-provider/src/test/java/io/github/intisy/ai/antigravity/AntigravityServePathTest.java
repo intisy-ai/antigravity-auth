@@ -1,6 +1,12 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.ir.Block;
+import io.github.intisy.ai.ir.IrMessage;
+import io.github.intisy.ai.ir.IrRequest;
+import io.github.intisy.ai.ir.IrResponse;
+import io.github.intisy.ai.ir.TextBlock;
 import io.github.intisy.ai.shared.model.Account;
+import io.github.intisy.ai.shared.routing.HandleIrException;
 import io.github.intisy.ai.shared.routing.HandlerCtx;
 import io.github.intisy.ai.shared.spi.HttpClient;
 import io.github.intisy.ai.shared.spi.http.HttpRequest;
@@ -12,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,20 +26,24 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * End-to-end test of the Phase 3a orchestrator-driven serve path: drives the REAL {@link
- * AntigravityProvider#handle} with a scripted {@link HttpClient} injected into the backend via
- * {@link AntigravityBackend#forTest}/{@link AntigravityBackend#registerForTest} (see
- * {@code .superpowers/sdd/phase-3a-brief.md} "Testability"), so retry/rotation/terminal-error
- * materialization is exercised end-to-end without any real network call.
+ * End-to-end test of the orchestrator-driven serve path: drives the REAL IR-native {@link
+ * AntigravityProvider#handleIr} with a scripted {@link HttpClient} injected into the backend via
+ * {@link AntigravityBackend#forTest}/{@link AntigravityBackend#registerForTest}, so
+ * retry/rotation/terminal-error materialization is exercised end-to-end without any real network
+ * call. A SERVE decision returns an {@link IrResponse} (decoded from the buffered upstream Gemini
+ * SSE via {@link AntigravityGeminiSseBridge#bufferedGeminiSseToIr}); every error decision throws a
+ * {@link HandleIrException}. The legacy Anthropic-wire {@code handle()} path these scenarios used to
+ * drive was removed in T4 (canonical-IR migration); app-wire re-encoding is now the front-door's job.
  *
  * <p>Test models are deliberately split by lane/headerStyle: {@code gemini-*} ids are the
  * "gemini-cli" lane (a single endpoint per account attempt, {@link AntigravityHandleRouting
  * #endpointsFor}), used for the simple rotation/no-account scenarios; {@code antigravity-*} ids
  * are the "antigravity" lane (three endpoint fallbacks per account attempt), used for the
- * quota-reset terminal scenario, which also needs a non-"gemini-cli" lane so {@code handle}'s
+ * quota-reset terminal scenario, which also needs a non-"gemini-cli" lane so the orchestrator's
  * exhaustion branch reaches {@code soonestQuotaReset} instead of the gemini-cli-specific message.
  */
 class AntigravityServePathTest {
@@ -40,9 +51,9 @@ class AntigravityServePathTest {
     // ---- scenario 1: rotation on 429 --------------------------------------------------------------
 
     @Test
-    void rotatesToNextAccountOn429(@TempDir Path configDir) {
-        // Phase 4: SERVE now bridges a buffered Gemini SSE upstream to Anthropic SSE, so the
-        // scripted "ok" response must be real `data:`-line SSE text (see AntigravityGeminiSseBridge).
+    void rotatesToNextAccountOn429(@TempDir Path configDir) throws Exception {
+        // SERVE decodes the buffered Gemini SSE upstream into an IrResponse, so the scripted "ok"
+        // response must be real `data:`-line SSE text (see AntigravityGeminiSseBridge).
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueError(429, "quota exceeded for this request")
                 .enqueueOk(200, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi from B\"}]}}]}\n\n");
@@ -51,10 +62,9 @@ class AntigravityServePathTest {
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-a"));
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-b"));
 
-        HttpResponse response = handle(configDir, "gemini-test-model");
+        IrResponse response = serveIr(configDir, "gemini-test-model");
 
-        assertEquals(200, response.status);
-        assertTrue(response.body.contains("hi from B"));
+        assertTrue(irText(response).contains("hi from B"));
         assertEquals(2, http.requests.size());
         assertTrue(hasRateLimitEntry(backend, "acct-a"), "reportRateLimit must have been recorded for acct-a");
         assertFalse(hasRateLimitEntry(backend, "acct-b"), "acct-b must never have been rate-limited");
@@ -63,7 +73,7 @@ class AntigravityServePathTest {
     // ---- scenario 2: no account -> clear error ----------------------------------------------------
 
     @Test
-    void noAccountConfigured_materializesClearError(@TempDir Path configDir) {
+    void noAccountConfigured_throwsClearError(@TempDir Path configDir) {
         ScriptedHttpClient http = new ScriptedHttpClient();
         registerTestBackend(configDir, http);
         // No accounts seeded.
@@ -71,14 +81,16 @@ class AntigravityServePathTest {
         // A non-"gemini-cli" lane model: with an EMPTY pool, `acquire` returns null regardless of
         // strategy (Selection.selectIndex short-circuits on a zero-size pool even under HYBRID's
         // "soonest free" last resort), so this reaches the true SYNTHETIC 503 -- a gemini-* model
-        // would instead get reclassified into the GEMINI_CLI_EXHAUSTED terminal by handle()'s own
-        // lane check, which is a different (also-valid) decision covered by no test here.
-        HttpResponse response = handle(configDir, "antigravity-claude-sonnet-4-6");
+        // would instead get reclassified into the GEMINI_CLI_EXHAUSTED terminal by the orchestrator's
+        // own lane check, which is a different (also-valid) decision covered by no test here.
+        HandleIrException thrown = assertThrows(HandleIrException.class,
+                () -> new AntigravityProvider().handleIr(irRequest("antigravity-claude-sonnet-4-6"),
+                        ctx(configDir, "antigravity-claude-sonnet-4-6")));
 
-        assertEquals(503, response.status);
-        assertEquals("application/json", response.headers.get("content-type"));
-        assertTrue(response.body.contains("\"error\""));
-        assertTrue(response.body.contains("No available antigravity account"));
+        assertEquals(503, thrown.status);
+        assertEquals("application/json", thrown.headers.get("content-type"));
+        assertTrue(thrown.body.contains("\"error\""));
+        assertTrue(thrown.body.contains("No available antigravity account"));
         assertTrue(http.requests.isEmpty(), "no HTTP call should be attempted with no account");
     }
 
@@ -103,12 +115,16 @@ class AntigravityServePathTest {
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccountWithQuota("acct-a", resetTime));
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-b"));
 
-        HttpResponse response = handle(configDir, "antigravity-claude-sonnet-4-6");
+        HandleIrException thrown = assertThrows(HandleIrException.class,
+                () -> new AntigravityProvider().handleIr(irRequest("antigravity-claude-sonnet-4-6"),
+                        ctx(configDir, "antigravity-claude-sonnet-4-6")));
 
-        assertEquals(400, response.status);
-        assertTrue(response.headers.containsKey("Retry-After"), "Retry-After header must be present");
-        assertTrue(response.body.contains("Quota resets"));
-        assertTrue(response.body.contains("Try again later or pick another model"));
+        assertEquals(400, thrown.status);
+        assertTrue(thrown.headers.containsKey("Retry-After"), "Retry-After header must be present");
+        assertTrue(thrown.retryAfterMs != null && thrown.retryAfterMs > 0,
+                "the typed error must carry the account-pool's own reset hint");
+        assertTrue(thrown.body.contains("Quota resets"));
+        assertTrue(thrown.body.contains("Try again later or pick another model"));
         assertEquals(totalCalls, http.requests.size());
         assertTrue(hasRateLimitEntry(backend, "acct-a") || hasRateLimitEntry(backend, "acct-b"));
     }
@@ -116,26 +132,21 @@ class AntigravityServePathTest {
     // ---- scenario 4: happy path, single account -----------------------------------------------------
 
     @Test
-    void happyPath_singleAccount_returnsTransformedResponseBody(@TempDir Path configDir) {
-        // Phase 4: SERVE now bridges the buffered Gemini SSE upstream (cloudcode-pa's own
-        // "response"-wrapped `data:` line shape, per src/plugin/core/streaming/transformer.ts's own
-        // unwrap precedent) all the way to Anthropic-shaped SSE (AntigravityGeminiSseBridge),
-        // superseding 3b's "unwrap to plain Gemini JSON" transform.
+    void happyPath_singleAccount_returnsDecodedIrResponse(@TempDir Path configDir) throws Exception {
+        // SERVE decodes the buffered Gemini SSE upstream (cloudcode-pa's own "response"-wrapped
+        // `data:` line shape) into a neutral IrResponse (AntigravityGeminiSseBridge#bufferedGeminiSseToIr),
+        // unwrapping the envelope so the aggregated text is clean.
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
 
         AntigravityBackend backend = registerTestBackend(configDir, http);
         backend.accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-solo"));
 
-        HttpResponse response = handle(configDir, "antigravity-claude-sonnet-4-6");
+        IrResponse response = serveIr(configDir, "antigravity-claude-sonnet-4-6");
 
-        assertEquals(200, response.status);
-        assertEquals("text/event-stream", response.headers.get("content-type"));
-        assertTrue(response.body.contains("event: message_start"));
-        assertTrue(response.body.contains("\"type\":\"text_delta\",\"text\":\"ok\""));
-        assertTrue(response.body.contains("event: message_stop"));
-        assertFalse(response.body.trim().startsWith("["), "the cloudcode-pa array envelope must never leak through");
-        assertFalse(response.body.contains("\"response\""), "the .response wrapper key must be unwrapped, not leaked");
+        // The aggregated text is exactly "ok": the cloudcode-pa array envelope and the .response
+        // wrapper key are both unwrapped by the bridge, never leaked into the IR content.
+        assertEquals("ok", irText(response));
         assertEquals(1, http.requests.size());
         assertFalse(hasRateLimitEntry(backend, "acct-solo"), "a successful attempt must never rate-limit its account");
     }
@@ -148,17 +159,38 @@ class AntigravityServePathTest {
         return backend;
     }
 
-    private static HttpResponse handle(Path configDir, String model) {
-        HttpRequest request = new HttpRequest();
-        request.method = "POST";
-        request.url = "/v1/messages";
-        request.body = "{\"model\":\"" + model + "\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
+    /** Drives the IR-native serve path; a SERVE decision returns the decoded IrResponse. */
+    private static IrResponse serveIr(Path configDir, String model) throws Exception {
+        return new AntigravityProvider().handleIr(irRequest(model), ctx(configDir, model));
+    }
 
+    private static IrRequest irRequest(String model) {
+        IrRequest request = new IrRequest();
+        request.model = model;
+        request.stream = true;
+        request.messages = new ArrayList<>();
+        request.messages.add(new IrMessage("user", Arrays.<Block>asList(new TextBlock("hi"))));
+        return request;
+    }
+
+    private static HandlerCtx ctx(Path configDir, String model) {
         HandlerCtx ctx = new HandlerCtx();
         ctx.configDir = configDir.toString();
         ctx.model = model;
+        return ctx;
+    }
 
-        return new AntigravityProvider().handle(request, ctx);
+    /** Concatenates every {@link TextBlock} in an {@link IrResponse}'s content. */
+    private static String irText(IrResponse response) {
+        StringBuilder sb = new StringBuilder();
+        if (response != null && response.content != null) {
+            for (Block b : response.content) {
+                if (b instanceof TextBlock) {
+                    sb.append(((TextBlock) b).text);
+                }
+            }
+        }
+        return sb.toString();
     }
 
     /** Quiet account: {@code meta.managedProjectId} short-circuits project discovery (no loader call). */

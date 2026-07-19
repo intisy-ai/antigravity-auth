@@ -18,14 +18,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-E/E-D: {@code GET /v1/models} is RETIRED from {@link AntigravityProvider#handle} -- this now
- * tests the typed {@link AntigravityProvider#models} capability directly (backed by {@link
- * AntigravityModelsFetch#models}), plus a regression test proving {@code handle()} no longer
- * intercepts a models-shaped URL.
+ * SP-E/E-D: model discovery is served by the typed {@link AntigravityProvider#models} capability
+ * directly (backed by {@link AntigravityModelsFetch#models}), not by a URL branch. The legacy
+ * Anthropic-wire {@code handle()} override was removed in T4 (canonical-IR migration).
  */
 class AntigravityModelsFetchTest {
 
@@ -115,54 +113,10 @@ class AntigravityModelsFetchTest {
         assertEquals("{}", http.requests.get(0).body);
     }
 
-    @Test
-    void handle_getV1Models_noLongerIntercepted_fallsThroughToOrchestrator(@TempDir Path configDir) {
-        // SP-E/E-D retirement regression: a GET /v1/models request must NOT hit
-        // fetchAvailableModels via handle() any more -- it falls straight into the messages
-        // orchestrator path (which, for a GET with no matching upstream response queued, still
-        // proves the point: the request that WAS sent targets the messages endpoint, not
-        // fetchAvailableModels).
-        ScriptedHttpClient http = new ScriptedHttpClient()
-                .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
-        registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
-
-        HttpRequest request = new HttpRequest();
-        request.method = "GET";
-        request.url = "/v1/models";
-
-        HandlerCtx ctx = new HandlerCtx();
-        ctx.configDir = configDir.toString();
-        ctx.model = "antigravity-claude-sonnet-4-6";
-
-        new AntigravityProvider().handle(request, ctx);
-
-        assertEquals(1, http.requests.size());
-        assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
-                "GET /v1/models must no longer be specially intercepted by handle()");
-    }
-
-    @Test
-    void postMessages_regression_stillRoutesThroughOrchestrator_notInterceptedByModelsCapability(@TempDir Path configDir) {
-        ScriptedHttpClient http = new ScriptedHttpClient()
-                .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");
-        registerTestBackend(configDir, http).accountStore.add(AntigravityBackend.PROVIDER_ID, seededAccount("acct-x", "proj-x"));
-
-        HttpRequest request = new HttpRequest();
-        request.method = "POST";
-        request.url = "/v1/messages";
-        request.body = "{\"model\":\"antigravity-claude-sonnet-4-6\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}";
-
-        HandlerCtx ctx = new HandlerCtx();
-        ctx.configDir = configDir.toString();
-        ctx.model = "antigravity-claude-sonnet-4-6";
-
-        HttpResponse response = new AntigravityProvider().handle(request, ctx);
-
-        assertEquals(200, response.status);
-        assertEquals(1, http.requests.size());
-        assertFalse(http.requests.get(0).url.contains("fetchAvailableModels"),
-                "a POST /v1/messages request must still hit the messages orchestrator");
-    }
+    // T4 (canonical-IR migration): the two former handle()-driven regression tests (GET /v1/models
+    // no longer intercepted, POST /v1/messages still routed) are gone with the legacy Anthropic-wire
+    // handle() override itself. The typed models(ctx) capability tests above are the live coverage;
+    // the serve path is covered by AntigravityServePathTest via handleIr.
 
     // ---- shared fixtures (mirrors AntigravityServePathTest) ---------------------------------------
 
