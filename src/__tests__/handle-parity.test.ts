@@ -106,8 +106,7 @@ vi.mock("../plugin/versions.js", async (importOriginal) => {
   return { ...actual, refreshVersions: () => Promise.reject(new Error("noop-in-test")) };
 });
 
-import { runGeminiViaJava, handleIrViaJavaOrchestrator } from "../driver/javaHandle.js";
-import { HandleIrError } from "../../core-proxy/dist/index.js";
+import { runGeminiViaJava, handleIrViaJavaOrchestrator, HandleIrError } from "../driver/javaHandle.js";
 import { translators } from "../../core-ir/dist/index.js";
 
 const harness = H.harness;
