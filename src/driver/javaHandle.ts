@@ -38,7 +38,21 @@
 
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
-import { HandleIrError } from "../../core-proxy/dist/index.js";
+// Local, dependency-free copy of core-proxy's HandleIrError wire-error shape. The front-door
+// recognizes it by its stable `name` marker (duck-typed isHandleIrError), NOT by class identity --
+// esbuild bundles each side separately, so a shared class is never instanceof-compatible across the
+// boundary anyway. Defining it here removes a build-time dependency on core-proxy's dist (which this
+// provider never builds), so a clean checkout (CI / fresh deploy) bundles without it.
+export class HandleIrError extends Error {
+  constructor(init) {
+    super("handleIr transport error: " + init.status);
+    this.name = "HandleIrError";
+    this.status = init.status;
+    this.headers = init.headers;
+    this.body = init.body;
+    this.retryAfterMs = init.retryAfterMs;
+  }
+}
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
