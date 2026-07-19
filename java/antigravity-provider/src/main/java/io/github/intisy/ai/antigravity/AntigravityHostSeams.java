@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
  * JVM host implementations of the seven seams {@link AntigravityHandleOrchestrator} needs (Phase
  * 3a, see {@code .superpowers/sdd/phase-3a-brief.md}): adapts {@link AntigravityBackend}'s
  * core-auth {@code AccountManager}/{@code AccountStore} to {@code AccountOps}; moves the Phase 2
- * inline Anthropic-&gt;Gemini request build ({@code AntigravityFormatBridge} +
+ * inline Anthropic-&gt;Gemini request build (SP-2: {@code AntigravityIrBridge} +
  * {@code AntigravityRequestPrep}) into {@code RequestPreparer}; runs one attempt via {@code
  * HttpClient} as {@code AttemptExecutor}; and wires the model-cache/project-context seams. Every
  * class here is small and holds only what it needs (an {@link AntigravityBackend}, sometimes a
@@ -136,8 +136,8 @@ final class AntigravityHostSeams {
 
     /**
      * The Phase 2 inline request-build, moved verbatim: bridges the Anthropic body to Gemini
-     * ({@link AntigravityFormatBridge#anthropicToGemini}) then runs {@link
-     * AntigravityRequestPrep#prepare}. Stateless across requests -- every per-request value
+     * (SP-2: {@link AntigravityIrBridge#anthropicToGemini}, via core-ir's canonical IR) then runs
+     * {@link AntigravityRequestPrep#prepare}. Stateless across requests -- every per-request value
      * (url/bodyText/access/projectId/endpoint/headerStyle/account) arrives as a {@code prepare}
      * parameter; the model is recovered from the {@code /models/<id>} segment of {@code url} (the
      * orchestrator already rewrote it to the resolved candidate before calling this). Only the
@@ -158,9 +158,7 @@ final class AntigravityHostSeams {
                 String headerStyle, Map<String, Object> account) {
             try {
                 String model = modelFromUrl(url);
-                Map<String, Object> anthropicBody = AntigravityProvider.parseAnthropicBody(backend.json, bodyText);
-                Map<String, Object> geminiBody = AntigravityFormatBridge.anthropicToGemini(
-                        backend.json, anthropicBody, model, AntigravitySchemaCleaner::clean);
+                String geminiBodyJson = AntigravityIrBridge.anthropicToGemini(backend.json, bodyText, model);
 
                 AntigravityRequestPrep.Input input = new AntigravityRequestPrep.Input();
                 input.url = url;
@@ -172,7 +170,7 @@ final class AntigravityHostSeams {
                     }
                 }
                 input.headers.putIfAbsent("content-type", "application/json");
-                input.body = backend.json.stringify(geminiBody);
+                input.body = geminiBodyJson;
                 input.accessToken = access;
                 input.projectId = projectId;
                 input.endpointOverride = endpoint;

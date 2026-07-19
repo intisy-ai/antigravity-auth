@@ -3,9 +3,10 @@ package io.github.intisy.ai.js;
 import io.github.intisy.ai.antigravity.AntigravityAuth;
 import io.github.intisy.ai.antigravity.AntigravityCatalog;
 import io.github.intisy.ai.antigravity.AntigravityFingerprint;
-import io.github.intisy.ai.antigravity.AntigravityFormatBridge;
+import io.github.intisy.ai.antigravity.AntigravityGeminiSseBridge;
 import io.github.intisy.ai.antigravity.AntigravityHandleOrchestrator;
 import io.github.intisy.ai.antigravity.AntigravityHandleRouting;
+import io.github.intisy.ai.antigravity.AntigravityIrBridge;
 import io.github.intisy.ai.antigravity.AntigravityProjectContext;
 import io.github.intisy.ai.antigravity.AntigravityRequestKeys;
 import io.github.intisy.ai.antigravity.AntigravityRequestPrep;
@@ -16,7 +17,6 @@ import io.github.intisy.ai.antigravity.AntigravityQuotaParser;
 import io.github.intisy.ai.antigravity.AntigravityResponseParse;
 import io.github.intisy.ai.antigravity.AntigravityResponseTransform;
 import io.github.intisy.ai.antigravity.AntigravitySchemaCleaner;
-import io.github.intisy.ai.antigravity.AntigravityStreamMapper;
 import io.github.intisy.ai.antigravity.AntigravityStreamTransform;
 import io.github.intisy.ai.antigravity.AntigravityThinkingBlocks;
 import io.github.intisy.ai.antigravity.AntigravityThinkingConfig;
@@ -451,57 +451,25 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- AntigravityFormatBridge (T7d) ------------------------------------------------------------
+    // ---- AntigravityIrBridge (SP-2: core-ir) ------------------------------------------------------
 
-    /** Exercises {@link AntigravityFormatBridge#anthropicToGemini} (real cleaner injected) via JsonCodec. */
+    /** Exercises {@link AntigravityIrBridge#anthropicToGemini} (decode->resolve budget->encode via core-ir). */
     @JSExport
     public static String anthropicToGemini(String bodyJson, String model) {
         JsonCodec json = new SimpleJsonCodec();
-        return json.stringify(AntigravityFormatBridge.anthropicToGemini(json, asMap(json.parse(bodyJson)), model, REAL_CLEANER));
+        return AntigravityIrBridge.anthropicToGemini(json, bodyJson, model);
     }
 
-    /** Exercises {@link AntigravityFormatBridge#supportsThinking}. */
+    /** Exercises {@link AntigravityIrBridge#supportsThinking}. */
     @JSExport
     public static boolean supportsThinking(String model) {
-        return AntigravityFormatBridge.supportsThinking(model);
+        return AntigravityIrBridge.supportsThinking(model);
     }
 
-    /** Exercises {@link AntigravityFormatBridge#isAnthropicMessages}. */
+    /** Exercises {@link AntigravityIrBridge#isAnthropicMessages}. */
     @JSExport
     public static boolean isAnthropicMessages(String url) {
-        return AntigravityFormatBridge.isAnthropicMessages(url);
-    }
-
-    // ---- AntigravityStreamMapper (T7d) ------------------------------------------------------------
-
-    // Deterministic id source for the transpilability proof (production ids are minted in the TS shell).
-    private static final AntigravityStreamMapper.IdGenerator FIXED_IDS = new AntigravityStreamMapper.IdGenerator() {
-        @Override
-        public String newMessageId() {
-            return "msg_js";
-        }
-
-        @Override
-        public String newToolId() {
-            return "toolu_js";
-        }
-    };
-
-    /** Exercises the {@link AntigravityStreamMapper} state machine: feed each parsed object, then finish. */
-    @JSExport
-    @SuppressWarnings("unchecked")
-    public static String geminiToAnthropicStream(String model, String objectsJson) {
-        JsonCodec json = new SimpleJsonCodec();
-        AntigravityStreamMapper mapper = new AntigravityStreamMapper(json, FIXED_IDS, model);
-        StringBuilder sb = new StringBuilder();
-        Object parsed = objectsJson != null ? json.parse(objectsJson) : null;
-        if (parsed instanceof List) {
-            for (Object obj : (List<Object>) parsed) {
-                for (String ev : mapper.handle(obj)) sb.append(ev);
-            }
-        }
-        for (String ev : mapper.finish()) sb.append(ev);
-        return sb.toString();
+        return AntigravityIrBridge.isAnthropicMessages(url);
     }
 
     // ---- AntigravityStreamTransform (T7d) ---------------------------------------------------------
@@ -1271,18 +1239,25 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    /** Stateful JS handle over one {@link AntigravityStreamMapper} instance -- {@link #newStreamMapper}'s return. */
+    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance -- {@link #newStreamMapper}'s return. */
     public interface JsStreamMapperHandle extends JSObject {
-        JSArray<JSString> handle(JSString objJson);
+        /** SP-2: takes a raw SSE text CHUNK (not a pre-parsed object) -- the bridge does its own line-buffering now. */
+        JSArray<JSString> handle(JSString chunk);
 
         JSArray<JSString> finish();
     }
 
-    /** Factory for a stateful stream mapper: ONE captured {@link AntigravityStreamMapper}, driven by the TS {@code TransformStream} (Task 3). */
+    /**
+     * Factory for a stateful stream mapper: ONE captured {@link AntigravityGeminiSseBridge}, driven
+     * by the TS {@code TransformStream} (Task 3; SP-2 replaced the underlying {@code
+     * AntigravityStreamMapper} with core-ir's {@code GeminiTranslator}/{@code AnthropicTranslator}
+     * stream decoder/encoder -- the bridge itself now owns the SSE line-buffering, so {@code
+     * javaStream.ts} no longer needs its own {@code data:} line-parsing loop).
+     */
     @JSExport
     public static JsStreamMapperHandle newStreamMapper(String model, JsIdsFns jsIds) {
         JsonCodec json = new SimpleJsonCodec();
-        AntigravityStreamMapper.IdGenerator ids = new AntigravityStreamMapper.IdGenerator() {
+        AntigravityGeminiSseBridge.IdGenerator ids = new AntigravityGeminiSseBridge.IdGenerator() {
             @Override
             public String newMessageId() {
                 JSString s = jsIds.newMessageId();
@@ -1295,17 +1270,16 @@ public final class AntigravityProviderJs {
                 return s == null ? "" : s.stringValue();
             }
         };
-        AntigravityStreamMapper mapper = new AntigravityStreamMapper(json, ids, model);
+        AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(json, ids, model);
         return new JsStreamMapperHandle() {
             @Override
-            public JSArray<JSString> handle(JSString objJson) {
-                Object parsed = objJson != null ? json.parse(objJson.stringValue()) : null;
-                return toJsStringArray(mapper.handle(parsed));
+            public JSArray<JSString> handle(JSString chunk) {
+                return toJsStringArray(bridge.handle(chunk != null ? chunk.stringValue() : ""));
             }
 
             @Override
             public JSArray<JSString> finish() {
-                return toJsStringArray(mapper.finish());
+                return toJsStringArray(bridge.finish());
             }
         };
     }

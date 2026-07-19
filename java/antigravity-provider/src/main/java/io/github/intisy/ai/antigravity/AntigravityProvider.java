@@ -128,7 +128,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
 
         AntigravityHandleOrchestrator.RequestInputs in = new AntigravityHandleOrchestrator.RequestInputs();
         // Phase 4: streamGenerateContent (SSE), not generateContent -- SERVE now bridges the
-        // buffered Gemini SSE body to Anthropic (AntigravityAnthropicBridge). The TS bridge
+        // buffered Gemini SSE body to Anthropic (AntigravityGeminiSseBridge, SP-2). The TS bridge
         // (javaHandle.ts:358) targets generativelanguage.googleapis.com, but that host needs an API
         // key, not the OAuth account access tokens this provider's AccountOps supplies -- keep the
         // existing cloudcode-pa v1internal host (already used by every other endpoint here, see
@@ -215,14 +215,15 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
     private static HttpResponse materialize(AntigravityHandleOrchestrator.HandleDecision d, JsonCodec json) {
         switch (d.kind) {
             case SERVE:
-                // Phase 4: the example-server speaks Anthropic /v1/messages, so SERVE now bridges
-                // the buffered Gemini SSE upstream to Anthropic-shaped SSE (see
-                // AntigravityAnthropicBridge). AntigravityResponseTransform stays in the tree
-                // untouched -- it is the Gemini-format serve building block a future native-Gemini
-                // consumer may still want, just no longer what SERVE itself returns.
+                // Phase 4 / SP-2: the example-server speaks Anthropic /v1/messages, so SERVE bridges
+                // the buffered Gemini SSE upstream to Anthropic-shaped SSE via core-ir's translators
+                // (AntigravityGeminiSseBridge, replacing the deleted AntigravityAnthropicBridge).
+                // AntigravityResponseTransform stays in the tree untouched -- it is the Gemini-format
+                // serve building block a future native-Gemini consumer may still want, just no
+                // longer what SERVE itself returns.
                 if (d.attemptRef instanceof HttpResponse) {
                     String requestedModel = d.params != null ? d.params.requestedModel : null;
-                    return AntigravityAnthropicBridge.geminiSseToAnthropic(json, requestedModel, (HttpResponse) d.attemptRef);
+                    return AntigravityGeminiSseBridge.bufferedGeminiSseToAnthropic(json, requestedModel, (HttpResponse) d.attemptRef);
                 }
                 return errorResponse(502, "api_error", "antigravity upstream response missing");
             case SERVE_RAW:
@@ -234,8 +235,8 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
             case TERMINAL_ERROR:
                 return materializeTerminal(d.terminal);
             case BRIDGE_STREAM:
-                // Phase 4 shipped the Gemini->Anthropic SSE bridge (AntigravityAnthropicBridge,
-                // wired into the SERVE case above); the orchestrator no longer routes here in
+                // Phase 4 shipped the Gemini->Anthropic SSE bridge (AntigravityGeminiSseBridge since
+                // SP-2, wired into the SERVE case above); the orchestrator no longer routes here in
                 // practice -- this arm stays as unreachable-defensive handling, matching SERVE_RAW's
                 // verbatim-passthrough contract if it ever is reached.
                 return upstreamResponseOrError(d.attemptRef);
@@ -331,19 +332,6 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
             return models.get(0).id;
         }
         return DEFAULT_MODEL_FALLBACK;
-    }
-
-    @SuppressWarnings("unchecked")
-    static Map<String, Object> parseAnthropicBody(io.github.intisy.ai.shared.spi.JsonCodec json, String body) {
-        if (body == null || body.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        try {
-            Object parsed = json.parse(body);
-            return parsed instanceof Map ? (Map<String, Object>) parsed : new LinkedHashMap<>();
-        } catch (RuntimeException e) {
-            return new LinkedHashMap<>();
-        }
     }
 
     @SuppressWarnings("unchecked")

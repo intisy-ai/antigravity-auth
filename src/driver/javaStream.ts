@@ -1,9 +1,10 @@
 // @ts-nocheck
 // Task 3 (TeaVM de-dup) — thin host TransformStream shell driving the Java-side stateful stream
-// mapper (`newStreamMapper` / AntigravityStreamMapper), the port of `geminiToAnthropicStream`'s SSE
-// state machine (anthropic-bridge.ts:102-200). This shell owns exactly what stays host-side per the
-// plan: the TextEncoder/TextDecoder + line-buffering loop and the `data:` line parsing (identical to
-// the TS closure it replaces) — every event-building decision runs in Java.
+// mapper (`newStreamMapper`). SP-2: the mapper is now `AntigravityGeminiSseBridge`, built on
+// core-ir's GeminiTranslator stream decoder + AnthropicTranslator stream encoder instead of the
+// deleted bespoke `AntigravityStreamMapper` -- the bridge owns its OWN `data:` line-buffering/
+// parsing now (core-ir's StreamDecoder contract takes raw text chunks), so this shell no longer
+// does that itself; it only decodes bytes to text and re-encodes the returned SSE frame strings.
 
 // Real Date.now/Math.random id minting (anthropic-bridge.ts:112/159 exactly) — injected into
 // AntigravityStreamMapper via JsIdsFns so Java never bakes entropy (CRITICAL-1 lesson).
@@ -16,36 +17,18 @@ export const jsIds = {
   },
 };
 
-// Drives ONE `newStreamMapper(model, jsIds)` instance across the life of a stream — mirrors the TS
-// TransformStream's transform/flush split exactly (anthropic-bridge.ts:181-200).
+// Drives ONE `newStreamMapper(model, jsIds)` instance across the life of a stream. SP-2: the Java
+// bridge's `handle` now takes a raw decoded text CHUNK (partial or complete SSE lines) and does its
+// own `data:` line-buffering/JSON-parsing internally (core-ir's StreamDecoder contract), so this
+// shell only decodes bytes to text and forwards them — no line/JSON handling left here.
 export function makeAnthropicStream(newStreamMapperFn, model, ids) {
   const mapper = newStreamMapperFn(model, ids);
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  let buf = "";
-
-  function drain(text, ctrl) {
-    buf += text;
-    let nl;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line || line.charAt(0) === ":" || line.indexOf("data:") !== 0) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      let obj;
-      try {
-        obj = JSON.parse(payload);
-      } catch {
-        continue; // skip partial/non-JSON, matching the TS catch(e){}
-      }
-      for (const ev of mapper.handle(JSON.stringify(obj))) ctrl.enqueue(enc.encode(ev));
-    }
-  }
 
   return new TransformStream({
     transform(chunk, ctrl) {
-      drain(dec.decode(chunk, { stream: true }), ctrl);
+      for (const ev of mapper.handle(dec.decode(chunk, { stream: true }))) ctrl.enqueue(enc.encode(ev));
     },
     flush(ctrl) {
       for (const ev of mapper.finish()) ctrl.enqueue(enc.encode(ev));

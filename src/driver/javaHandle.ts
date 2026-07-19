@@ -23,9 +23,13 @@
 // `prepareAntigravityRequestProd` (see `prepareViaJava` below) instead of the TS
 // `prepareAntigravityRequest`, injecting real host seams (sha256 hasher, the disk-backed signature
 // cache lookup, a `defaultSignatureStore` adapter, real Math.random/crypto.randomUUID). The
-// Anthropic bridge (`handleAnthropicMessagesViaJava`) now calls the Java `anthropicToGemini` export
+// Anthropic bridge (`handleAnthropicMessagesViaJava`) calls the Java `anthropicToGemini` export
 // and pipes through `javaStream.ts`'s `makeAnthropicStream` (Java `newStreamMapper`) instead of the
-// TS `anthropicToGemini`/`geminiToAnthropicStream`.
+// old TS `anthropicToGemini`/`geminiToAnthropicStream`.
+// SP-2: the Java side of that bridge (`AntigravityFormatBridge`/`AntigravityStreamMapper`) has been
+// replaced by core-ir's canonical IR + AnthropicTranslator/GeminiTranslator (`AntigravityIrBridge`/
+// `AntigravityGeminiSseBridge`) -- this file's own call sites (`anthropicToGemini`, `newStreamMapper`)
+// are unchanged, since the TeaVM export surface kept the same names/shapes.
 // Task 3c: closes the 3 Task-3 gaps. (1) `prepareAntigravityRequestProd` now takes `endpointOverride`
 // directly (the `applyEndpointOverride` URL-substitution workaround is gone). (2)
 // `claudeToolHardening`/`claudePromptAutoCaching` are read from the SAME `loadConfig()` the TS path
@@ -40,7 +44,6 @@ import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
-import { isAnthropicMessages } from "../plugin/anthropic-bridge.js";
 import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
 import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
@@ -114,6 +117,14 @@ export async function resolveProjectIdViaJava(manager, account, access, log, pro
     if ("managedProjectId" in meta) a.meta.managedProjectId = meta.managedProjectId;
   });
   return result.projectId;
+}
+
+// True when the inbound request is Claude Code's Anthropic Messages API (formerly plugin/
+// anthropic-bridge.ts's isAnthropicMessages, deleted in SP-2 along with the rest of the bespoke
+// Anthropic<->Gemini bridge -- this is pure request-routing, not format translation, so it stays
+// TS rather than round-tripping through Java for one substring check).
+function isAnthropicMessages(url) {
+  return typeof url === "string" && url.indexOf("/v1/messages") !== -1;
 }
 
 // index.ts:82 — the antigravity rate-limit statuses.

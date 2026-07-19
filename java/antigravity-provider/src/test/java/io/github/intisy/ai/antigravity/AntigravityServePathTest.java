@@ -42,7 +42,7 @@ class AntigravityServePathTest {
     @Test
     void rotatesToNextAccountOn429(@TempDir Path configDir) {
         // Phase 4: SERVE now bridges a buffered Gemini SSE upstream to Anthropic SSE, so the
-        // scripted "ok" response must be real `data:`-line SSE text (see AntigravityAnthropicBridge).
+        // scripted "ok" response must be real `data:`-line SSE text (see AntigravityGeminiSseBridge).
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueError(429, "quota exceeded for this request")
                 .enqueueOk(200, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi from B\"}]}}]}\n\n");
@@ -119,7 +119,7 @@ class AntigravityServePathTest {
     void happyPath_singleAccount_returnsTransformedResponseBody(@TempDir Path configDir) {
         // Phase 4: SERVE now bridges the buffered Gemini SSE upstream (cloudcode-pa's own
         // "response"-wrapped `data:` line shape, per src/plugin/core/streaming/transformer.ts's own
-        // unwrap precedent) all the way to Anthropic-shaped SSE (AntigravityAnthropicBridge),
+        // unwrap precedent) all the way to Anthropic-shaped SSE (AntigravityGeminiSseBridge),
         // superseding 3b's "unwrap to plain Gemini JSON" transform.
         ScriptedHttpClient http = new ScriptedHttpClient()
                 .enqueueOk(200, "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}}\n\n");

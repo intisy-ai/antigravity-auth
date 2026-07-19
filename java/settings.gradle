@@ -21,6 +21,14 @@ project(":routing").projectDir = file("../core-proxy/java/routing")
 include ":teavm"
 project(":teavm").projectDir = file("../core-proxy/java/teavm")
 
+// :ir - core-ir's canonical IR types + vendor translators (AnthropicTranslator/GeminiTranslator),
+// aliased in exactly like :routing/:teavm above (SP-2). core-ir is a DIRECT submodule of
+// antigravity-auth (../core-ir from here, i.e. antigravity-auth/core-ir), not nested inside another
+// submodule. Replaces antigravity-provider's own bespoke Anthropic<->Gemini bridge (see
+// AntigravityIrBridge).
+include ":ir"
+project(":ir").projectDir = file("../core-ir/java/ir")
+
 // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/AntigravityCatalog/
 // AntigravityQuotaParser (T7a). Bucket B (handle/fetch/quota-refresh/project-context via
 // HttpClient/Store) and Bucket C (login/TUI/opencode-merge/streaming) stay TS -- out of scope for
