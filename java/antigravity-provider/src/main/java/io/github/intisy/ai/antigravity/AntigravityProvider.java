@@ -1,5 +1,7 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.ir.IrRequest;
+import io.github.intisy.ai.ir.IrResponse;
 import io.github.intisy.ai.shared.routing.AccountQuota;
 import io.github.intisy.ai.shared.routing.AuthorizeInfo;
 import io.github.intisy.ai.shared.routing.ConfigSchema;
@@ -150,6 +152,78 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         }
     }
 
+    /**
+     * SP-3 T2: the IR-native alternative to {@link #handle} -- receives an already app-wire-decoded
+     * {@link IrRequest} (the Router's own {@code AnthropicTranslator.decodeRequest}) and runs the
+     * SAME decision loop (account rotation, retry, project-context discovery, terminal-error
+     * selection -- all in {@link AntigravityHandleOrchestrator}, untouched) via {@link
+     * AntigravityHostSeams.HostIrRequestPreparer}, which applies antigravity's thinking-budget
+     * resolution + the neutral IR-&gt;Gemini encode directly on {@code request} instead of decoding it
+     * from Anthropic wire text a second time. On a SERVE decision the buffered upstream Gemini SSE is
+     * decoded back into a single {@link IrResponse} via {@link
+     * AntigravityGeminiSseBridge#bufferedGeminiSseToIr} -- no Anthropic re-encoding happens here, that
+     * is now the caller's job. Every non-SERVE decision (rate-limited exhaustion, no-account,
+     * transport failure, ...) has no IR-shaped representation to return, so it is thrown instead
+     * (matching this SPI's contract: {@code handleIr} either returns a served answer or throws).
+     */
+    @Override
+    public IrResponse handleIr(IrRequest request, HandlerCtx ctx) throws Exception {
+        String model = resolveModel(ctx);
+        AntigravityBackend backend = AntigravityBackend.forCtx(ctx);
+        Logger log = loggerFor(ctx);
+
+        // Not memoized (unlike orchestratorFor's per-backend ORCHESTRATORS map): the preparer here
+        // closes over THIS call's `request`, which is per-call state, not per-backend state.
+        AntigravityHandleOrchestrator orchestrator = buildOrchestrator(backend, log,
+                new AntigravityHostSeams.HostIrRequestPreparer(backend, log, request));
+
+        AntigravityHandleOrchestrator.RequestInputs in = new AntigravityHandleOrchestrator.RequestInputs();
+        in.url = "https://cloudcode-pa.googleapis.com/v1internal/models/" + model + ":streamGenerateContent";
+        in.method = "POST";
+        in.headers = new LinkedHashMap<>();
+        in.headers.put("content-type", "application/json");
+        // No wire body to inspect here (the caller already decoded it into `request`) -- harmless:
+        // modelFromRequest/resolveEffortVariant both read bodyText for signals (Gemini-native
+        // generationConfig.thinkingConfig / opencode providerOptions) that never exist in the
+        // Anthropic wire body handle() itself passes for this same call either, so this changes
+        // nothing observable versus the legacy path.
+        in.bodyText = "{}";
+        in.ctxModel = model;
+        in.autoCandidates = Collections.emptyList(); // TODO Phase 4: real Auto leaderboard candidates
+        in.log = log;
+
+        AntigravityHandleOrchestrator.HandleDecision decision = orchestrator.handle(in);
+        switch (decision.kind) {
+            case SERVE:
+                if (decision.attemptRef instanceof HttpResponse) {
+                    String requestedModel = decision.params != null ? decision.params.requestedModel : model;
+                    return AntigravityGeminiSseBridge.bufferedGeminiSseToIr(
+                            backend.json, requestedModel, (HttpResponse) decision.attemptRef);
+                }
+                throw new IllegalStateException("antigravity upstream response missing");
+            case SERVE_RAW:
+                throw new RuntimeException(upstreamErrorMessage(backend.json, decision));
+            case SYNTHETIC:
+                throw new RuntimeException(extractGeminiErrorMessage(backend.json, decision.body));
+            case TERMINAL_ERROR:
+                throw new RuntimeException(terminalErrorMessage(decision.terminal));
+            case BRIDGE_STREAM:
+                // See materialize's BRIDGE_STREAM comment -- unreachable in practice, defensive only.
+                throw new RuntimeException(upstreamErrorMessage(backend.json, decision));
+            default:
+                throw new RuntimeException("unrecognized antigravity decision: " + decision.kind);
+        }
+    }
+
+    private static String upstreamErrorMessage(JsonCodec json, AntigravityHandleOrchestrator.HandleDecision decision) {
+        if (decision.attemptRef instanceof HttpResponse) {
+            HttpResponse resp = (HttpResponse) decision.attemptRef;
+            return "antigravity upstream error " + resp.status
+                    + (resp.body != null && !resp.body.isEmpty() ? ": " + extractGeminiErrorMessage(json, resp.body) : "");
+        }
+        return "antigravity upstream response missing";
+    }
+
     // ---- ModelCatalogProvider / QuotaProvider: mechanical re-expose of the retired /v1/models
     // and /v1/quota JSON builders as typed POJOs -- AntigravityModelsFetch/AntigravityQuotaFetch
     // hold the only copy of the fetch/aggregate logic; these are thin conversions. ----------------
@@ -199,15 +273,26 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
      * (the {@code Logger} baked into {@code HostRequestPreparer} is fixed at first construction).
      */
     private static AntigravityHandleOrchestrator orchestratorFor(AntigravityBackend backend, Logger log) {
-        return ORCHESTRATORS.computeIfAbsent(backend, b -> new AntigravityHandleOrchestrator(
-                b.json, b.clock, b.random, ID_GENERATOR,
-                new AntigravityHostSeams.HostAccountOps(b),
-                new AntigravityHostSeams.HostRequestPreparer(b, log),
-                new AntigravityHostSeams.HostAttemptExecutor(b),
-                new AntigravityHostSeams.HostModelCacheLookup(b),
-                new AntigravityHostSeams.HostProjectLoader(b),
-                new AntigravityHostSeams.HostProjectOnboarder(b),
-                new AntigravityHostSeams.HostPlatform()));
+        return ORCHESTRATORS.computeIfAbsent(backend,
+                b -> buildOrchestrator(b, log, new AntigravityHostSeams.HostRequestPreparer(b, log)));
+    }
+
+    /**
+     * Wires the six backend-scoped host seams (every seam but the {@link
+     * AntigravityHandleOrchestrator.RequestPreparer}, which differs between the legacy Anthropic-wire
+     * path and the IR-native path -- see {@link #handleIr}) around a caller-supplied preparer.
+     */
+    private static AntigravityHandleOrchestrator buildOrchestrator(AntigravityBackend backend, Logger log,
+            AntigravityHandleOrchestrator.RequestPreparer preparer) {
+        return new AntigravityHandleOrchestrator(
+                backend.json, backend.clock, backend.random, ID_GENERATOR,
+                new AntigravityHostSeams.HostAccountOps(backend),
+                preparer,
+                new AntigravityHostSeams.HostAttemptExecutor(backend),
+                new AntigravityHostSeams.HostModelCacheLookup(backend),
+                new AntigravityHostSeams.HostProjectLoader(backend),
+                new AntigravityHostSeams.HostProjectOnboarder(backend),
+                new AntigravityHostSeams.HostPlatform());
     }
 
     // ---- HandleDecision materialization (brief step 6) -------------------------------------------
@@ -256,9 +341,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
     // AntigravityHandleOrchestrator.TerminalError): GEMINI_CLI_EXHAUSTED carries its full message
     // as messagePrefix; ANTIGRAVITY_QUOTA_RESET splits the message around the host-formatted date.
     private static HttpResponse materializeTerminal(AntigravityHandleOrchestrator.TerminalError terminal) {
-        String message = terminal.kind == AntigravityHandleOrchestrator.TerminalError.Kind.ANTIGRAVITY_QUOTA_RESET
-                ? terminal.messagePrefix + formatResetInstant(terminal.resetEpochMs) + terminal.messageSuffix
-                : terminal.messagePrefix;
+        String message = terminalErrorMessage(terminal);
 
         HttpResponse response = new HttpResponse();
         response.status = terminal.status > 0 ? terminal.status : 400;
@@ -270,6 +353,12 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         response.body = "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":"
                 + quote(message) + "}}";
         return response;
+    }
+
+    private static String terminalErrorMessage(AntigravityHandleOrchestrator.TerminalError terminal) {
+        return terminal.kind == AntigravityHandleOrchestrator.TerminalError.Kind.ANTIGRAVITY_QUOTA_RESET
+                ? terminal.messagePrefix + formatResetInstant(terminal.resetEpochMs) + terminal.messageSuffix
+                : terminal.messagePrefix;
     }
 
     // Phase 4 (handleAnthropicMessagesViaJava L361-383): a SYNTHETIC decision from the Gemini-path

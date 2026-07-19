@@ -1,5 +1,11 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.ir.Block;
+import io.github.intisy.ai.ir.IrResponse;
+import io.github.intisy.ai.ir.IrStopReason;
+import io.github.intisy.ai.ir.TextBlock;
+import io.github.intisy.ai.ir.ThinkingBlock;
+import io.github.intisy.ai.ir.ToolUseBlock;
 import io.github.intisy.ai.ir.stream.ContentBlockKind;
 import io.github.intisy.ai.ir.stream.ContentBlockStartEvent;
 import io.github.intisy.ai.ir.stream.ContentBlockStopEvent;
@@ -7,6 +13,10 @@ import io.github.intisy.ai.ir.stream.IrStreamEvent;
 import io.github.intisy.ai.ir.stream.MessageDeltaEvent;
 import io.github.intisy.ai.ir.stream.MessageStartEvent;
 import io.github.intisy.ai.ir.stream.MessageStopEvent;
+import io.github.intisy.ai.ir.stream.TextDeltaEvent;
+import io.github.intisy.ai.ir.stream.ThinkingDeltaEvent;
+import io.github.intisy.ai.ir.stream.ThinkingSignatureEvent;
+import io.github.intisy.ai.ir.stream.ToolInputDeltaEvent;
 import io.github.intisy.ai.ir.spi.StreamDecoder;
 import io.github.intisy.ai.ir.spi.StreamEncoder;
 import io.github.intisy.ai.ir.translators.anthropic.AnthropicTranslator;
@@ -15,6 +25,7 @@ import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,26 +107,48 @@ public final class AntigravityGeminiSseBridge {
      */
     public List<String> finish() {
         List<String> out = new ArrayList<>();
-        if (!sawMessageStart) {
-            MessageStartEvent mse = new MessageStartEvent();
-            mse.role = "assistant";
-            out.addAll(encodeAll(Collections.<IrStreamEvent>singletonList(mse)));
-        }
-        if (openBlockIndex != null) {
-            ContentBlockStopEvent stop = new ContentBlockStopEvent();
-            stop.index = openBlockIndex;
-            out.addAll(encodeAll(Collections.<IrStreamEvent>singletonList(stop)));
-        }
-        if (!sawMessageStop) {
-            MessageDeltaEvent mde = new MessageDeltaEvent();
-            mde.stopReason = io.github.intisy.ai.ir.IrStopReason.END_TURN;
-            out.addAll(encodeAll(java.util.Arrays.<IrStreamEvent>asList(mde, new MessageStopEvent())));
+        for (IrStreamEvent ev : finishIrEvents()) {
+            out.add(encoder.encode(ev));
         }
         return out;
     }
 
-    private List<String> encodeAll(List<IrStreamEvent> events) {
-        List<String> out = new ArrayList<>();
+    /**
+     * SP-3 T2: the enrichment half of {@link #encodeAll} without the Anthropic encode step -- feeds
+     * one raw Gemini SSE text chunk through the decoder and returns the SAME id-minted/model-
+     * overwritten {@link IrStreamEvent}s {@link #handle} would encode, for a caller that wants the
+     * neutral IR event stream itself (the IR-native {@code handleIr} boundary) instead of Anthropic
+     * wire text.
+     */
+    public List<IrStreamEvent> handleIrEvents(String chunk) {
+        return enrichAll(decoder.decode(chunk));
+    }
+
+    /** {@link #finish()} without the Anthropic encode step -- see {@link #handleIrEvents}. */
+    public List<IrStreamEvent> finishIrEvents() {
+        List<IrStreamEvent> out = new ArrayList<>();
+        if (!sawMessageStart) {
+            MessageStartEvent mse = new MessageStartEvent();
+            mse.role = "assistant";
+            out.addAll(enrichAll(Collections.<IrStreamEvent>singletonList(mse)));
+        }
+        if (openBlockIndex != null) {
+            ContentBlockStopEvent stop = new ContentBlockStopEvent();
+            stop.index = openBlockIndex;
+            out.addAll(enrichAll(Collections.<IrStreamEvent>singletonList(stop)));
+        }
+        if (!sawMessageStop) {
+            MessageDeltaEvent mde = new MessageDeltaEvent();
+            mde.stopReason = IrStopReason.END_TURN;
+            out.addAll(enrichAll(Arrays.<IrStreamEvent>asList(mde, new MessageStopEvent())));
+        }
+        return out;
+    }
+
+    // ---- shared state-tracking/id-minting enrichment (both handle()/finish() and the IR-native --
+    // handleIrEvents()/finishIrEvents() build on this SAME pass; only the wire-encode step differs) --
+
+    private List<IrStreamEvent> enrichAll(List<IrStreamEvent> events) {
         for (IrStreamEvent ev : events) {
             if (ev instanceof MessageStartEvent) {
                 sawMessageStart = true;
@@ -138,6 +171,13 @@ public final class AntigravityGeminiSseBridge {
             } else if (ev instanceof MessageStopEvent) {
                 sawMessageStop = true;
             }
+        }
+        return events;
+    }
+
+    private List<String> encodeAll(List<IrStreamEvent> events) {
+        List<String> out = new ArrayList<>();
+        for (IrStreamEvent ev : enrichAll(events)) {
             out.add(encoder.encode(ev));
         }
         return out;
@@ -200,6 +240,132 @@ public final class AntigravityGeminiSseBridge {
         } catch (RuntimeException e) {
             return upstreamGeminiSse;
         }
+    }
+
+    /**
+     * SP-3 T2: {@code handleIr}'s response-side counterpart to {@link #bufferedGeminiSseToAnthropic}
+     * -- decodes the buffered upstream Gemini SSE body into a single, aggregated {@link IrResponse}
+     * (no Anthropic re-encoding), for a caller working at the neutral IR boundary. Reuses the SAME
+     * unwrap + id-minting policy as the Anthropic path so {@code handle()}'s thin wrapper around
+     * {@code handleIr} stays byte-identical to the pre-extraction behavior. Unlike the Anthropic
+     * variant (which falls back to the raw upstream response on any decode trouble, since a caller
+     * there always has a wire-shaped fallback to serve), this throws -- {@code handleIr} has no wire
+     * response to fall back to, so a decode failure must surface as a thrown error.
+     */
+    public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
+                                                    HttpResponse upstreamGeminiSse) {
+        return bufferedGeminiSseToIr(routingJson, requestedModel, upstreamGeminiSse, RANDOM_IDS);
+    }
+
+    public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
+                                                    HttpResponse upstreamGeminiSse, IdGenerator ids) {
+        if (upstreamGeminiSse == null) {
+            throw new IllegalStateException("antigravity upstream response missing");
+        }
+        String unwrapped = unwrapCloudcodeResponseEnvelope(routingJson, upstreamGeminiSse.body);
+        AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(routingJson, ids, requestedModel);
+        List<IrStreamEvent> events = new ArrayList<>();
+        events.addAll(bridge.handleIrEvents(unwrapped));
+        events.addAll(bridge.finishIrEvents());
+
+        boolean upstreamHadContent = upstreamGeminiSse.body != null && !upstreamGeminiSse.body.trim().isEmpty();
+        boolean producedContent = false;
+        for (IrStreamEvent ev : events) {
+            if (ev instanceof ContentBlockStartEvent) {
+                producedContent = true;
+                break;
+            }
+        }
+        if (upstreamHadContent && !producedContent) {
+            // Same empty-content safety net as the Anthropic variant: the upstream had bytes but the
+            // decoder never opened a single content block -- almost always an envelope-shape
+            // mismatch, not a genuinely empty turn.
+            throw new IllegalStateException("antigravity upstream response did not decode to any content");
+        }
+        return aggregate(events, requestedModel, routingJson);
+    }
+
+    /**
+     * Folds a flat, already-enriched {@link IrStreamEvent} sequence (as produced by {@link
+     * #handleIrEvents}/{@link #finishIrEvents}) into one buffered {@link IrResponse} -- content
+     * blocks assembled by index from their start/delta/stop events, final {@code stopReason}/
+     * {@code usage} from the last {@link MessageDeltaEvent}.
+     */
+    private static IrResponse aggregate(List<IrStreamEvent> events, String model, JsonCodec routingJson) {
+        IrResponse response = new IrResponse();
+        response.model = model;
+        Map<Integer, Block> blocksByIndex = new LinkedHashMap<>();
+        Map<Integer, StringBuilder> textByIndex = new LinkedHashMap<>();
+        Map<Integer, StringBuilder> thinkingByIndex = new LinkedHashMap<>();
+        Map<Integer, StringBuilder> toolInputByIndex = new LinkedHashMap<>();
+        List<Integer> order = new ArrayList<>();
+
+        for (IrStreamEvent ev : events) {
+            if (ev instanceof MessageStartEvent) {
+                MessageStartEvent mse = (MessageStartEvent) ev;
+                if (mse.id != null) response.id = mse.id;
+                if (mse.model != null) response.model = mse.model;
+                if (mse.usage != null) response.usage = mse.usage;
+            } else if (ev instanceof ContentBlockStartEvent) {
+                ContentBlockStartEvent cbs = (ContentBlockStartEvent) ev;
+                order.add(cbs.index);
+                if (ContentBlockKind.TEXT.equals(cbs.blockKind)) {
+                    blocksByIndex.put(cbs.index, new TextBlock());
+                    textByIndex.put(cbs.index, new StringBuilder());
+                } else if (ContentBlockKind.THINKING.equals(cbs.blockKind)) {
+                    blocksByIndex.put(cbs.index, new ThinkingBlock());
+                    thinkingByIndex.put(cbs.index, new StringBuilder());
+                } else if (ContentBlockKind.TOOL_USE.equals(cbs.blockKind)) {
+                    ToolUseBlock block = new ToolUseBlock();
+                    block.id = cbs.toolUseId;
+                    block.name = cbs.toolName;
+                    blocksByIndex.put(cbs.index, block);
+                    toolInputByIndex.put(cbs.index, new StringBuilder());
+                }
+            } else if (ev instanceof TextDeltaEvent) {
+                TextDeltaEvent td = (TextDeltaEvent) ev;
+                StringBuilder sb = textByIndex.get(td.index);
+                if (sb != null && td.text != null) sb.append(td.text);
+            } else if (ev instanceof ThinkingDeltaEvent) {
+                ThinkingDeltaEvent thd = (ThinkingDeltaEvent) ev;
+                StringBuilder sb = thinkingByIndex.get(thd.index);
+                if (sb != null && thd.text != null) sb.append(thd.text);
+            } else if (ev instanceof ThinkingSignatureEvent) {
+                ThinkingSignatureEvent tse = (ThinkingSignatureEvent) ev;
+                Block block = blocksByIndex.get(tse.index);
+                if (block instanceof ThinkingBlock) {
+                    ((ThinkingBlock) block).signature = tse.signature;
+                }
+            } else if (ev instanceof ToolInputDeltaEvent) {
+                ToolInputDeltaEvent tid = (ToolInputDeltaEvent) ev;
+                StringBuilder sb = toolInputByIndex.get(tid.index);
+                if (sb != null && tid.partialJson != null) sb.append(tid.partialJson);
+            } else if (ev instanceof ContentBlockStopEvent) {
+                int index = ((ContentBlockStopEvent) ev).index;
+                Block block = blocksByIndex.get(index);
+                if (block instanceof TextBlock) {
+                    ((TextBlock) block).text = textByIndex.get(index).toString();
+                } else if (block instanceof ThinkingBlock) {
+                    ((ThinkingBlock) block).text = thinkingByIndex.get(index).toString();
+                } else if (block instanceof ToolUseBlock) {
+                    String rawInput = toolInputByIndex.get(index).toString();
+                    ((ToolUseBlock) block).input = rawInput.isEmpty() ? new LinkedHashMap<>() : routingJson.parse(rawInput);
+                }
+            } else if (ev instanceof MessageDeltaEvent) {
+                MessageDeltaEvent mde = (MessageDeltaEvent) ev;
+                if (mde.stopReason != null) response.stopReason = mde.stopReason;
+                if (mde.usage != null) response.usage = mde.usage;
+            }
+            // MessageStopEvent carries no data of its own.
+        }
+
+        List<Block> content = new ArrayList<>();
+        for (Integer index : order) {
+            Block block = blocksByIndex.get(index);
+            if (block != null) content.add(block);
+        }
+        response.content = content;
+        return response;
     }
 
     private static String unwrapCloudcodeResponseEnvelope(JsonCodec routingJson, String body) {

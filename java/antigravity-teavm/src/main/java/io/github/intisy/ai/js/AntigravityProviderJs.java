@@ -26,6 +26,10 @@ import io.github.intisy.ai.antigravity.AntigravityVersions;
 import io.github.intisy.ai.antigravity.ClaudeTransforms;
 import io.github.intisy.ai.antigravity.CrossModelSanitizer;
 import io.github.intisy.ai.antigravity.GeminiTransforms;
+import io.github.intisy.ai.antigravity.IrJsonCodecAdapter;
+import io.github.intisy.ai.ir.IrRequest;
+import io.github.intisy.ai.ir.json.IrJson;
+import io.github.intisy.ai.ir.stream.IrStreamEvent;
 import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.Logger;
@@ -470,6 +474,21 @@ public final class AntigravityProviderJs {
     @JSExport
     public static boolean isAnthropicMessages(String url) {
         return AntigravityIrBridge.isAnthropicMessages(url);
+    }
+
+    /**
+     * SP-3 T2: the request-encode half of the TS {@code handleIr} boundary -- unlike {@link
+     * #anthropicToGemini}, {@code irJson} is ALREADY a decoded IR (the TS driver's caller ran
+     * {@code AnthropicTranslator.decodeRequest} itself), so this applies only antigravity's own
+     * thinking-budget resolution + the neutral IR-&gt;Gemini encode, without a second Anthropic
+     * decode. Mirrors {@link AntigravityHostSeams}'s {@code HostIrRequestPreparer} on the JVM side.
+     */
+    @JSExport
+    public static String resolveThinkingBudgetAndEncodeGemini(String irJson, String model) {
+        JsonCodec json = new SimpleJsonCodec();
+        IrRequest ir = IrJson.parseRequest(new IrJsonCodecAdapter(json), irJson);
+        AntigravityIrBridge.resolveThinkingBudget(ir, model);
+        return AntigravityIrBridge.encodeIrToGemini(json, ir);
     }
 
     // ---- AntigravityStreamTransform (T7d) ---------------------------------------------------------
@@ -1291,6 +1310,60 @@ public final class AntigravityProviderJs {
             arr.push(JSString.valueOf(v));
         }
         return arr;
+    }
+
+    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance -- {@link #newIrStreamMapper}'s return. */
+    public interface JsIrStreamMapperHandle extends JSObject {
+        /** Raw Gemini SSE text chunk in, a JSON array of enriched {@code IrStreamEvent}s out. */
+        JSString handle(JSString chunk);
+
+        JSString finish();
+    }
+
+    /**
+     * SP-3 T2: the response-decode half of the TS {@code handleIr} boundary -- {@link
+     * #newStreamMapper}'s sibling, but returns the SAME id-minted/model-overwritten {@code
+     * IrStreamEvent}s {@link AntigravityGeminiSseBridge#handle}/{@code #finish} would encode to
+     * Anthropic SSE text, serialized as a neutral JSON array instead (no Anthropic wire knowledge),
+     * for {@code javaStream.ts}'s {@code makeIrStream} to enqueue directly onto an
+     * {@code IrEventStream}.
+     */
+    @JSExport
+    public static JsIrStreamMapperHandle newIrStreamMapper(String model, JsIdsFns jsIds) {
+        JsonCodec json = new SimpleJsonCodec();
+        AntigravityGeminiSseBridge.IdGenerator ids = new AntigravityGeminiSseBridge.IdGenerator() {
+            @Override
+            public String newMessageId() {
+                JSString s = jsIds.newMessageId();
+                return s == null ? "" : s.stringValue();
+            }
+
+            @Override
+            public String newToolId() {
+                JSString s = jsIds.newToolId();
+                return s == null ? "" : s.stringValue();
+            }
+        };
+        AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(json, ids, model);
+        return new JsIrStreamMapperHandle() {
+            @Override
+            public JSString handle(JSString chunk) {
+                return JSString.valueOf(serializeIrEvents(json, bridge.handleIrEvents(chunk != null ? chunk.stringValue() : "")));
+            }
+
+            @Override
+            public JSString finish() {
+                return JSString.valueOf(serializeIrEvents(json, bridge.finishIrEvents()));
+            }
+        };
+    }
+
+    private static String serializeIrEvents(JsonCodec json, List<IrStreamEvent> events) {
+        List<Object> out = new ArrayList<>();
+        for (IrStreamEvent ev : events) {
+            out.add(IrJson.toMap(ev));
+        }
+        return json.stringify(out);
     }
 
     /**

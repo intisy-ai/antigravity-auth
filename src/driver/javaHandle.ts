@@ -41,6 +41,7 @@
 
 import crypto from "node:crypto";
 import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
+import { translators } from "../../core-ir/dist/index.js";
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
@@ -49,7 +50,7 @@ import { defaultSignatureStore } from "../plugin/stores/signature-store.js";
 import { getCachedSignature, cacheSignature } from "../plugin/cache.js";
 import { processImageData } from "../plugin/image-saver.js";
 import { isGemini3Model } from "../plugin/transform-java.js";
-import { makeAnthropicStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
+import { makeAnthropicStream, makeIrStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
 // Cached once at module load — mirrors driver/index.ts:53's own `config` (the same config drives
 // both paths identically; a runtime config edit needs a process restart for either path).
@@ -571,46 +572,91 @@ function serveRefError() {
   });
 }
 
-// Anthropic Messages bridge (index.ts:304-349) — reproduced VERBATIM, with the single inner
-// `handle(geminiReq, ctx)` call replaced by the delegated `runGeminiViaJava(geminiReq, ctx)`, and
-// (Task 3) the request/response translation routed through Java: `anthropicToGemini` -> the Java
-// export, `geminiToAnthropicStream` -> javaStream.ts's `makeAnthropicStream` over Java's
-// `newStreamMapper` (real ids minted host-side via jsIds). All the classification (chatError
-// passthrough → rate_limit_error 429 / invalid_request_error, the api_error path) and the x-hub-*
-// header handling stay host-side, byte-exact.
-async function handleAnthropicMessagesViaJava(request, ctx) {
+// A thrown handleIr error carries enough classification (status/errorType/rate-limit retry hint)
+// for a caller that wants to rebuild a wire-shaped error response (handleAnthropicMessagesViaJava
+// below) to do so byte-exactly -- while a generic caller (e.g. core-proxy's Router) can still just
+// read `.message` and treat any handleIr rejection as a flat failure, per the shared contract.
+function makeHandleIrError(message, { status, errorType, retryAfterMs } = {}) {
+  const error = new Error(message);
+  error.status = status;
+  error.errorType = errorType;
+  if (retryAfterMs) error.retryAfterMs = retryAfterMs;
+  return error;
+}
+
+// SP-3 T2: the IR-native alternative to handleAnthropicMessagesViaJava below -- receives an
+// already app-wire-decoded IR request (the caller already ran translators.anthropic.decodeRequest)
+// and runs ONLY the IR<->Gemini core: antigravity's thinking-budget resolution + the neutral
+// IR->Gemini encode, the SAME account-rotation/retry upstream call as the Gemini path
+// (runGeminiViaJava, untouched), then decodes the upstream Gemini SSE back into a raw IR event
+// stream (no Anthropic re-encoding here — that is now the caller's job). Always returns a stream:
+// antigravity's upstream call is always streamGenerateContent in production, so this preserves true
+// end-to-end streaming rather than buffering into an IrResponse.
+//
+// Errors (rate-limit exhaustion, no-account, transport failure, ...) have no IR-shaped
+// representation to return, so they are thrown instead of encoded into a Response (matching the
+// Java Provider SPI's handleIr contract) -- enriched via makeHandleIrError so handle()'s own thin
+// wrapper can still rebuild the exact legacy error shape (see its catch block below).
+export async function handleIrViaJavaOrchestrator(ir, ctx) {
   const log = (ctx && ctx.log) || (() => {});
   const orchestrator = await loadOrchestrator();
-  let anthropicBody;
-  try { anthropicBody = JSON.parse((await request.clone().text()) || "{}"); } catch { anthropicBody = {}; }
   const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
-  const geminiBody = JSON.parse(orchestrator.anthropicToGemini(JSON.stringify(anthropicBody), model));
+  const geminiBody = orchestrator.resolveThinkingBudgetAndEncodeGemini(JSON.stringify(ir), model);
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
-  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(geminiBody) });
+  const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: geminiBody });
   const geminiRes = await runGeminiViaJava(geminiReq, ctx); // geminiUrl isn't /v1/messages -> normal Gemini path
   if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
     let msg = "request failed";
     try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}
     if (geminiRes.headers.get("x-hub-rate-limited") === "1") {
-      const rlHeaders = { "content-type": "application/json", "x-hub-rate-limited": "1" };
-      const ra = geminiRes.headers.get("x-hub-retry-after-ms");
-      if (ra) rlHeaders["x-hub-retry-after-ms"] = ra;
-      return new Response(
-        JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: msg } }),
-        { status: 429, headers: rlHeaders },
-      );
+      throw makeHandleIrError(msg, {
+        status: 429, errorType: "rate_limit_error", retryAfterMs: geminiRes.headers.get("x-hub-retry-after-ms"),
+      });
     }
-    return new Response(
-      JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: msg } }),
-      { status: geminiRes.status || 400, headers: { "content-type": "application/json" } },
-    );
+    throw makeHandleIrError(msg, { status: geminiRes.status || 400, errorType: "invalid_request_error" });
   }
   if (!geminiRes || !geminiRes.ok || !geminiRes.body) {
     let detail = "";
     try { detail = geminiRes ? (await geminiRes.clone().text()).slice(0, 500) : ""; } catch {}
-    log("anthropic bridge: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
-    return new Response(JSON.stringify({ type: "error", error: { type: "api_error", message: detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)) } }), { status: (geminiRes && geminiRes.status) || 502, headers: { "content-type": "application/json" } });
+    log("handleIr: upstream error " + (geminiRes && geminiRes.status) + " " + detail);
+    throw makeHandleIrError(detail || ("antigravity upstream error " + (geminiRes && geminiRes.status)), {
+      status: (geminiRes && geminiRes.status) || 502, errorType: "api_error",
+    });
   }
-  const stream = geminiRes.body.pipeThrough(makeAnthropicStream(orchestrator.newStreamMapper, anthropicBody.model || model, jsIds));
+  return geminiRes.body.pipeThrough(makeIrStream(orchestrator.newIrStreamMapper, ir.model || model, jsIds));
+}
+
+// Anthropic Messages bridge (index.ts:304-349) — now a THIN wrapper (SP-3 T2): decode the inbound
+// Anthropic body into IR via core-ir's own translator (the generic app<->IR step, no antigravity
+// business logic), delegate the whole IR<->Gemini core to handleIrViaJavaOrchestrator above, then
+// re-encode the returned IR event stream to Anthropic SSE via core-ir's encodeStream. All the
+// classification (chatError passthrough → rate_limit_error 429 / invalid_request_error, the
+// api_error path) and the x-hub-* header handling stay host-side, byte-exact (rebuilt from the
+// thrown error's status/errorType/retryAfterMs) — only the Gemini-translation-plus-encode logic
+// that used to live inline here moved into the shared handleIr core.
+async function handleAnthropicMessagesViaJava(request, ctx) {
+  const log = (ctx && ctx.log) || (() => {});
+  let anthropicBodyText;
+  try { anthropicBodyText = (await request.clone().text()) || "{}"; } catch { anthropicBodyText = "{}"; }
+  const ir = await translators.anthropic.decodeRequest(anthropicBodyText);
+
+  let irEventStream;
+  try {
+    irEventStream = await handleIrViaJavaOrchestrator(ir, ctx);
+  } catch (error) {
+    const msg = (error && error.message) || "request failed";
+    log("anthropic bridge: handleIr failed: " + msg);
+    const status = (error && error.status) || 502;
+    const errorType = (error && error.errorType) || "api_error";
+    const headers = { "content-type": "application/json" };
+    if (errorType === "rate_limit_error") {
+      headers["x-hub-rate-limited"] = "1";
+      if (error.retryAfterMs) headers["x-hub-retry-after-ms"] = error.retryAfterMs;
+    }
+    return new Response(JSON.stringify({ type: "error", error: { type: errorType, message: msg } }), { status, headers });
+  }
+
+  const encodeStream = await translators.anthropic.encodeStream();
+  const stream = irEventStream.pipeThrough(encodeStream).pipeThrough(new TextEncoderStream());
   return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache", "connection": "keep-alive" } });
 }

@@ -36,6 +36,26 @@ export function makeAnthropicStream(newStreamMapperFn, model, ids) {
   });
 }
 
+// SP-3 T2 -- handleIr's stream-decode half: the same Java newIrStreamMapper handle as
+// makeAnthropicStream's newStreamMapper, but the Java side returns a JSON array of enriched
+// (id-minted/model-overwritten) IrStreamEvents instead of encoded Anthropic SSE text, so this shell
+// just decodes bytes to text and JSON.parses the array -- no Anthropic wire knowledge here at all.
+export function makeIrStream(newIrStreamMapperFn, model, ids) {
+  const mapper = newIrStreamMapperFn(model, ids);
+  const dec = new TextDecoder();
+
+  return new TransformStream({
+    transform(chunk, ctrl) {
+      const events = JSON.parse(mapper.handle(dec.decode(chunk, { stream: true })));
+      for (const ev of events) ctrl.enqueue(ev);
+    },
+    flush(ctrl) {
+      const events = JSON.parse(mapper.finish());
+      for (const ev of events) ctrl.enqueue(ev);
+    },
+  });
+}
+
 // Task 3c — the streaming half of SERVE's response transform (transformAntigravityResponse's
 // createStreamingTransformer, request.ts:1758-1780). This shell owns exactly what stays host-side:
 // the TextEncoder/TextDecoder + '\n'-buffering loop, the 45s silence watchdog, and the

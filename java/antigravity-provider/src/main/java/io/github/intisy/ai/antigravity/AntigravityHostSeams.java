@@ -1,5 +1,6 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.ir.IrRequest;
 import io.github.intisy.ai.shared.manager.Acquired;
 import io.github.intisy.ai.shared.model.Account;
 import io.github.intisy.ai.shared.spi.Logger;
@@ -156,63 +157,115 @@ final class AntigravityHostSeams {
         public AntigravityHandleOrchestrator.Prepared prepare(String url, String bodyText, String method,
                 Map<String, String> headers, String access, String projectId, String endpoint,
                 String headerStyle, Map<String, Object> account) {
-            try {
-                String model = modelFromUrl(url);
-                String geminiBodyJson = AntigravityIrBridge.anthropicToGemini(backend.json, bodyText, model);
+            String model = modelFromUrl(url);
+            String geminiBodyJson = AntigravityIrBridge.anthropicToGemini(backend.json, bodyText, model);
+            return prepareFromGeminiBody(backend, logger, geminiBodyJson, model, url, method, headers,
+                    access, projectId, endpoint, headerStyle, account);
+        }
+    }
 
-                AntigravityRequestPrep.Input input = new AntigravityRequestPrep.Input();
-                input.url = url;
-                input.method = method;
-                input.headers = new LinkedHashMap<>();
-                if (headers != null) {
-                    for (Map.Entry<String, String> e : headers.entrySet()) {
-                        input.headers.put(e.getKey(), e.getValue());
-                    }
+    /**
+     * SP-3 T2: the IR-native sibling of {@link HostRequestPreparer} -- {@link AntigravityProvider
+     * #handleIr} already holds an {@link IrRequest} decoded by its caller (the front-door's {@code
+     * AnthropicTranslator}), so this applies ONLY antigravity's own thinking-budget resolution
+     * ({@link AntigravityIrBridge#resolveThinkingBudget}) + the neutral IR-&gt;Gemini encode ({@link
+     * AntigravityIrBridge#encodeIrToGemini}) directly on it, instead of re-decoding it from Anthropic
+     * wire text -- then shares the SAME {@link #prepareFromGeminiBody} tail (tool-hardening, schema
+     * cleaning, signature caching, ...) as the legacy path, so nothing downstream of the Gemini body
+     * is duplicated or altered. One instance is built per {@code handleIr} call (not memoized like
+     * {@link AntigravityProvider#orchestratorFor}) because the {@link IrRequest} is per-call state.
+     */
+    static final class HostIrRequestPreparer implements AntigravityHandleOrchestrator.RequestPreparer {
+        private final AntigravityBackend backend;
+        private final Logger logger;
+        private final IrRequest ir;
+
+        HostIrRequestPreparer(AntigravityBackend backend, Logger logger, IrRequest ir) {
+            this.backend = backend;
+            this.logger = logger;
+            this.ir = ir;
+        }
+
+        @Override
+        public AntigravityHandleOrchestrator.Prepared prepare(String url, String bodyText, String method,
+                Map<String, String> headers, String access, String projectId, String endpoint,
+                String headerStyle, Map<String, Object> account) {
+            String model = modelFromUrl(url);
+            // Auto-candidate walking is not yet wired for this Provider SPI path (AntigravityProvider
+            // #handle's own in.autoCandidates is likewise always empty -- a pre-existing TODO, not a
+            // regression here), so `model` is fixed across attempts and re-resolving the budget/body
+            // per attempt is safe and matches the legacy path's per-attempt re-derivation exactly.
+            AntigravityIrBridge.resolveThinkingBudget(ir, model);
+            String geminiBodyJson = AntigravityIrBridge.encodeIrToGemini(backend.json, ir);
+            return prepareFromGeminiBody(backend, logger, geminiBodyJson, model, url, method, headers,
+                    access, projectId, endpoint, headerStyle, account);
+        }
+    }
+
+    /**
+     * Shared tail of both {@link HostRequestPreparer} and {@link HostIrRequestPreparer}: runs the
+     * already-Gemini-shaped body through {@link AntigravityRequestPrep#prepare} (tool-hardening,
+     * schema cleaning, the real thinking-tier resolution, signature caching, ...) exactly as a
+     * native-Gemini request would -- moved verbatim out of {@code HostRequestPreparer#prepare} so the
+     * IR-native preparer reuses it instead of duplicating it.
+     */
+    private static AntigravityHandleOrchestrator.Prepared prepareFromGeminiBody(
+            AntigravityBackend backend, Logger logger, String geminiBodyJson, String model,
+            String url, String method, Map<String, String> headers, String access, String projectId,
+            String endpoint, String headerStyle, Map<String, Object> account) {
+        try {
+            AntigravityRequestPrep.Input input = new AntigravityRequestPrep.Input();
+            input.url = url;
+            input.method = method;
+            input.headers = new LinkedHashMap<>();
+            if (headers != null) {
+                for (Map.Entry<String, String> e : headers.entrySet()) {
+                    input.headers.put(e.getKey(), e.getValue());
                 }
-                input.headers.putIfAbsent("content-type", "application/json");
-                input.body = geminiBodyJson;
-                input.accessToken = access;
-                input.projectId = projectId;
-                input.endpointOverride = endpoint;
-                input.headerStyle = headerStyle;
-                input.forceThinkingRecovery = false;
-                input.claudeToolHardening = null; // Input javadoc: null -> defaults to true, matches TS ?? true
-                input.claudePromptAutoCaching = false; // config default (schema.ts claude_prompt_auto_caching)
-                input.fingerprint = AntigravityProvider.fingerprintFromMeta(metaOf(account));
-                input.imageAspectRatio = null;
-
-                AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
-                deps.json = backend.json;
-                deps.ids = AntigravityProvider.ID_GENERATOR;
-                deps.random = backend.random;
-                deps.hasher = AntigravityProvider.SHA256_HASHER;
-                deps.cachedSignatureLookup = AntigravityProvider.NO_CACHED_SIGNATURE;
-                deps.signatureStore = AntigravityProvider.NOOP_SIGNATURE_STORE;
-                deps.thinkingRecovery = new AntigravityThinkingRecovery(backend.json);
-                deps.logger = logger;
-                deps.keepThinking = false; // config default (schema.ts keep_thinking: false)
-                deps.pluginSessionId = AntigravityProvider.PLUGIN_SESSION_ID;
-                deps.selectedHeaders = AntigravityProvider.defaultSelectedHeaders();
-
-                AntigravityRequestPrep.PrepareResult prepared = AntigravityRequestPrep.prepare(input, deps);
-
-                HttpRequest outbound = new HttpRequest();
-                outbound.method = "POST";
-                outbound.url = String.valueOf(prepared.request);
-                outbound.headers = AntigravityProvider.stringifyHeaders(prepared.headers);
-                outbound.body = prepared.body != null ? String.valueOf(prepared.body) : null;
-
-                AntigravityHandleOrchestrator.TransformParams params = new AntigravityHandleOrchestrator.TransformParams(
-                        model,
-                        prepared.projectId != null ? prepared.projectId : projectId,
-                        prepared.endpoint != null ? prepared.endpoint : endpoint,
-                        prepared.effectiveModel != null ? prepared.effectiveModel : model,
-                        prepared.sessionId,
-                        prepared.streaming);
-                return new AntigravityHandleOrchestrator.Prepared(outbound, params);
-            } catch (RuntimeException e) {
-                throw new RuntimeException("antigravity request prepare failed: " + e.getMessage(), e);
             }
+            input.headers.putIfAbsent("content-type", "application/json");
+            input.body = geminiBodyJson;
+            input.accessToken = access;
+            input.projectId = projectId;
+            input.endpointOverride = endpoint;
+            input.headerStyle = headerStyle;
+            input.forceThinkingRecovery = false;
+            input.claudeToolHardening = null; // Input javadoc: null -> defaults to true, matches TS ?? true
+            input.claudePromptAutoCaching = false; // config default (schema.ts claude_prompt_auto_caching)
+            input.fingerprint = AntigravityProvider.fingerprintFromMeta(metaOf(account));
+            input.imageAspectRatio = null;
+
+            AntigravityRequestPrep.Deps deps = new AntigravityRequestPrep.Deps();
+            deps.json = backend.json;
+            deps.ids = AntigravityProvider.ID_GENERATOR;
+            deps.random = backend.random;
+            deps.hasher = AntigravityProvider.SHA256_HASHER;
+            deps.cachedSignatureLookup = AntigravityProvider.NO_CACHED_SIGNATURE;
+            deps.signatureStore = AntigravityProvider.NOOP_SIGNATURE_STORE;
+            deps.thinkingRecovery = new AntigravityThinkingRecovery(backend.json);
+            deps.logger = logger;
+            deps.keepThinking = false; // config default (schema.ts keep_thinking: false)
+            deps.pluginSessionId = AntigravityProvider.PLUGIN_SESSION_ID;
+            deps.selectedHeaders = AntigravityProvider.defaultSelectedHeaders();
+
+            AntigravityRequestPrep.PrepareResult prepared = AntigravityRequestPrep.prepare(input, deps);
+
+            HttpRequest outbound = new HttpRequest();
+            outbound.method = "POST";
+            outbound.url = String.valueOf(prepared.request);
+            outbound.headers = AntigravityProvider.stringifyHeaders(prepared.headers);
+            outbound.body = prepared.body != null ? String.valueOf(prepared.body) : null;
+
+            AntigravityHandleOrchestrator.TransformParams params = new AntigravityHandleOrchestrator.TransformParams(
+                    model,
+                    prepared.projectId != null ? prepared.projectId : projectId,
+                    prepared.endpoint != null ? prepared.endpoint : endpoint,
+                    prepared.effectiveModel != null ? prepared.effectiveModel : model,
+                    prepared.sessionId,
+                    prepared.streaming);
+            return new AntigravityHandleOrchestrator.Prepared(outbound, params);
+        } catch (RuntimeException e) {
+            throw new RuntimeException("antigravity request prepare failed: " + e.getMessage(), e);
         }
     }
 

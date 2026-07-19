@@ -97,6 +97,17 @@ async function handle(request, ctx) {
   return handleViaJavaOrchestrator(request, ctx);
 }
 
+// SP-3 T2: the IR-native alternative to `handle` — same lazy delegate, but to
+// handleIrViaJavaOrchestrator (an already app-wire-decoded IR in, IR event stream out; no Anthropic
+// wire knowledge inside it at all). Coexists with `handle`; ProxyHandler.handleIr is optional so a
+// caller with no IR front-door yet keeps using `handle` unchanged.
+async function handleIr(ir, ctx) {
+  const log = (ctx && ctx.log) || (() => {});
+  maybeMaintainVersions(log);
+  const { handleIrViaJavaOrchestrator } = await import("./javaHandle.js");
+  return handleIrViaJavaOrchestrator(ir, ctx);
+}
+
 // Live model discovery for core-auth: pick the first usable account, fetch the
 // account's real available models, and build the catalog (+ ranking/default for
 // Auto). Returns null when no account exists or the fetch fails -> core-auth then
@@ -191,6 +202,7 @@ export const driver = {
   // the CLI header context), so it can't be graphed like the metered pools.
   quotaNote: "Gemini CLI models use a separate fallback pool. Its quota isn't reported by the API, so it can't be shown here.",
   handle,
+  handleIr,
   login,
   loginFlow,
   accounts: createAntigravityAccounts(manager),
