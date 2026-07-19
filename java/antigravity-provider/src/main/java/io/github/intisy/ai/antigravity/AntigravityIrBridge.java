@@ -2,7 +2,6 @@ package io.github.intisy.ai.antigravity;
 
 import io.github.intisy.ai.ir.IrRequest;
 import io.github.intisy.ai.ir.IrThinking;
-import io.github.intisy.ai.ir.translators.anthropic.AnthropicTranslator;
 import io.github.intisy.ai.ir.translators.gemini.GeminiTranslator;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 
@@ -10,29 +9,23 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * SP-2 successor to the deleted {@code AntigravityFormatBridge} ({@code src/plugin/anthropic-
- * bridge.ts}'s {@code anthropicToGemini}/{@code supportsThinking}/{@code isAnthropicMessages}):
- * bridges antigravity's inbound Anthropic Messages request to the Gemini {@code generateContent}
- * body it hands to {@link AntigravityRequestPrep}, now via core-ir's canonical IR instead of a
- * bespoke hand-rolled JSON->JSON mapping.
- *
- * <p>Flow: {@code AnthropicTranslator.decodeRequest} (inbound Anthropic wire -&gt; {@link
- * IrRequest}) -&gt; {@link #resolveThinkingBudget} (antigravity's own effort/tier-&gt;budget VALUE
- * resolution, applied to the neutral {@code IrRequest.thinking} -- the FORMAT mapping from there
- * into Gemini's {@code generationConfig.thinkingConfig} is core-ir's) -&gt; {@code
- * GeminiTranslator.encodeRequest} (IR -&gt; Gemini body). The resulting Gemini body still passes
- * through {@link AntigravityRequestPrep}'s full pipeline (tool-hardening, schema cleaning, the
- * REAL thinking-tier resolution via {@link AntigravityThinkingConfig}, signature caching, ...)
- * exactly as a native-Gemini request would -- this bridge only produces the same ROUGH Gemini
- * shape the old {@code anthropicToGemini} did, not the final wire body.
+ * Bridges an antigravity request already in canonical IR to the Gemini {@code generateContent}
+ * body {@link AntigravityRequestPrep} expects. The live {@code handleIr} path holds an {@link
+ * IrRequest} decoded by the front-door, so this applies only antigravity's own effort/tier-&gt;budget
+ * VALUE resolution ({@link #resolveThinkingBudget}, on the neutral {@code IrRequest.thinking}) and
+ * then the neutral IR-&gt;Gemini encode ({@link #encodeIrToGemini}, {@code
+ * GeminiTranslator.encodeRequest}). The resulting Gemini body still passes through {@link
+ * AntigravityRequestPrep}'s full pipeline (tool-hardening, schema cleaning, the REAL thinking-tier
+ * resolution via {@link AntigravityThinkingConfig}, signature caching, ...) exactly as a
+ * native-Gemini request would -- this bridge only produces the ROUGH Gemini shape, not the final
+ * wire body.
  *
  * <h2>Thinking budget: value vs format</h2>
- * The old bridge read {@code thinking.budget_tokens} / {@code output_config.effort} directly off
- * the raw Anthropic JSON and wrote a Gemini {@code thinkingConfig.thinkingBudget} by hand. That
- * effort-&gt;budget TABLE and the disabled/precedence rules are antigravity-specific business
- * logic (not part of any vendor's neutral wire format), so they stay here, operating on {@code
- * IrRequest.thinking} -- while the actual key names/shape of {@code generationConfig.thinkingConfig}
- * are produced by {@code GeminiTranslator} itself.
+ * The {@code thinking.budget_tokens} / {@code output_config.effort} effort-&gt;budget TABLE and the
+ * disabled/precedence rules are antigravity-specific business logic (not part of any vendor's
+ * neutral wire format), so they stay here, operating on {@code IrRequest.thinking} -- while the
+ * actual key names/shape of {@code generationConfig.thinkingConfig} are produced by {@code
+ * GeminiTranslator} itself.
  */
 public final class AntigravityIrBridge {
 
@@ -61,42 +54,12 @@ public final class AntigravityIrBridge {
         return lower.contains("thinking") || lower.contains("gemini-3");
     }
 
-    // ---- isAnthropicMessages (anthropic-bridge.ts:204-206) ---------------------------------------
-
-    /** True when {@code url} is a string containing {@code "/v1/messages"}. */
-    public static boolean isAnthropicMessages(Object url) {
-        return url instanceof String && ((String) url).contains("/v1/messages");
-    }
-
-    // ---- IR-based anthropicToGemini ---------------------------------------------------------------
-
-    /**
-     * Decodes an inbound Anthropic Messages body to the canonical IR via core-ir's {@link
-     * AnthropicTranslator}. {@code routingJson} is the routing-SPI {@link JsonCodec} every call
-     * site already carries (bridged to core-ir's own JsonCodec via {@link IrJsonCodecAdapter}).
-     */
-    public static IrRequest decodeAnthropicToIr(JsonCodec routingJson, String anthropicBodyJson) {
-        io.github.intisy.ai.ir.spi.JsonCodec irJson = new IrJsonCodecAdapter(routingJson);
-        String wire = JsCoercion.isTruthy(anthropicBodyJson) ? anthropicBodyJson : "{}";
-        return new AnthropicTranslator(irJson).decodeRequest(wire);
-    }
+    // ---- IR -> Gemini encode ----------------------------------------------------------------------
 
     /** Encodes an {@link IrRequest} to a Gemini {@code generateContent} body via core-ir's {@link GeminiTranslator}. */
     public static String encodeIrToGemini(JsonCodec routingJson, IrRequest ir) {
         io.github.intisy.ai.ir.spi.JsonCodec irJson = new IrJsonCodecAdapter(routingJson);
         return new GeminiTranslator(irJson).encodeRequest(ir);
-    }
-
-    /**
-     * Full replacement for the deleted {@code AntigravityFormatBridge.anthropicToGemini}: decode
-     * -&gt; resolve the antigravity-specific thinking budget -&gt; encode. Returns the Gemini body
-     * as a JSON string (the old function returned a {@code Map}; every call site immediately
-     * stringified it anyway).
-     */
-    public static String anthropicToGemini(JsonCodec routingJson, String anthropicBodyJson, String model) {
-        IrRequest ir = decodeAnthropicToIr(routingJson, anthropicBodyJson);
-        resolveThinkingBudget(ir, model);
-        return encodeIrToGemini(routingJson, ir);
     }
 
     // ---- thinking budget resolution (anthropic-bridge.ts:74-90) -----------------------------------

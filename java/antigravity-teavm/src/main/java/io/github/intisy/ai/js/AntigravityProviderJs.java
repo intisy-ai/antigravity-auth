@@ -457,31 +457,18 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityIrBridge (SP-2: core-ir) ------------------------------------------------------
 
-    /** Exercises {@link AntigravityIrBridge#anthropicToGemini} (decode->resolve budget->encode via core-ir). */
-    @JSExport
-    public static String anthropicToGemini(String bodyJson, String model) {
-        JsonCodec json = new SimpleJsonCodec();
-        return AntigravityIrBridge.anthropicToGemini(json, bodyJson, model);
-    }
-
     /** Exercises {@link AntigravityIrBridge#supportsThinking}. */
     @JSExport
     public static boolean supportsThinking(String model) {
         return AntigravityIrBridge.supportsThinking(model);
     }
 
-    /** Exercises {@link AntigravityIrBridge#isAnthropicMessages}. */
-    @JSExport
-    public static boolean isAnthropicMessages(String url) {
-        return AntigravityIrBridge.isAnthropicMessages(url);
-    }
-
     /**
-     * SP-3 T2: the request-encode half of the TS {@code handleIr} boundary -- unlike {@link
-     * #anthropicToGemini}, {@code irJson} is ALREADY a decoded IR (the TS driver's caller ran
-     * {@code AnthropicTranslator.decodeRequest} itself), so this applies only antigravity's own
-     * thinking-budget resolution + the neutral IR-&gt;Gemini encode, without a second Anthropic
-     * decode. Mirrors {@link AntigravityHostSeams}'s {@code HostIrRequestPreparer} on the JVM side.
+     * SP-3 T2: the request-encode half of the TS {@code handleIr} boundary -- {@code irJson} is
+     * ALREADY a decoded IR (the TS driver's caller ran {@code AnthropicTranslator.decodeRequest}
+     * itself), so this applies only antigravity's own thinking-budget resolution + the neutral
+     * IR-&gt;Gemini encode, without a second Anthropic decode. Mirrors {@link AntigravityHostSeams}'s
+     * {@code HostIrRequestPreparer} on the JVM side.
      */
     @JSExport
     public static String resolveThinkingBudgetAndEncodeGemini(String irJson, String model) {

@@ -136,44 +136,14 @@ final class AntigravityHostSeams {
     private static final Pattern MODEL_IN_URL = Pattern.compile("/models/([^:/?]+)");
 
     /**
-     * The Phase 2 inline request-build, moved verbatim: bridges the Anthropic body to Gemini
-     * (SP-2: {@link AntigravityIrBridge#anthropicToGemini}, via core-ir's canonical IR) then runs
-     * {@link AntigravityRequestPrep#prepare}. Stateless across requests -- every per-request value
-     * (url/bodyText/access/projectId/endpoint/headerStyle/account) arrives as a {@code prepare}
-     * parameter; the model is recovered from the {@code /models/<id>} segment of {@code url} (the
-     * orchestrator already rewrote it to the resolved candidate before calling this). Only the
-     * {@link Logger} is fixed at construction (see {@code AntigravityProvider#ORCHESTRATORS}).
-     */
-    static final class HostRequestPreparer implements AntigravityHandleOrchestrator.RequestPreparer {
-        private final AntigravityBackend backend;
-        private final Logger logger;
-
-        HostRequestPreparer(AntigravityBackend backend, Logger logger) {
-            this.backend = backend;
-            this.logger = logger;
-        }
-
-        @Override
-        public AntigravityHandleOrchestrator.Prepared prepare(String url, String bodyText, String method,
-                Map<String, String> headers, String access, String projectId, String endpoint,
-                String headerStyle, Map<String, Object> account) {
-            String model = modelFromUrl(url);
-            String geminiBodyJson = AntigravityIrBridge.anthropicToGemini(backend.json, bodyText, model);
-            return prepareFromGeminiBody(backend, logger, geminiBodyJson, model, url, method, headers,
-                    access, projectId, endpoint, headerStyle, account);
-        }
-    }
-
-    /**
-     * SP-3 T2: the IR-native sibling of {@link HostRequestPreparer} -- {@link AntigravityProvider
-     * #handleIr} already holds an {@link IrRequest} decoded by its caller (the front-door's {@code
-     * AnthropicTranslator}), so this applies ONLY antigravity's own thinking-budget resolution
-     * ({@link AntigravityIrBridge#resolveThinkingBudget}) + the neutral IR-&gt;Gemini encode ({@link
-     * AntigravityIrBridge#encodeIrToGemini}) directly on it, instead of re-decoding it from Anthropic
-     * wire text -- then shares the SAME {@link #prepareFromGeminiBody} tail (tool-hardening, schema
-     * cleaning, signature caching, ...) as the legacy path, so nothing downstream of the Gemini body
-     * is duplicated or altered. One instance is built per {@code handleIr} call (not memoized like
-     * {@link AntigravityProvider#orchestratorFor}) because the {@link IrRequest} is per-call state.
+     * The IR-native request preparer for {@link AntigravityProvider#handleIr}: it already holds an
+     * {@link IrRequest} decoded by its caller (the front-door's {@code AnthropicTranslator}), so
+     * this applies ONLY antigravity's own thinking-budget resolution ({@link
+     * AntigravityIrBridge#resolveThinkingBudget}) + the neutral IR-&gt;Gemini encode ({@link
+     * AntigravityIrBridge#encodeIrToGemini}) directly on it, then runs the {@link
+     * #prepareFromGeminiBody} tail (tool-hardening, schema cleaning, signature caching, ...). One
+     * instance is built per {@code handleIr} call (not memoized like {@link
+     * AntigravityProvider#orchestratorFor}) because the {@link IrRequest} is per-call state.
      */
     static final class HostIrRequestPreparer implements AntigravityHandleOrchestrator.RequestPreparer {
         private final AntigravityBackend backend;
@@ -203,11 +173,9 @@ final class AntigravityHostSeams {
     }
 
     /**
-     * Shared tail of both {@link HostRequestPreparer} and {@link HostIrRequestPreparer}: runs the
-     * already-Gemini-shaped body through {@link AntigravityRequestPrep#prepare} (tool-hardening,
-     * schema cleaning, the real thinking-tier resolution, signature caching, ...) exactly as a
-     * native-Gemini request would -- moved verbatim out of {@code HostRequestPreparer#prepare} so the
-     * IR-native preparer reuses it instead of duplicating it.
+     * Tail of {@link HostIrRequestPreparer}: runs the already-Gemini-shaped body through {@link
+     * AntigravityRequestPrep#prepare} (tool-hardening, schema cleaning, the real thinking-tier
+     * resolution, signature caching, ...) exactly as a native-Gemini request would.
      */
     private static AntigravityHandleOrchestrator.Prepared prepareFromGeminiBody(
             AntigravityBackend backend, Logger logger, String geminiBodyJson, String model,
