@@ -4,8 +4,7 @@
 // This module owns the pool itself (curated fallback plus runtime refresh from the public release
 // feed); the entropy-bearing pick/drift decisions (weighted-newer pick, per-account drift, jittered
 // scheduling) live in Java (AntigravityVersions / AntigravityHandleRouting.driftAccountVersions),
-// called via the TeaVM prod exports `pickVersionProd` (fingerprint.ts) and `driftAccountVersionsProd`
-// (driver/index.ts).
+// called via the TeaVM prod exports `pickVersionProd` and `driftAccountVersionsProd`.
 
 // Curated fallback (newest-first) of real Antigravity releases. Used before/if the live refresh fails
 // so the pool is never empty or stale-to-one-value.

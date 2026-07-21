@@ -160,9 +160,9 @@ final class AntigravityHostSeams {
                 Map<String, String> headers, String access, String projectId, String endpoint,
                 String headerStyle, Map<String, Object> account) {
             String model = modelFromUrl(url);
-            // Auto-candidate walking is not yet wired for this Provider SPI path (AntigravityProvider
-            // #handle's own in.autoCandidates is likewise always empty, a pre-existing TODO), so
-            // `model` is fixed across attempts and re-resolving the budget/body per attempt is safe.
+            // Auto-candidate walking is unused on this Provider SPI path (AntigravityProvider#handle's
+            // own in.autoCandidates is likewise always empty), so `model` is fixed across attempts
+            // and re-resolving the budget/body per attempt is safe.
             AntigravityIrBridge.resolveThinkingBudget(ir, model);
             String geminiBodyJson = AntigravityIrBridge.encodeIrToGemini(backend.json, ir);
             return prepareFromGeminiBody(backend, logger, geminiBodyJson, model, url, method, headers,

@@ -47,8 +47,8 @@ export { manager };
 // update in lockstep, versions roll forward gradually. The first time an account is
 // seen it's only SCHEDULED (no change), which is what staggers the initial migration
 // off the old hardcoded version. Never downgrades; platform/arch preserved.
-// The DECISION (Option-B: Java decides, host applies) is AntigravityHandleRouting.
-// driftAccountVersions (real jsRandom); this just applies the returned mutations + logs.
+// The DECISION (Java decides, host applies) is AntigravityHandleRouting.driftAccountVersions
+// (real jsRandom); this just applies the returned mutations + logs.
 async function driftAccountVersions(log) {
   const { loadOrchestrator } = await import("./javaHandle.js");
   const orchestrator = await loadOrchestrator();

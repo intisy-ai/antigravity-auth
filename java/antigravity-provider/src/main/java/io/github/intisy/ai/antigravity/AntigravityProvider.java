@@ -64,8 +64,8 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
 
     private static final String DEFAULT_MODEL_FALLBACK = "antigravity-default";
 
-    // request.ts:77 -- PLUGIN_SESSION_ID is a TS module-load-once constant; mirrored here as a
-    // static field initialized once per JVM (this class is loaded once per host process).
+    // PLUGIN_SESSION_ID is a module-load-once constant: a static field initialized once per JVM
+    // (this class is loaded once per host process).
     static final String PLUGIN_SESSION_ID = "-" + UUID.randomUUID();
 
     // ---- seam singletons (reused by AntigravityHostSeams; see AntigravityRequestPrep.Deps javadoc) --
@@ -74,7 +74,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
 
     static final AntigravityRequestKeys.Hasher SHA256_HASHER = AntigravityProvider::sha256Hex;
 
-    // No real signature cache yet (Bucket C, deferred past Phase 2): every lookup is a cache miss.
+    // No real signature cache yet: every lookup is a cache miss.
     static final AntigravityThinkingBlocks.CachedSignatureLookup NO_CACHED_SIGNATURE =
             (sessionId, text) -> null;
 
@@ -138,7 +138,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         // nothing observable versus the legacy path.
         in.bodyText = "{}";
         in.ctxModel = model;
-        in.autoCandidates = Collections.emptyList(); // TODO Phase 4: real Auto leaderboard candidates
+        in.autoCandidates = Collections.emptyList(); // TODO: real Auto leaderboard candidates
         in.log = log;
 
         AntigravityHandleOrchestrator.HandleDecision decision = orchestrator.handle(in);
@@ -170,14 +170,15 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
                         decision.terminal != null && decision.terminal.retryAfterMs > 0
                                 ? decision.terminal.retryAfterMs : null);
             case BRIDGE_STREAM:
-                // Unreachable in practice (the orchestrator no longer routes here); defensive only.
+                // Unreachable from this call path (only classifyAnthropicResult produces BRIDGE_STREAM,
+                // and this method never calls it); defensive only.
                 throw asHandleIrException(upstreamResponseOrError(decision.attemptRef));
             default:
                 throw asHandleIrException(errorResponse(502, "api_error", "unrecognized antigravity decision: " + decision.kind));
         }
     }
 
-    // T3c-2: wraps an already-built HttpResponse (status/headers/body) as the canonical typed
+    // wraps an already-built HttpResponse (status/headers/body) as the canonical typed
     // transport error core-proxy's Router.route reconstructs a real HttpResponse from, instead of
     // collapsing every handleIr throw to a flat 502 (which lost status fidelity and broke
     // rate-limit fallback). The response builders (materializeSynthetic/materializeTerminal/
@@ -204,7 +205,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return AntigravityQuotaFetch.quota(AntigravityBackend.forCtx(ctx));
     }
 
-    // ---- ConfigurableProvider: genuinely new capability, ported from src/plugin/config/*.ts ------
+    // ---- ConfigurableProvider ------
 
     @Override
     public ConfigSchema configSchema(HandlerCtx ctx) {
@@ -221,7 +222,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return AntigravityConfig.putValues(AntigravityBackend.forCtx(ctx), values);
     }
 
-    // ---- OAuthProvider: genuinely new capability, ported from src/antigravity/oauth.ts -----------
+    // ---- OAuthProvider -----------
 
     @Override
     public AuthorizeInfo authorize(HandlerCtx ctx) {
@@ -260,9 +261,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return errorResponse(502, "api_error", "antigravity upstream response missing");
     }
 
-    // The two lane-accurate exhaustion messages (index.ts:432,439-440, mirrored by
-    // AntigravityHandleOrchestrator.TerminalError): GEMINI_CLI_EXHAUSTED carries its full message
-    // as messagePrefix; ANTIGRAVITY_QUOTA_RESET splits the message around the host-formatted date.
+    // The two lane-accurate exhaustion messages (mirrored by AntigravityHandleOrchestrator.TerminalError):
+    // GEMINI_CLI_EXHAUSTED carries its full message as messagePrefix; ANTIGRAVITY_QUOTA_RESET splits
+    // the message around the host-formatted date.
     private static HttpResponse materializeTerminal(AntigravityHandleOrchestrator.TerminalError terminal) {
         String message = terminalErrorMessage(terminal);
 
@@ -322,9 +323,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return body;
     }
 
-    // index.ts:459's `toLocaleString(undefined, {month:"short",day:"numeric",hour:"numeric",
-    // minute:"2-digit"})` -- a JVM-side, locale-formatted stand-in (not byte-exact; disclosed
-    // deviation, no fixture asserts the exact date rendering, only that the reset wording is present).
+    // Formats like `toLocaleString(undefined, {month:"short",day:"numeric",hour:"numeric",
+    // minute:"2-digit"})` -- a JVM-side, locale-formatted stand-in (not byte-exact; no fixture
+    // asserts the exact date rendering, only that the reset wording is present).
     private static String formatResetInstant(long resetEpochMs) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.getDefault());
         return Instant.ofEpochMilli(resetEpochMs).atZone(ZoneId.systemDefault()).format(formatter);
@@ -359,9 +360,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return log != null ? log : (msg -> { });
     }
 
-    // fingerprint.ts:109's `antigravity/${version} ${platform}/${arch}` User-Agent, built from a
-    // fixed sane default (newest curated version + real platform/arch) rather than the Bucket-C
-    // session-fingerprint/version-drift singletons (deferred past Phase 2).
+    // The `antigravity/${version} ${platform}/${arch}` User-Agent, built from a fixed sane default
+    // (newest curated version + real platform/arch) rather than session-fingerprint/version-drift
+    // singletons.
     static Map<String, Object> defaultSelectedHeaders() {
         String version = AntigravityVersions.FALLBACK_VERSIONS.isEmpty()
                 ? "1.0.0" : AntigravityVersions.FALLBACK_VERSIONS.get(0);

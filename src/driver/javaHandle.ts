@@ -1,7 +1,7 @@
 // @ts-nocheck
 // The delegation shell that runs antigravity-auth's `handleIr` decision loop (and the account-view
 // quota/catalog helpers below) through the TeaVM-compiled Java orchestrator
-// (`AntigravityHandleOrchestrator` plus `AntigravityProviderJs`'s other exports). index.ts's
+// (`AntigravityHandleOrchestrator` plus `AntigravityProviderJs`'s other exports). The driver's
 // `handleIr` dynamically imports this module on the first request; the TeaVM ESM loads via the
 // lazily-memoized `loadOrchestrator()` below, so the ~MB compiled bundle only evaluates once needed.
 //

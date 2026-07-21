@@ -14,8 +14,8 @@ function out(message) { process.stdout.write(message + "\n"); }
 // (AntigravityQuotaParser), reached via AntigravityProviderJs's exports. core-auth's `list()` callback
 // contract is synchronous, so the Java module (a dynamic import, kept off this module's load path) is
 // warmed on the first call rather than at module load. Warming at module load would race javaHandle.ts's
-// circular import back into driver/index.ts while that is still mid-evaluation; a call landing before
-// the warm-up resolves falls back to a benign default and self-corrects on the next render.
+// circular import back into the driver entry module while that is still mid-evaluation; a call
+// landing before the warm-up resolves falls back to a benign default and self-corrects on the next render.
 let orchestrator = null;
 let warming = false;
 function warmOrchestrator() {

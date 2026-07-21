@@ -9,10 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Model-map Task 2 / SP-E E-D: typed {@link ModelInfo} producer backing {@link
- * AntigravityProvider#models}, mirroring claude-code-auth's {@code ClaudeModelsFetch}. Java port of
- * the HOST-I/O half of antigravity-auth's TS {@code fetchAvailableModels} (see {@code
- * src/plugin/models-fetch.ts}) -- the MAPPING half is already ported as {@link
+ * Typed {@link ModelInfo} producer backing {@link AntigravityProvider#models}. Performs the host-I/O
+ * (the upstream model fetch); the mapping half lives in {@link
  * AntigravityCatalog#buildAntigravityCatalog}, which this class feeds with the raw upstream
  * (already-parsed) payload and then flattens into {@link ModelInfo}s.
  *

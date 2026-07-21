@@ -16,12 +16,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * SP-E/E-D: JVM port of antigravity-auth's {@code src/antigravity/oauth.ts}
- * ({@code authorizeAntigravity}/{@code exchangeAntigravity}, plus its {@code fetchProjectID}
- * helper) as a typed {@link io.github.intisy.ai.shared.routing.OAuthProvider} -- a GENUINELY NEW
- * capability for the Java provider (mirrors claude-code-auth's {@code ClaudeOAuth} shape, but
+ * A typed {@link io.github.intisy.ai.shared.routing.OAuthProvider} implementing antigravity's
+ * Google OAuth flow ({@code authorizeAntigravity}/{@code exchangeAntigravity}, plus a
+ * {@code fetchProjectID} helper). Mirrors claude-code-auth's {@code ClaudeOAuth} shape, but
  * antigravity is a LOOPBACK flow: the redirect URI is a local callback server, not a
- * paste-the-code flow). The OAuth client stays the SAME shared Google installed-app client
+ * paste-the-code flow. The OAuth client stays the SAME shared Google installed-app client
  * {@link AntigravityBackend} already uses for token refresh (see the antigravity-account-isolation
  * rule: removing/customizing it bricks refresh and worsens detection) -- {@code client_id} is
  * public and reused from {@link AntigravityBackend#ANTIGRAVITY_CLIENT_ID}; the client secret is
@@ -41,7 +40,7 @@ final class AntigravityOAuth {
             "https://www.googleapis.com/auth/cclog",
             "https://www.googleapis.com/auth/experimentsandconfigs",
     };
-    // oauth.ts's fetchProjectID/exchangeAntigravity both send this exact User-Agent (GEMINI_CLI_HEADERS).
+    // fetchProjectID/exchangeAntigravity both send this exact User-Agent, mirroring the gemini-cli client.
     private static final String GEMINI_CLI_USER_AGENT = "google-api-nodejs-client/9.15.1";
 
     private static final Base64.Encoder URL64 = Base64.getUrlEncoder().withoutPadding();
@@ -50,20 +49,19 @@ final class AntigravityOAuth {
     private AntigravityOAuth() {
     }
 
-    // ---- authorizeAntigravity (oauth.ts:92-114) ---------------------------------------------------
+    // ---- authorize -------------------------------------------------------------------------------
 
     static AuthorizeInfo authorize() {
         // PKCE S256: verifier is base64url(64 random bytes); challenge = base64url(sha256(verifier
-        // UTF-8 bytes)) -- same construction as claude-code-auth's ClaudeOAuth (the TS side uses
-        // @openauthjs/openauth's generatePKCE(), whose exact byte count this does not reproduce;
-        // any length in the RFC 7636 range [43,128] chars is valid, and no fixture asserts an
-        // exact verifier length since it is random on every call -- disclosed non-byte-exact port).
+        // UTF-8 bytes)) -- same construction as claude-code-auth's ClaudeOAuth. Any length in the
+        // RFC 7636 range [43,128] chars is valid, and no fixture asserts an exact verifier length
+        // since it is random on every call.
         byte[] raw = new byte[64];
         RNG.nextBytes(raw);
         String verifier = URL64.encodeToString(raw);
         String challenge = URL64.encodeToString(sha256(verifier.getBytes(StandardCharsets.UTF_8)));
-        // authorizeAntigravity(projectId = "") -- this capability's signature carries no projectId
-        // input, so state always packs an empty projectId (matches the TS default parameter).
+        // This capability's signature carries no projectId input, so state always packs an empty
+        // projectId.
         String state = encodeState(verifier);
 
         String url = AUTHORIZE_URL
@@ -86,7 +84,7 @@ final class AntigravityOAuth {
         return info;
     }
 
-    // ---- exchangeAntigravity (oauth.ts:204-281) ---------------------------------------------------
+    // ---- exchange --------------------------------------------------------------------------------
 
     /** Thin entrypoint used by the provider: parse {@code {code,state}} from the request body. */
     static Map<String, Object> exchange(AntigravityBackend backend, String requestBody) {
@@ -162,7 +160,7 @@ final class AntigravityOAuth {
         return result;
     }
 
-    // ---- fetchProjectID (oauth.ts:134-199) --------------------------------------------------------
+    // ---- fetchProjectID ----------------------------------------------------------------------------
 
     // Never throws, never logs the access token: tries every antigravity endpoint (prod -> daily ->
     // autopush, the SAME order AntigravityHandleRouting.endpointsFor("antigravity") already uses --
@@ -188,8 +186,7 @@ final class AntigravityOAuth {
                 String id = projectIdFrom(backend.json.parse(resp.body));
                 if (id != null && !id.isEmpty()) return id;
             } catch (RuntimeException ignored) {
-                // TS collects these into one warn log; here we simply try the next endpoint --
-                // never log the access token or a raw error that might echo one.
+                // Try the next endpoint; never log the access token or a raw error that might echo one.
             }
         }
         return "";
@@ -207,16 +204,14 @@ final class AntigravityOAuth {
         return null;
     }
 
-    // oauth.ts:157 `process.platform === "win32" ? "WINDOWS" : "MACOS"` -- faithfully reproduced
-    // even though a real "linux" host also falls into the "MACOS" branch (TS never checks linux).
+    // A real "linux" host also falls into the "MACOS" branch here: only win32 is distinguished.
     private static String platformTag() {
         return "win32".equals(AntigravityProvider.detectPlatform()) ? "WINDOWS" : "MACOS";
     }
 
-    // ---- userinfo email lookup (oauth.ts:240-253) -------------------------------------------------
+    // ---- userinfo email lookup ---------------------------------------------------------------------
 
-    // Never throws: TS defaults userInfo to {} on a non-ok response, so a failed/absent email
-    // lookup must never fail the exchange itself.
+    // Never throws: a failed/absent email lookup must never fail the exchange itself.
     private static String fetchEmail(AntigravityBackend backend, String access) {
         if (access == null) return null;
         try {
@@ -239,7 +234,7 @@ final class AntigravityOAuth {
         return null;
     }
 
-    // ---- state encode/decode (oauth.ts:68-87) -----------------------------------------------------
+    // ---- state encode/decode ------------------------------------------------------------------------
 
     private static final class StatePayload {
         final String verifier;
