@@ -1,0 +1,38 @@
+name: Test
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - run: npm install
+
+      # Generates the TeaVM JS (src/generated/*.teavm.js and the antigravity-teavm module the smoke
+      # test imports) plus the esbuild bundles.
+      - run: npm run build
+
+      - run: npx vitest run
+
+      - run: chmod +x java/gradlew
+
+      - name: Gradle tests
+        working-directory: java
+        run: ./gradlew test
+
+      # Only coverage of the CPS-transformed orchestrator actually suspending and resuming across the
+      # @Async bridges under genuinely async JS; exits non-zero on any mismatch.
+      - name: TeaVM async suspend/resume smoke
+        run: node java/antigravity-teavm/smoke/orchestrator-async-smoke.mjs
