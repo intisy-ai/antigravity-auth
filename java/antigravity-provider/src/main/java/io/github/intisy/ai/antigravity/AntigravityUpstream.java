@@ -8,12 +8,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Quota-display Task 2: the shared {@code fetchAvailableModels} upstream transport, extracted out
- * of {@link AntigravityModelsFetch} (behaviour-preserving refactor -- see that class's original
- * {@code sendToFirstSuccessfulEndpoint}/{@code requestBody}/{@code projectIdFromMeta}) so both
- * models-discovery ({@code GET /v1/models}) and quota-discovery ({@code GET /v1/quota},
- * {@link AntigravityQuotaFetch}) reuse ONE POST-over-endpoint-fallback implementation instead of
- * two copies.
+ * The shared {@code fetchAvailableModels} upstream transport, so both models-discovery
+ * ({@code GET /v1/models}) and quota-discovery ({@code GET /v1/quota}, {@link AntigravityQuotaFetch})
+ * reuse ONE POST-over-endpoint-fallback implementation.
  */
 final class AntigravityUpstream {
 
@@ -25,8 +22,8 @@ final class AntigravityUpstream {
     /**
      * POSTs {@code fetchAvailableModels} over the endpoint fallback list with the account's
      * headers + cached projectId; returns the PARSED payload {@code Map}, or {@code null} on
-     * all-endpoint failure / an unparsable body. Never throws -- every failure path folds into
-     * {@code null}, matching the original {@code AntigravityModelsFetch.doFetch} behaviour.
+     * all-endpoint failure / an unparsable body. Never throws: every failure path folds into
+     * {@code null}.
      */
     static Map<String, Object> fetchAvailableModels(AntigravityBackend backend, String access, Account account) {
         String projectId = projectIdFromMeta(account.meta);
@@ -71,9 +68,8 @@ final class AntigravityUpstream {
         return null;
     }
 
-    // {"project":"<id>"} when a project id is known, else {} (matches the TS
-    // `projectId ? {project} : {}` guard) -- built via the same JsonCodec used everywhere else in
-    // this backend rather than hand-assembled JSON.
+    // {"project":"<id>"} when a project id is known, else {}. Built via the same JsonCodec used
+    // everywhere else in this backend rather than hand-assembled JSON.
     static String requestBody(AntigravityBackend backend, String projectId) {
         Map<String, Object> map = new LinkedHashMap<>();
         if (projectId != null && !projectId.trim().isEmpty()) {

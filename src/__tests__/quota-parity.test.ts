@@ -1,11 +1,8 @@
 // @ts-nocheck
-// Task 7a parity gate (accounts-controller.ts's TS allPoolsExhausted/antigravityStatus/
-// antigravityAvailableAt/antigravityQuota/familyLabel are deleted, superseded by Java): proves the
-// AntigravityQuotaParser exports (via AntigravityProviderJs — antigravityStatus/antigravityAvailableAt/
-// antigravityQuota, plus aggregateQuota's internal familyLabel classification) produce the frozen
-// output (quota-scenarios.expected.json, captured from the TS functions before their deletion) for
-// representative accounts (disabled, verification-required, cooling-down, active/exhausted quota,
-// lane-rate-limited, and no-quota-yet).
+// Verifies the AntigravityQuotaParser exports (via AntigravityProviderJs: antigravityStatus/
+// antigravityAvailableAt/antigravityQuota, plus aggregateQuota's internal familyLabel classification)
+// produce the frozen output (quota-scenarios.expected.json) for representative accounts (disabled,
+// verification-required, cooling-down, active/exhausted quota, lane-rate-limited, and no-quota-yet).
 import { describe, it, expect } from "vitest";
 import { loadOrchestrator } from "../driver/javaHandle.js";
 import fixture from "./quota-scenarios.expected.json";

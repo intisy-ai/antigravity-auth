@@ -1,5 +1,5 @@
 {
-  "happy path — 200 on attempt 0 (SERVE via transformAntigravityResponse + reportSuccess)": {
+  "happy path, 200 on attempt 0 (SERVE via transformAntigravityResponse + reportSuccess)": {
     "snap": {
       "status": 200,
       "headers": {
@@ -34,7 +34,7 @@
       }
     ]
   },
-  "happy path via proxy — proxy.reportResult(true) then SERVE": {
+  "happy path via proxy, proxy.reportResult(true) then SERVE": {
     "snap": {
       "status": 200,
       "headers": {
@@ -74,7 +74,7 @@
       }
     ]
   },
-  "429 (reset-after) x3 endpoints then rotate to ok via proxy — ipSuspected:true (has quota)": {
+  "429 (reset-after) x3 endpoints then rotate to ok via proxy, ipSuspected:true (has quota)": {
     "snap": {
       "status": 200,
       "headers": {
@@ -195,7 +195,7 @@
       }
     ]
   },
-  "429 x3 endpoints then rotate to ok via proxy — ipSuspected:false (no quota)": {
+  "429 x3 endpoints then rotate to ok via proxy, ipSuspected:false (no quota)": {
     "snap": {
       "status": 200,
       "headers": {
@@ -316,7 +316,7 @@
       }
     ]
   },
-  "429 cloudcode-pa [{error}] array unwrap (capacity) then rotate to ok — reason classification parity": {
+  "429 cloudcode-pa [{error}] array unwrap (capacity) then rotate to ok, reason classification parity": {
     "snap": {
       "status": 200,
       "headers": {
@@ -401,7 +401,7 @@
       }
     ]
   },
-  "503 no-reset then rotate to ok — MODEL_CAPACITY cooldown parity (jitter pinned)": {
+  "503 no-reset then rotate to ok, MODEL_CAPACITY cooldown parity (jitter pinned)": {
     "snap": {
       "status": 200,
       "headers": {
@@ -486,7 +486,7 @@
       }
     ]
   },
-  "endpoint fallback — PROD 403 (non-rate-limit) then DAILY 200 (SERVE on the 2nd endpoint)": {
+  "endpoint fallback, PROD 403 (non-rate-limit) then DAILY 200 (SERVE on the 2nd endpoint)": {
     "snap": {
       "status": 200,
       "headers": {
@@ -601,7 +601,7 @@
       "headers": {
         "content-type": "application/json"
       },
-      "body": "{\"error\":{\"message\":\"claude quota exhausted — resets in ~30s. Pick another model or use Auto (it falls through to a free pool).\"}}"
+      "body": "{\"error\":{\"message\":\"claude quota exhausted, resets in ~30s. Pick another model or use Auto (it falls through to a free pool).\"}}"
     },
     "calls": [
       [
@@ -616,7 +616,7 @@
     ],
     "outbound": []
   },
-  "Auto fall-through — candidate1 (gemini-pro) 503 rotates to candidate2 (claude) ok": {
+  "Auto fall-through, candidate1 (gemini-pro) 503 rotates to candidate2 (claude) ok": {
     "snap": {
       "status": 200,
       "headers": {
@@ -660,7 +660,7 @@
       }
     ]
   },
-  "TERMINAL gemini-cli exhausted — bare gemini model all rate-limited": {
+  "TERMINAL gemini-cli exhausted, bare gemini model all rate-limited": {
     "snap": {
       "status": 400,
       "headers": {
@@ -683,7 +683,7 @@
     ],
     "outbound": []
   },
-  "TERMINAL antigravity quota-reset — all rate-limited + a pool exhausted with a reset time": {
+  "TERMINAL antigravity quota-reset, all rate-limited + a pool exhausted with a reset time": {
     "snap": {
       "status": 400,
       "headers": {
@@ -707,7 +707,7 @@
     ],
     "outbound": []
   },
-  "exhaustion — 6 accounts all 429 -> SERVE_RAW the last real upstream 429 (transient, no quota)": {
+  "exhaustion, 6 accounts all 429 -> SERVE_RAW the last real upstream 429 (transient, no quota)": {
     "snap": {
       "status": 502,
       "headers": {

@@ -11,11 +11,9 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline parity tests for {@link AntigravitySchemaCleaner#clean}, expected values snapshotted from
- * the REAL {@code cleanJSONSchemaForAntigravity} (src/plugin/request-helpers.ts) via the Node harness
- * ({@code .superpowers/sdd/t7c1-harness/}, fixtures.json) -- never hand-derived. Each group mirrors a
- * pipeline phase; {@link #mutateVsCopy_matchesTs()} pins the observed mutate-vs-copy behavior
- * (inputMutated:false / sameRef only for primitives).
+ * Offline tests for {@link AntigravitySchemaCleaner#clean}. Each group mirrors a pipeline phase;
+ * {@link #mutateVsCopy_matchesTs()} pins the mutate-vs-copy behavior (inputMutated:false / sameRef
+ * only for primitives).
  */
 class AntigravitySchemaCleanerTest {
 
@@ -299,14 +297,14 @@ class AntigravitySchemaCleanerTest {
 
     @Test
     void mutateVsCopy_matchesTs() {
-        // object input: NOT mutated, output is a new tree (harness inputMutated:false / sameRef:false)
+        // object input: NOT mutated, output is a new tree (inputMutated:false / sameRef:false)
         Map<String, Object> input = map("type", "object", "properties", map("a", map("type", list("string", "null"))), "required", list("a"));
         Map<String, Object> snapshot = map("type", "object", "properties", map("a", map("type", list("string", "null"))), "required", list("a"));
         Object out = AntigravitySchemaCleaner.clean(input);
         assertEquals(snapshot, input, "input must not be mutated");
         assertNotSame(input, out, "object input must yield a new tree");
 
-        // primitive input: returned as-is (harness sameRef:true)
+        // primitive input: returned as-is (sameRef:true)
         String prim = "x";
         assertSame(prim, AntigravitySchemaCleaner.clean(prim));
         assertNull(AntigravitySchemaCleaner.clean(null));

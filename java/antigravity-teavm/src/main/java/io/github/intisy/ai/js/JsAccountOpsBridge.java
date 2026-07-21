@@ -18,27 +18,27 @@ import java.util.Map;
 
 /**
  * The {@link AntigravityHandleOrchestrator.AccountOps} bridge. Its ONE async operation ({@code
- * manager.acquire(lane)}, index.ts:133) is bridged with an {@code @Async} native method + {@link
- * AsyncCallback} -- one strand of the multi-{@code @Async} composition (the orchestrator's retry
- * loop does {@code acquire} then {@code execute} then {@code acquire}...). The SYNCHRONOUS ops
- * ({@code nextAvailableAt}/{@code reportError}/{@code reportRateLimit}/{@code reportSuccess}/
- * {@code reportProxyRateLimit}/{@code list}/{@code mutate}) return synchronously in TS, so they call
- * plain {@code @JSFunctor}/JSObject-method JS callbacks DIRECTLY -- no {@code @Async} (mirrors the
- * claude {@code JsAccountOpsBridge.JsReportFns} pattern).
+ * manager.acquire(lane)}) is bridged with an {@code @Async} native method + {@link AsyncCallback},
+ * one strand of the multi-{@code @Async} composition (the orchestrator's retry loop does {@code
+ * acquire} then {@code execute} then {@code acquire}...). The SYNCHRONOUS ops ({@code
+ * nextAvailableAt}/{@code reportError}/{@code reportRateLimit}/{@code reportSuccess}/{@code
+ * reportProxyRateLimit}/{@code list}/{@code mutate}) return synchronously in TS, so they call plain
+ * {@code @JSFunctor}/JSObject-method JS callbacks DIRECTLY, no {@code @Async} (mirrors the claude
+ * {@code JsAccountOpsBridge.JsReportFns} pattern).
  *
  * <p>Antigravity's {@link AntigravityHandleOrchestrator.Acquired} carries a THIRD field beyond the
- * claude shape -- the full account {@code Map} -- because {@code resolveProjectId}/{@code
+ * claude shape, the full account {@code Map}, because {@code resolveProjectId}/{@code
  * syntheticProjectFor} read {@code account.meta} and mutate it. {@link #mutate} therefore applies the
  * Java {@link AntigravityHandleOrchestrator.Mutator} to the locally-tracked account map (populated on
- * {@code acquire}/{@code list}, keyed by id -- exactly how the T7f {@code RecordingAccountOps.mutate}
- * finds the account in its list) and then ships the mutated account JSON to the host to persist.
+ * {@code acquire}/{@code list}, keyed by id) and then ships the mutated account JSON to the host to
+ * persist.
  */
 public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.AccountOps {
 
     /**
      * JS-provided async account acquisition: {@code (lane) => Promise<acquiredJson | null>}.
      * Resolves with a JSON string {@code {"accountId","access","account":{...}}}, or a JSON {@code
-     * "null"} / an actual JS {@code null}/{@code undefined} / empty string when no account is free --
+     * "null"} / an actual JS {@code null}/{@code undefined} / empty string when no account is free,
      * ALL of which the bridge collapses to Java {@code null}, matching the TS {@code !acquired ||
      * !acquired.account}. {@link JSString} at the generic {@link JSPromise} boundary, per the rule.
      */
@@ -49,7 +49,7 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
 
     /**
      * The synchronous {@link AntigravityHandleOrchestrator.AccountOps} callbacks, grouped in ONE JS
-     * object (a non-functor JSObject overlay -- each method is invoked on the underlying JS object by
+     * object (a non-functor JSObject overlay; each method is invoked on the underlying JS object by
      * name, exactly like the claude {@code JsReportFns}). {@code resetMs} crosses as a {@code double}
      * (epoch ms &lt; 2^53, so exact); the nullable {@code nextAvailableAt} and the {@code list()}
      * accounts + {@code mutate} account are JSON-encoded to a {@link JSString} ({@code "null"} for a
@@ -74,7 +74,7 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
     private final JsAcquireFn jsAcquire;
     private final JsAccountFns jsOps;
     private final JsonCodec json;
-    // Account maps seen via acquire()/list(), keyed by id -- the Map instance that flows into the
+    // Account maps seen via acquire()/list(), keyed by id: the Map instance that flows into the
     // orchestrator as Acquired.account, so mutate() applies the mutator to the SAME instance.
     private final Map<String, Map<String, Object>> knownAccounts = new LinkedHashMap<>();
 
@@ -166,7 +166,7 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
         jsOps.mutate(JSString.valueOf(accountId), JSString.valueOf(json.stringify(account)));
     }
 
-    // -- @Async bridge (one distinct @Async in the composed call graph) ---------------------------
+    // @Async bridge (one distinct @Async in the composed call graph) ------------------------------
 
     @Async
     private static native String awaitAcquire(JsAcquireFn fn, String lane);

@@ -19,7 +19,7 @@ const PROVIDER_ID = "antigravity";
 const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
-// of keys actually consumed by this provider are wired below — account selection
+// of keys actually consumed by this provider are wired below, account selection
 // (core-auth's engine), the Claude request flags passed into prepareAntigravityRequest,
 // and keep_thinking (read fresh by the request transform via getKeepThinking). The other
 // historical AntigravityConfig keys have no consumer here, so the settings UI omits them.
@@ -44,11 +44,11 @@ export { manager };
 
 // Bump accounts' stored UA version FORWARD over time, simulating an IDE auto-update.
 // Each account has its OWN randomized due date (fp.nextVersionDriftAt), so they never
-// update in lockstep — versions roll forward gradually. The first time an account is
+// update in lockstep, versions roll forward gradually. The first time an account is
 // seen it's only SCHEDULED (no change), which is what staggers the initial migration
 // off the old hardcoded version. Never downgrades; platform/arch preserved.
-// The DECISION (Option-B: Java decides, host applies) is AntigravityHandleRouting.
-// driftAccountVersions (real jsRandom); this just applies the returned mutations + logs.
+// The DECISION (Java decides, host applies) is AntigravityHandleRouting.driftAccountVersions
+// (real jsRandom); this just applies the returned mutations + logs.
 async function driftAccountVersions(log) {
   const { loadOrchestrator } = await import("./javaHandle.js");
   const orchestrator = await loadOrchestrator();
@@ -76,7 +76,7 @@ async function driftAccountVersions(log) {
   }
 }
 
-// Refresh the version pool from the release feed + drift accounts — triggered from
+// Refresh the version pool from the release feed + drift accounts, triggered from
 // the serving path (throttled), so CLI/command invocations never hit the network.
 // Fire-and-forget; never blocks a request.
 let versionMaintenanceAt = 0;
@@ -120,7 +120,7 @@ async function fetchModels(ctx) {
 }
 
 // Settings shown in core-auth's settings UI. ONLY options actually consumed by
-// this provider at runtime are listed — verified by tracing each to its consumer:
+// this provider at runtime are listed, verified by tracing each to its consumer:
 //   account_selection_strategy -> AccountManager(selection) above
 //   keep_thinking              -> request transform via getKeepThinking() (initRuntimeConfig above)
 //   claude_tool_hardening / claude_prompt_auto_caching
@@ -131,7 +131,7 @@ async function fetchModels(ctx) {
 //   signature_cache.*          -> initSignatureCache() at startup (plugin/cache.ts's diskCache)
 // The other historical AntigravityConfig keys (scheduling/rate-limit/quota/health/
 // token-bucket/recovery/notifications/etc.) have NO consumer in the core-auth
-// provider form — their behavior is owned by core-auth's own engine — so exposing
+// provider form, their behavior is owned by core-auth's own engine, so exposing
 // them would let users set no-ops. They are intentionally omitted.
 const settingsGroups = [
   {

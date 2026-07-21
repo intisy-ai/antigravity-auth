@@ -31,30 +31,28 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * IR-native JVM {@code AntigravityProvider}: {@link #handleIr} runs every request through the
- * fully-ported {@link AntigravityHandleOrchestrator} -- retry/account-rotation/Auto-walk/terminal-
- * error/synthetic-response all come from the orchestrator's DECISION loop. This provider is
- * IR&lt;-&gt;upstream ONLY: the front-door owns app&lt;-&gt;IR translation, so no app-wire (Anthropic)
- * format code lives here. The legacy Anthropic-wire {@code handle(HttpRequest, HandlerCtx)} override
- * was removed in T4 (canonical-IR migration); this class now inherits {@link Provider}'s throwing
- * {@code handle} default. {@code handleIr} (1) builds the orchestrator per request (wiring the host
- * seams from {@link AntigravityHostSeams}, including the IR-native {@link
- * AntigravityHostSeams.HostIrRequestPreparer}), (2) builds the orchestrator's {@code RequestInputs},
- * and (3) decodes the returned {@code HandleDecision} into an {@link IrResponse} (via {@link
- * AntigravityGeminiSseBridge#bufferedGeminiSseToIr}) or throws {@link HandleIrException}.
+ * IR-native JVM {@code AntigravityProvider}: {@link #handleIr} runs every request through
+ * {@link AntigravityHandleOrchestrator}, whose DECISION loop owns retry, account-rotation,
+ * Auto-walk, terminal-error and synthetic-response. This provider is IR&lt;-&gt;upstream ONLY: the
+ * front-door owns app&lt;-&gt;IR translation, so no app-wire (Anthropic) format code lives here, and
+ * this class inherits {@link Provider}'s throwing {@code handle} default. {@code handleIr} (1) builds
+ * the orchestrator per request (wiring the host seams from {@link AntigravityHostSeams}, including
+ * the IR-native {@link AntigravityHostSeams.HostIrRequestPreparer}), (2) builds the orchestrator's
+ * {@code RequestInputs}, and (3) decodes the returned {@code HandleDecision} into an {@link
+ * IrResponse} (via {@link AntigravityGeminiSseBridge#bufferedGeminiSseToIr}) or throws {@link
+ * HandleIrException}.
  *
  * <p>Shape discipline: {@code compileOnly project(":routing")} + {@code compileOnly
  * "io.github.intisy:jvm:0.1.0"} keep this module's own jar THIN (no {@code :routing}/{@code :jvm}
- * classes bundled -- the host's {@code ProviderRegistry} classloader already has them); only the
+ * classes bundled, the host's {@code ProviderRegistry} classloader already has them); only the
  * seam glue lives here, no {@code AntigravityRequestPrep}/{@code AntigravityHandleOrchestrator}
  * logic is duplicated.
  *
- * <p>SP-E/E-D typed capability SPI: discovery/quota are served by the typed capabilities, not by a
- * URL branch -- {@link ModelCatalogProvider#models}/{@link QuotaProvider#quota} (mechanical re-expose of the
- * existing {@link AntigravityModelsFetch}/{@link AntigravityQuotaFetch} logic as typed POJOs), and
- * {@link ConfigurableProvider}/{@link OAuthProvider} are genuinely NEW capabilities ported from the
- * TS {@code src/plugin/config/*} and {@code src/antigravity/oauth.ts} (see {@link AntigravityConfig}/
- * {@link AntigravityOAuth}). All four capabilities resolve their backend via {@link
+ * <p>Discovery and quota are served by the typed capabilities, not by a URL branch: {@link
+ * ModelCatalogProvider#models}/{@link QuotaProvider#quota} re-expose the {@link
+ * AntigravityModelsFetch}/{@link AntigravityQuotaFetch} logic as typed POJOs, and {@link
+ * ConfigurableProvider}/{@link OAuthProvider} back {@link AntigravityConfig}/{@link
+ * AntigravityOAuth}. All four capabilities resolve their backend via {@link
  * AntigravityBackend#forCtx}, which serves from the host's injected {@link
  * io.github.intisy.ai.shared.spi.Store} rather than self-assembling a {@code FileStore}.
  */
@@ -66,8 +64,8 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
 
     private static final String DEFAULT_MODEL_FALLBACK = "antigravity-default";
 
-    // request.ts:77 -- PLUGIN_SESSION_ID is a TS module-load-once constant; mirrored here as a
-    // static field initialized once per JVM (this class is loaded once per host process).
+    // PLUGIN_SESSION_ID is a module-load-once constant: a static field initialized once per JVM
+    // (this class is loaded once per host process).
     static final String PLUGIN_SESSION_ID = "-" + UUID.randomUUID();
 
     // ---- seam singletons (reused by AntigravityHostSeams; see AntigravityRequestPrep.Deps javadoc) --
@@ -76,7 +74,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
 
     static final AntigravityRequestKeys.Hasher SHA256_HASHER = AntigravityProvider::sha256Hex;
 
-    // No real signature cache yet (Bucket C, deferred past Phase 2): every lookup is a cache miss.
+    // No real signature cache yet: every lookup is a cache miss.
     static final AntigravityThinkingBlocks.CachedSignatureLookup NO_CACHED_SIGNATURE =
             (sessionId, text) -> null;
 
@@ -140,7 +138,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         // nothing observable versus the legacy path.
         in.bodyText = "{}";
         in.ctxModel = model;
-        in.autoCandidates = Collections.emptyList(); // TODO Phase 4: real Auto leaderboard candidates
+        in.autoCandidates = Collections.emptyList(); // TODO: real Auto leaderboard candidates
         in.log = log;
 
         AntigravityHandleOrchestrator.HandleDecision decision = orchestrator.handle(in);
@@ -172,14 +170,15 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
                         decision.terminal != null && decision.terminal.retryAfterMs > 0
                                 ? decision.terminal.retryAfterMs : null);
             case BRIDGE_STREAM:
-                // Unreachable in practice (the orchestrator no longer routes here); defensive only.
+                // Unreachable from this call path (only classifyAnthropicResult produces BRIDGE_STREAM,
+                // and this method never calls it); defensive only.
                 throw asHandleIrException(upstreamResponseOrError(decision.attemptRef));
             default:
                 throw asHandleIrException(errorResponse(502, "api_error", "unrecognized antigravity decision: " + decision.kind));
         }
     }
 
-    // T3c-2: wraps an already-built HttpResponse (status/headers/body) as the canonical typed
+    // wraps an already-built HttpResponse (status/headers/body) as the canonical typed
     // transport error core-proxy's Router.route reconstructs a real HttpResponse from, instead of
     // collapsing every handleIr throw to a flat 502 (which lost status fidelity and broke
     // rate-limit fallback). The response builders (materializeSynthetic/materializeTerminal/
@@ -206,7 +205,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return AntigravityQuotaFetch.quota(AntigravityBackend.forCtx(ctx));
     }
 
-    // ---- ConfigurableProvider: genuinely new capability, ported from src/plugin/config/*.ts ------
+    // ---- ConfigurableProvider ------
 
     @Override
     public ConfigSchema configSchema(HandlerCtx ctx) {
@@ -223,7 +222,7 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return AntigravityConfig.putValues(AntigravityBackend.forCtx(ctx), values);
     }
 
-    // ---- OAuthProvider: genuinely new capability, ported from src/antigravity/oauth.ts -----------
+    // ---- OAuthProvider -----------
 
     @Override
     public AuthorizeInfo authorize(HandlerCtx ctx) {
@@ -262,9 +261,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return errorResponse(502, "api_error", "antigravity upstream response missing");
     }
 
-    // The two lane-accurate exhaustion messages (index.ts:432,439-440, mirrored by
-    // AntigravityHandleOrchestrator.TerminalError): GEMINI_CLI_EXHAUSTED carries its full message
-    // as messagePrefix; ANTIGRAVITY_QUOTA_RESET splits the message around the host-formatted date.
+    // The two lane-accurate exhaustion messages (mirrored by AntigravityHandleOrchestrator.TerminalError):
+    // GEMINI_CLI_EXHAUSTED carries its full message as messagePrefix; ANTIGRAVITY_QUOTA_RESET splits
+    // the message around the host-formatted date.
     private static HttpResponse materializeTerminal(AntigravityHandleOrchestrator.TerminalError terminal) {
         String message = terminalErrorMessage(terminal);
 
@@ -324,9 +323,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return body;
     }
 
-    // index.ts:459's `toLocaleString(undefined, {month:"short",day:"numeric",hour:"numeric",
-    // minute:"2-digit"})` -- a JVM-side, locale-formatted stand-in (not byte-exact; disclosed
-    // deviation, no fixture asserts the exact date rendering, only that the reset wording is present).
+    // Formats like `toLocaleString(undefined, {month:"short",day:"numeric",hour:"numeric",
+    // minute:"2-digit"})` -- a JVM-side, locale-formatted stand-in (not byte-exact; no fixture
+    // asserts the exact date rendering, only that the reset wording is present).
     private static String formatResetInstant(long resetEpochMs) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.getDefault());
         return Instant.ofEpochMilli(resetEpochMs).atZone(ZoneId.systemDefault()).format(formatter);
@@ -361,9 +360,9 @@ public final class AntigravityProvider implements Provider, ConfigurableProvider
         return log != null ? log : (msg -> { });
     }
 
-    // fingerprint.ts:109's `antigravity/${version} ${platform}/${arch}` User-Agent, built from a
-    // fixed sane default (newest curated version + real platform/arch) rather than the Bucket-C
-    // session-fingerprint/version-drift singletons (deferred past Phase 2).
+    // The `antigravity/${version} ${platform}/${arch}` User-Agent, built from a fixed sane default
+    // (newest curated version + real platform/arch) rather than session-fingerprint/version-drift
+    // singletons.
     static Map<String, Object> defaultSelectedHeaders() {
         String version = AntigravityVersions.FALLBACK_VERSIONS.isEmpty()
                 ? "1.0.0" : AntigravityVersions.FALLBACK_VERSIONS.get(0);

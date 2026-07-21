@@ -13,15 +13,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Parity tests for {@link AntigravityThinkingRecovery} and {@link
- * AntigravityResponseParse#detectErrorType}, ported assertion-for-assertion from
- * {@code src/plugin/thinking-recovery.test.ts} and {@code src/plugin/recovery.test.ts}.
+ * Offline tests for {@link AntigravityThinkingRecovery} and {@link
+ * AntigravityResponseParse#detectErrorType}.
  */
 class AntigravityThinkingRecoveryTest {
 
     private final AntigravityThinkingRecovery recovery = new AntigravityThinkingRecovery(new TestJsonCodec());
 
-    // ---- fixtures (mirrors thinking-recovery.test.ts's builders) ----------------------------------
+    // ---- fixtures --------------------------------------------------------------------------------
 
     private static Map<String, Object> userMsg(String text) {
         return map("role", "user", "parts", list(map("text", text)));

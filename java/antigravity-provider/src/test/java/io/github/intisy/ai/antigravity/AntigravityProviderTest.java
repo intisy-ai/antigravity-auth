@@ -20,8 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link AntigravityHandleOrchestrator#attemptModel} materializes its own "no available account"
  * SYNTHETIC 503 decision before {@link AntigravityRequestPrep#prepare} or the {@code HttpClient}
  * SPI ever run). The full rotation/rate-limit/terminal-error paths are covered by
- * {@code AntigravityServePathTest}'s scripted-HttpClient scenarios (also via handleIr). The legacy
- * Anthropic-wire {@code handle()} override was removed in T4 (canonical-IR migration).
+ * {@code AntigravityServePathTest}'s scripted-HttpClient scenarios (via handleIr).
  */
 class AntigravityProviderTest {
 
@@ -31,11 +30,10 @@ class AntigravityProviderTest {
     }
 
     /**
-     * T3c-2: {@link AntigravityProvider#handleIr} must throw the canonical {@link
-     * HandleIrException} (not a bare RuntimeException) for the SAME no-account SYNTHETIC 503 the
-     * {@code handle()} test above returns as a plain response -- carrying the exact same
-     * status/body (Anthropic-shape rewrap via {@code materializeSynthetic}) so core-proxy's IR
-     * front door can reconstruct an equivalent response instead of collapsing to a flat 502.
+     * {@link AntigravityProvider#handleIr} must throw the canonical {@link HandleIrException} (not a
+     * bare RuntimeException) for the no-account SYNTHETIC 503, carrying the exact status/body
+     * (Anthropic-shape rewrap via {@code materializeSynthetic}) so core-proxy's IR front door can
+     * reconstruct an equivalent response instead of collapsing to a flat 502.
      */
     @Test
     void handleIr_noAccountConfigured_throwsHandleIrExceptionWithSameStatusAndBody(@TempDir Path configDir) {

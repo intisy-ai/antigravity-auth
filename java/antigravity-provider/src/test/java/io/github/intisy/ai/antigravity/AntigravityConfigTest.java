@@ -22,12 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-E/E-D: {@link AntigravityConfig} is a GENUINELY NEW capability (no {@code /v1/config} URL
- * branch existed in the Java provider before this migration). Covers the schema shape (grouped,
- * dotted keys for the flattened nested TS groups), GET/PUT round-tripping against a {@link Store}
- * test double, invalid-value handling, and -- the store-threading rule -- that {@link
- * AntigravityProvider#putConfigValues}/{@link AntigravityProvider#getConfigValues} serve from
- * {@link HandlerCtx#store} when the host injects one, never a self-assembled {@code FileStore}.
+ * Tests for {@link AntigravityConfig}. Covers the schema shape (grouped, dotted keys for the
+ * flattened nested groups), GET/PUT round-tripping against a {@link Store} test double, invalid-value
+ * handling, and the store-threading rule: {@link AntigravityProvider#putConfigValues}/{@link
+ * AntigravityProvider#getConfigValues} serve from {@link HandlerCtx#store} when the host injects one,
+ * never a self-assembled {@code FileStore}.
  */
 class AntigravityConfigTest {
 
@@ -84,7 +83,7 @@ class AntigravityConfigTest {
         assertEquals("round-robin", updated.get("account_selection_strategy"));
         assertFalse(updated.containsKey("bogus_unknown_key"));
 
-        // Round trip through a FRESH backend built from the SAME injected store -- proves
+        // Round trip through a FRESH backend built from the SAME injected store, proving
         // persistence went through the store the test injected, not a per-instance cache.
         AntigravityBackend reread = AntigravityBackend.forTest(store, noopHttp());
         Map<String, Object> values = AntigravityConfig.getValues(reread);
@@ -141,7 +140,7 @@ class AntigravityConfigTest {
         String raw = store.raw("antigravity.json");
         assertNotNull(raw, "putConfigValues via HandlerCtx.store must write to the INJECTED store");
         assertTrue(raw.contains("debug"));
-        // No file should ever appear under configDir -- proves no FileStore was self-assembled.
+        // No file should ever appear under configDir, proving no FileStore was self-assembled.
         assertFalse(configDir.resolve("antigravity.json").toFile().exists());
     }
 

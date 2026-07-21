@@ -9,13 +9,6 @@ import java.util.Map;
 import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Offline deterministic parity tests for {@link AntigravityAuth}, checked against antigravity-
- * auth's actual {@code src/plugin/auth.ts} behavior: the TS's exported functions were extracted
- * verbatim into a throwaway Node harness and executed with {@code node} (v26.3.1) to snapshot the
- * exact expected values used below -- not hand-derived from reading the source alone. See
- * task-7a-report.md for the harness.
- */
 class AntigravityAuthTest {
 
     private static final long NOW = 1_700_000_000_000L;

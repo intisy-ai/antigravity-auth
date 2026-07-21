@@ -11,18 +11,14 @@ import java.util.Map;
 
 /**
  * The {@link AntigravityHandleOrchestrator.RequestPreparer} bridge. Unlike the other four seams this
- * one is SYNCHRONOUS (prepare does no I/O), so it is a plain {@code @JSFunctor} call -- no {@code
- * @Async}. A JS-supplied preparer is sufficient for T7g1's async-composition proof; whether the live
- * path runs the Java {@code AntigravityRequestPrep} spine (T7e) or the existing TS {@code
- * prepareAntigravityRequest}, and how {@code ThinkingRecovery}/the signature cache get wired, is a
- * T7g2 decision -- explicitly OUT OF SCOPE here.
+ * one is SYNCHRONOUS (prepare does no I/O), so it is a plain {@code @JSFunctor} call, no {@code
+ * @Async}.
  *
  * <p>{@code (url, bodyText, method, headersJson, access, projectId, endpoint, headerStyle,
  * accountJson) => preparedJson}. {@code preparedJson} is {@code {"requestRef": <opaque>, "params":
  * {requestedModel, projectId, endpoint, effectiveModel, sessionId, streaming}}}. A JS {@code
- * null}/{@code undefined}/empty/{@code "null"} return signals "prepare threw -&gt; skip this
- * endpoint" (index.ts:169), which the bridge re-raises as a {@link RuntimeException} the orchestrator
- * catches.
+ * null}/{@code undefined}/empty/{@code "null"} return signals "prepare threw, skip this endpoint",
+ * which the bridge re-raises as a {@link RuntimeException} the orchestrator catches.
  */
 public final class JsRequestPreparerBridge implements AntigravityHandleOrchestrator.RequestPreparer {
 

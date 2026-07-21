@@ -7,12 +7,6 @@ import java.util.Map;
 import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Offline parity tests for {@link AntigravityModelResolver}, checked against antigravity-auth's
- * actual {@code src/plugin/transform/model-resolver.ts}: every expected value below was snapshotted
- * by running the real TS functions in a Node harness ({@code .superpowers/sdd/t7b-harness/}, node
- * v26.3.1) -- see t7b-report.md. Not hand-derived.
- */
 class AntigravityModelResolverTest {
 
     // ---- resolveModelWithTier --------------------------------------------------------------------
@@ -228,11 +222,10 @@ class AntigravityModelResolverTest {
         assertEquals("claude-opus-4-6-thinking", AntigravityModelResolver.resolveModelForHeaderStyle("claude-opus-4-6-thinking", "antigravity").get("actualModel"));
     }
 
-    // E-wiring: config.cli_first now reaches this live per-request resolve path (AntigravityRequestPrep
-    // .Input.cliFirst -> resolveModelForHeaderStyle(model, headerStyle, cliFirst)), instead of every
-    // call hardcoding false. Non-gemini-3 models bypass the header-style rewrite entirely and call
+    // config.cli_first threads through resolveModelForHeaderStyle(model, headerStyle, cliFirst).
+    // Non-gemini-3 models bypass the header-style rewrite entirely and call
     // resolveModelWithTier(requestedModel, cliFirst) directly (the early return in
-    // resolveModelForHeaderStyle) -- the cleanest place to observe cliFirst's effect on quotaPreference.
+    // resolveModelForHeaderStyle), the cleanest place to observe cliFirst's effect on quotaPreference.
     @Test
     void headerStyle_threadsCliFirst_nonGemini3Model() {
         assertEquals("antigravity",
@@ -244,8 +237,8 @@ class AntigravityModelResolverTest {
         assertEquals("antigravity",
                 AntigravityModelResolver.resolveModelForHeaderStyle("claude-opus-4-6-thinking", "antigravity", true).get("quotaPreference"));
 
-        // The 2-arg convenience overload (used by callers that don't route the config flag) still
-        // defaults cliFirst to false -- the pre-wiring behavior, preserved.
+        // The 2-arg convenience overload (used by callers that don't route the config flag) defaults
+        // cliFirst to false.
         assertEquals("antigravity",
                 AntigravityModelResolver.resolveModelForHeaderStyle("gemini-2.5-flash", "antigravity").get("quotaPreference"));
     }

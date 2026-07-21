@@ -12,23 +12,20 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/models-fetch.ts} (Bucket A, T7a):
- * {@code rankedAgentModelIds}, {@code effortTagOf}, {@code buildModelEntry}, and {@code
- * buildAntigravityCatalog} -- the effort-variant family collapse + ranking + default-model logic.
- * Deliberately does NOT port {@code fetchAvailableModels} (the {@code v1internal:
- * fetchAvailableModels} network call, Bucket C); {@link #buildAntigravityCatalog} takes the
- * ALREADY-FETCHED payload as a plain {@code Map}/{@code List} JSON tree (the shape both gson and
- * this ecosystem's {@code JsonCodec} SPI produce).
+ * The effort-variant family collapse + ranking + default-model logic: {@code rankedAgentModelIds},
+ * {@code effortTagOf}, {@code buildModelEntry}, and {@code buildAntigravityCatalog}. Does NOT fetch
+ * models; {@link #buildAntigravityCatalog} takes the ALREADY-FETCHED payload as a plain {@code
+ * Map}/{@code List} JSON tree (the shape both gson and this ecosystem's {@code JsonCodec} SPI
+ * produce).
  *
- * <p>No java.net/nio/reflection/threads -- TeaVM-transpilable, see {@code :antigravity-teavm}.
+ * <p>No java.net/nio/reflection/threads, TeaVM-transpilable, see {@code :antigravity-teavm}.
  */
 public final class AntigravityCatalog {
 
-    // models-fetch.ts:9
     public static final String MODEL_ID_PREFIX = "antigravity-";
 
-    // models-fetch.ts:89-95 -- the separate Gemini CLI free quota pool (bare ids -> gemini-cli
-    // lane/headers); stable public Gemini models, not part of the antigravity agent ranking.
+    // The separate Gemini CLI free quota pool (bare ids -> gemini-cli lane/headers); stable public
+    // Gemini models, not part of the antigravity agent ranking.
     public static final class GeminiCliModel {
         public final String id;
         public final String name;
@@ -50,15 +47,15 @@ public final class AntigravityCatalog {
             new GeminiCliModel("gemini-3-pro-preview", "Gemini 3 Pro Preview", 1048576, 65535),
             new GeminiCliModel("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", 1048576, 65535)));
 
-    // models-fetch.ts:115 -- NEVER infer effort from the raw backend id suffix; only the
-    // displayName's trailing parenthesized tag is authoritative.
+    // NEVER infer effort from the raw backend id suffix; only the displayName's trailing
+    // parenthesized tag is authoritative.
     private static final Pattern EFFORT_TAG =
             Pattern.compile("\\s*\\((minimal|extra\\s?low|low|medium|high)\\)\\s*$", Pattern.CASE_INSENSITIVE);
 
     private AntigravityCatalog() {
     }
 
-    // ---- rankedAgentModelIds (models-fetch.ts:74-84) --------------------------------------------------
+    // ---- rankedAgentModelIds ---------------------------------------------------------------------
 
     /** Flattens {@code payload.agentModelSorts} into a single ranked id list (dedup, first-seen order). */
     @SuppressWarnings("unchecked")
@@ -82,7 +79,7 @@ public final class AntigravityCatalog {
         return ids;
     }
 
-    // ---- effortTagOf (models-fetch.ts:117-122) --------------------------------------------------------
+    // ---- effortTagOf -----------------------------------------------------------------------------
 
     /** Result of splitting a display name into its effort-tag-stripped base and (optional) effort level. */
     public static final class EffortTag {
@@ -98,11 +95,9 @@ public final class AntigravityCatalog {
 
     /**
      * Splits a trailing {@code " (Low)"}/{@code " (extra low)"}/etc. effort tag off a display
-     * name; {@code "extra low"}/{@code "extralow"} both normalize to {@code "minimal"} (matching
-     * the TS's {@code tag === "extra-low" ? "minimal" : tag} after {@code replace(/\s+/g, "-")} --
-     * note a NO-SPACE {@code "extralow"} does NOT contain a space to collapse, so it normalizes to
-     * the literal string {@code "extralow"}, NOT {@code "minimal"}; this is an intentional
-     * TS-faithful quirk, not a bug in this port).
+     * name; {@code "extra low"} normalizes to {@code "minimal"} (via {@code replace(/\s+/g, "-")}).
+     * A NO-SPACE {@code "extralow"} has no space to collapse, so it normalizes to the literal
+     * {@code "extralow"}, NOT {@code "minimal"}; this is an intentional quirk, not a bug.
      */
     public static EffortTag effortTagOf(String displayName) {
         Matcher m = EFFORT_TAG.matcher(displayName);
@@ -113,7 +108,7 @@ public final class AntigravityCatalog {
         return new EffortTag(base, level);
     }
 
-    // ---- buildModelEntry (models-fetch.ts:97-106) -------------------------------------------------------
+    // ---- buildModelEntry -------------------------------------------------------------------------
 
     /** Builds one catalog entry from a single {@code fetchAvailableModels} model info record. */
     public static Map<String, Object> buildModelEntry(String rawId, Map<String, Object> info) {
@@ -147,7 +142,7 @@ public final class AntigravityCatalog {
         return fallback;
     }
 
-    // ---- buildAntigravityCatalog (models-fetch.ts:129-212) -------------------------------------------------
+    // ---- buildAntigravityCatalog -----------------------------------------------------------------
 
     /** One ranked-and-grouped effort family, keyed by its effort-tag-stripped display-name base. */
     private static final class EffortGroup {
@@ -178,7 +173,7 @@ public final class AntigravityCatalog {
      * backend model id) plus the fixed {@code Auto} entry and the Gemini CLI free-pool group.
      *
      * @return a plain map with keys {@code "models"} (the full catalog, keyed by prefixed id),
-     *         {@code "ranking"} (prefixed ids in recommended order -- the Auto-routing source),
+     *         {@code "ranking"} (prefixed ids in recommended order, the Auto-routing source),
      *         and {@code "defaultModelId"} (the default agent model's prefixed id, or {@code null}).
      */
     @SuppressWarnings("unchecked")
@@ -249,7 +244,7 @@ public final class AntigravityCatalog {
             catalog.put(MODEL_ID_PREFIX + rawId, entry);
         }
 
-        // Gemini CLI quota pool (bare ids, distinct lane) -- a second free pool.
+        // Gemini CLI quota pool (bare ids, distinct lane), a second free pool.
         for (GeminiCliModel cli : GEMINI_CLI_MODELS) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", cli.name + " (Gemini CLI)");
@@ -265,7 +260,7 @@ public final class AntigravityCatalog {
             catalog.put(cli.id, entry);
         }
 
-        // The API default may name a hidden family member -- map it to its family's canonical
+        // The API default may name a hidden family member, so map it to its family's canonical
         // (emitted) id.
         Object defaultAgentModelIdObj = payload.get("defaultAgentModelId");
         String defaultRaw = (defaultAgentModelIdObj instanceof String && ranked.contains(defaultAgentModelIdObj))

@@ -14,9 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Parity tests for {@link AntigravityResponseTransform#transformServe}, mirroring
- * {@code src/plugin/request.test.ts}'s {@code describe("transformAntigravityResponse")} OK
- * non-streaming JSON cases (see {@code .superpowers/sdd/phase-3b-brief.md}).
+ * Tests for {@link AntigravityResponseTransform#transformServe} on OK non-streaming JSON responses.
  */
 class AntigravityResponseTransformTest {
 
@@ -142,7 +140,7 @@ class AntigravityResponseTransformTest {
 
     @Test
     void malformedResponseFieldFallsBackToOriginalUpstream() {
-        // "response" is a bare string, not an object/array -- transformThinkingParts itself tolerates
+        // "response" is a bare string, not an object/array, and transformThinkingParts itself tolerates
         // this (returns non-Map input as-is), so force a genuine throw via a JsonCodec whose
         // stringify blows up, proving the outer try/catch returns the ORIGINAL upstream, not a crash.
         JsonCodec throwingJson = new JsonCodec() {

@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/transform/model-resolver.ts} (T7b, Bucket A):
+ * Model resolution:
  * {@code resolveModelWithTier} / {@code resolveModelWithVariant} / {@code resolveModelForHeaderStyle},
  * {@code getModelFamily}, {@code budgetToGemini3Level}, and the {@code MODEL_ALIASES} /
  * {@code THINKING_TIER_BUDGETS} / {@code GEMINI_3_THINKING_LEVELS} tables.
@@ -21,14 +21,14 @@ import java.util.regex.Pattern;
  */
 public final class AntigravityModelResolver {
 
-    // model-resolver.ts:18-23 -- Claude & Gemini 2.5 Pro use numeric budgets; ported EXACTLY.
+    // Claude & Gemini 2.5 Pro use numeric budgets.
     public static final Map<String, Map<String, Integer>> THINKING_TIER_BUDGETS;
 
-    // model-resolver.ts:30 -- Gemini 3 uses thinkingLevel STRINGS instead of numeric budgets.
+    // Gemini 3 uses thinkingLevel STRINGS instead of numeric budgets.
     public static final List<String> GEMINI_3_THINKING_LEVELS =
             Collections.unmodifiableList(Arrays.asList("minimal", "low", "medium", "high"));
 
-    // model-resolver.ts:40-64 -- user-friendly name -> API model name.
+    // user-friendly name -> API model name.
     public static final Map<String, String> MODEL_ALIASES;
 
     static {
@@ -63,14 +63,12 @@ public final class AntigravityModelResolver {
         return Collections.unmodifiableMap(m);
     }
 
-    // model-resolver.ts:66-77
     private static final Pattern TIER_REGEX = Pattern.compile("-(minimal|low|medium|high)$");
     private static final Pattern QUOTA_PREFIX_REGEX = Pattern.compile("^antigravity-", Pattern.CASE_INSENSITIVE);
     private static final Pattern GEMINI_3_PRO_REGEX = Pattern.compile("^gemini-3(?:\\.\\d+)?-pro", Pattern.CASE_INSENSITIVE);
-    private static final Pattern GEMINI_3_FLASH_REGEX = Pattern.compile("^gemini-3(?:\\.\\d+)?-flash", Pattern.CASE_INSENSITIVE);
     private static final Pattern IMAGE_GENERATION_MODELS = Pattern.compile("image|imagen", Pattern.CASE_INSENSITIVE);
 
-    // resolveModelForHeaderStyle regexes (model-resolver.ts:324-347)
+    // resolveModelForHeaderStyle regexes
     private static final Pattern PREVIEW_CUSTOMTOOLS_SUFFIX = Pattern.compile("-preview-customtools$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PREVIEW_SUFFIX = Pattern.compile("-preview$", Pattern.CASE_INSENSITIVE);
     private static final Pattern TIER_SUFFIX_CI = Pattern.compile("-(low|medium|high)$", Pattern.CASE_INSENSITIVE);
@@ -79,7 +77,6 @@ public final class AntigravityModelResolver {
     private AntigravityModelResolver() {
     }
 
-    // model-resolver.ts:86-93
     private static boolean supportsThinkingTiers(String model) {
         String lower = model.toLowerCase();
         return lower.contains("gemini-3")
@@ -87,14 +84,13 @@ public final class AntigravityModelResolver {
                 || (lower.contains("claude") && lower.contains("thinking"));
     }
 
-    // model-resolver.ts:99-106 -- returns null when no tier suffix (or model doesn't support tiers).
+    // Returns null when no tier suffix (or model doesn't support tiers).
     private static String extractThinkingTierFromModel(String model) {
         if (!supportsThinkingTiers(model)) return null;
         java.util.regex.Matcher m = TIER_REGEX.matcher(model);
         return m.find() ? m.group(1) : null;
     }
 
-    // model-resolver.ts:111-122
     private static String getBudgetFamily(String model) {
         if (model.contains("claude")) return "claude";
         if (model.contains("gemini-2.5-pro")) return "gemini-2.5-pro";
@@ -102,7 +98,6 @@ public final class AntigravityModelResolver {
         return "default";
     }
 
-    // model-resolver.ts:127-134
     private static boolean isThinkingCapableModel(String model) {
         String lower = model.toLowerCase();
         return lower.contains("thinking") || lower.contains("gemini-3") || lower.contains("gemini-2.5");
@@ -112,18 +107,14 @@ public final class AntigravityModelResolver {
         return GEMINI_3_PRO_REGEX.matcher(model).find();
     }
 
-    private static boolean isGemini3FlashModel(String model) {
-        return GEMINI_3_FLASH_REGEX.matcher(model).find();
-    }
-
     /** {@code resolveModelWithTier(requestedModel)} with default (empty) options. */
     public static Map<String, Object> resolveModelWithTier(String requestedModel) {
         return resolveModelWithTier(requestedModel, false);
     }
 
     /**
-     * Port of {@code resolveModelWithTier} (model-resolver.ts:164-269). {@code cliFirst} mirrors the
-     * TS {@code options.cli_first} flag.
+     * Resolves the actual upstream model + thinking config for a requested model name.
+     * {@code cliFirst} controls whether gemini-cli quota is preferred over antigravity quota.
      */
     public static Map<String, Object> resolveModelWithTier(String requestedModel, boolean cliFirst) {
         boolean isAntigravity = QUOTA_PREFIX_REGEX.matcher(requestedModel).find();
@@ -228,8 +219,7 @@ public final class AntigravityModelResolver {
     }
 
     /**
-     * Port of {@code getModelFamily} (model-resolver.ts:274-283) -- NOTE this returns the routing
-     * family {@code "claude"|"gemini-flash"|"gemini-pro"}, distinct from
+     * Returns the routing family {@code "claude"|"gemini-flash"|"gemini-pro"}, distinct from
      * {@link CrossModelSanitizer#getModelFamily} which returns {@code "claude"|"gemini"|"unknown"}.
      */
     public static String getModelFamily(String model) {
@@ -239,7 +229,7 @@ public final class AntigravityModelResolver {
         return "gemini-pro";
     }
 
-    /** Port of {@code budgetToGemini3Level} (model-resolver.ts:297-301). */
+    /** Maps a numeric thinking budget to the closest Gemini-3 thinking level. */
     public static String budgetToGemini3Level(int budget) {
         if (budget <= 8192) return "low";
         if (budget <= 16384) return "medium";
@@ -255,10 +245,10 @@ public final class AntigravityModelResolver {
     }
 
     /**
-     * Port of {@code resolveModelForHeaderStyle} (model-resolver.ts:312-359). {@code headerStyle} is
-     * {@code "antigravity"} or {@code "gemini-cli"}. {@code cliFirst} mirrors the TS
-     * {@code options.cli_first} flag and is threaded into every inner {@link #resolveModelWithTier}
-     * call so gemini-cli routing preference reaches the live per-request resolve path.
+     * Resolves a requested model for a specific upstream header style. {@code headerStyle} is
+     * {@code "antigravity"} or {@code "gemini-cli"}. {@code cliFirst} is threaded into every inner
+     * {@link #resolveModelWithTier} call so gemini-cli routing preference reaches the live
+     * per-request resolve path.
      */
     public static Map<String, Object> resolveModelForHeaderStyle(String requestedModel, String headerStyle, boolean cliFirst) {
         String lower = requestedModel.toLowerCase();
@@ -309,7 +299,7 @@ public final class AntigravityModelResolver {
     }
 
     /**
-     * Port of {@code resolveModelWithVariant} (model-resolver.ts:365-413). {@code variantConfig} is
+     * Resolves a model, applying an optional per-variant override. {@code variantConfig} is
      * a JSON-tree map (keys {@code thinkingBudget}, {@code googleSearch}) or {@code null}.
      */
     public static Map<String, Object> resolveModelWithVariant(String requestedModel, Map<String, Object> variantConfig) {
@@ -358,7 +348,7 @@ public final class AntigravityModelResolver {
         return r;
     }
 
-    // model-resolver.ts:395 uses /-(low|medium|high)$/ (case-sensitive, no i flag) for the
-    // antigravity Gemini-3-Pro base-model strip in resolveModelWithVariant.
+    // Case-sensitive (no CASE_INSENSITIVE flag): the antigravity Gemini-3-Pro base-model strip in
+    // resolveModelWithVariant intentionally only matches lowercase tier suffixes.
     private static final Pattern TIER_SUFFIX = Pattern.compile("-(low|medium|high)$");
 }

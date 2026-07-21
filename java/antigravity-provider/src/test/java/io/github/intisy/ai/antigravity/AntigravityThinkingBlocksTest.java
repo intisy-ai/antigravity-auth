@@ -14,13 +14,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Offline parity tests for {@link AntigravityThinkingBlocks}, expected values snapshotted from the
- * REAL filter/transform helpers (src/plugin/request-helpers.ts) via the Node harness
- * ({@code .superpowers/sdd/t7c2-harness/}, fixtures.json {@code keepFalse.*} / {@code keepTrue.*}) --
- * never hand-derived. The {@code keepThinking} sweep (getKeepThinking() global) was captured in two
- * Node passes; the injected {@link AntigravityThinkingBlocks.ImageSink} (processImageData, Bucket C
- * fs) is verified by {@link #transformThinkingParts_imageSinkSeam()} with a capturing sink, not a
- * real-TS snapshot (its real output is a non-deterministic file path).
+ * Offline tests for {@link AntigravityThinkingBlocks}. The injected {@link
+ * AntigravityThinkingBlocks.ImageSink} ({@code processImageData}) is verified by
+ * {@link #transformThinkingParts_imageSinkSeam()} with a capturing sink, since its real output is a
+ * non-deterministic file path.
  */
 class AntigravityThinkingBlocksTest {
 
@@ -28,7 +25,7 @@ class AntigravityThinkingBlocksTest {
     private static final String FOR70 = repeat("F", 70);
     private static final String SKIP = AntigravityThinkingBlocks.SKIP_THOUGHT_SIGNATURE;
 
-    // Deterministic signature-cache getter mirroring the harness (only "sess1" has entries).
+    // Deterministic signature-cache getter (only "sess1" has entries).
     private static final AntigravityThinkingBlocks.CachedSignatureLookup CACHE =
             (sessionId, text) -> "sess1".equals(sessionId) && "ourtext".equals(text) ? SIG60 : null;
     private static final AntigravityThinkingBlocks.CachedSignatureLookup NONE = null;
@@ -189,9 +186,9 @@ class AntigravityThinkingBlocksTest {
 
     @Test
     void filterUnsigned_thinkingContentInTextKey_preserved() {
-        // {type:"thinking", text:"ourtext", signature:<validCached>} -- the `thinking` key is ABSENT,
-        // content lives in `text`. sanitizeThinkingPart must fall through to `text` (request-helpers.ts:1101)
-        // and emit thinking:"ourtext". Pre-fix (nullish sentinel bug) dropped the content.
+        // {type:"thinking", text:"ourtext", signature:<validCached>}, the `thinking` key is ABSENT,
+        // content lives in `text`. sanitizeThinkingPart must fall through to `text` and emit
+        // thinking:"ourtext".
         List<Object> contents = list(map("role", "model", "parts", list(
                 map("type", "thinking", "text", "ourtext", "signature", SIG60))));
         assertEquals(list(map("role", "model", "parts", list(

@@ -15,11 +15,11 @@ import java.util.Map;
 
 /**
  * The {@link AntigravityProjectContext.ProjectLoader} bridge: a THIRD distinct {@code @Async} native
- * method + {@link AsyncCallback}, driving the host-side {@code loadManagedProject} fetch loop
- * (project.ts:121-170). It suspends INSIDE {@code resolveProjectId} -&gt; {@code ensureProjectContext},
- * which runs BEFORE the {@link JsAttemptExecutorBridge#execute} suspend in the same attempt -- so a
- * single {@code attemptModel} iteration can chain acquire -&gt; load -&gt; (onboard) -&gt; execute, all
- * suspending on separate {@code @Async} bridges in one CPS-transformed call graph.
+ * method + {@link AsyncCallback}, driving the host-side {@code loadManagedProject} fetch loop. It
+ * suspends INSIDE {@code resolveProjectId} -&gt; {@code ensureProjectContext}, which runs BEFORE the
+ * {@link JsAttemptExecutorBridge#execute} suspend in the same attempt, so a single {@code
+ * attemptModel} iteration can chain acquire -&gt; load -&gt; (onboard) -&gt; execute, all suspending on
+ * separate {@code @Async} bridges in one CPS-transformed call graph.
  *
  * <p>{@code (accessToken, projectId, proxy) => Promise<payloadJson | null>}; the parsed {@code
  * loadCodeAssist} payload is a JSON object, or {@code null} on every-endpoint failure. {@link

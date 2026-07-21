@@ -6,19 +6,19 @@ plugins {
 }
 
 dependencies {
-    // :antigravity-provider -- AntigravityAuth/AntigravityLanes/AntigravityVersions/
+    // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/
     // AntigravityCatalog/AntigravityQuotaParser are the transpilable "core" this export reuses
     // verbatim. :antigravity-provider itself only `compileOnly`s :routing (keeping its shipped jar
-    // thin) -- that does NOT propagate to us, so :routing is declared again below for the SPI
+    // thin), which does NOT propagate to us, so :routing is declared again below for the SPI
     // types (JsonCodec/Clock/Random) AntigravityProviderJs references directly.
     implementation project(":antigravity-provider")
     implementation project(":routing")
-    // :antigravity-provider only `compileOnly`s :ir too (same thin-jar reasoning) -- that does NOT
-    // propagate to us either, so :ir is declared again below (SP-2) so the compiled orchestrator JS
+    // :antigravity-provider only `compileOnly`s :ir too (same thin-jar reasoning), which does NOT
+    // propagate to us either, so :ir is declared again below so the compiled orchestrator JS
     // bundle actually contains core-ir's IR types + AnthropicTranslator/GeminiTranslator that
-    // AntigravityIrBridge now calls into.
+    // AntigravityIrBridge calls into.
     implementation project(":ir")
-    // core-proxy's own :teavm js-base (SimpleJsonCodec) -- reused rather than duplicated;
+    // core-proxy's own :teavm js-base (SimpleJsonCodec), reused rather than duplicated;
     // AntigravityProviderJs lives in the SAME package (io.github.intisy.ai.js) so it can
     // reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/ClaudeProviderJs do.
     implementation project(":teavm")
@@ -28,10 +28,9 @@ dependencies {
 // The root subprojects{} block pins Java 8 (sourceCompatibility/targetCompatibility +
 // compileJava --release 8) for portability of :antigravity-provider. TeaVM 0.15.0's own classlib/
 // jso-apis/extension-spi artifacts publish a minimum JVM-version metadata of 11-17, so
-// :antigravity-teavm needs a newer compile target than :antigravity-provider -- override both the
+// :antigravity-teavm needs a newer compile target than :antigravity-provider, so override both the
 // extension's compatibility (fixes Gradle's dependency-resolution JVM-version attribute matching)
-// and the compileJava task's --release option. Mirrors claude-teavm/build.gradle exactly (which
-// itself mirrors stub-teavm/build.gradle and core-proxy/java/teavm/build.gradle).
+// and the compileJava task's --release option.
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17

@@ -4,61 +4,55 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's thinking-config helpers from {@code src/plugin/request-helpers.ts}
- * (T7c-2): {@code DEFAULT_THINKING_BUDGET} (:767), {@code isThinkingCapableModel} (:773),
- * {@code extractThinkingConfig} (:784), {@code extractVariantThinkingConfig} (:843),
- * {@code resolveThinkingConfig} (:898) and {@code normalizeThinkingConfig} (:1579). Pure functions;
- * no private-helper closure of their own. The companion thinking-block filtering + transform helpers
- * live in {@link AntigravityThinkingBlocks}.
+ * Thinking-config helpers: {@code DEFAULT_THINKING_BUDGET}, {@code isThinkingCapableModel},
+ * {@code extractThinkingConfig}, {@code extractVariantThinkingConfig}, {@code resolveThinkingConfig}
+ * and {@code normalizeThinkingConfig}. Pure functions. The companion thinking-block filtering +
+ * transform helpers live in {@link AntigravityThinkingBlocks}.
  *
  * <p>Casing is behavior, not noise (mirrors {@link ClaudeTransforms}/{@link GeminiTransforms}):
  * {@code normalizeThinkingConfig} reads BOTH the Gemini camelCase ({@code thinkingBudget}/
  * {@code includeThoughts}) and the Claude snake_case ({@code thinking_budget}/{@code include_thoughts})
  * keys via a nullish fallback, but always EMITS the camelCase keys. Gemini-3 variant thinking uses a
- * {@code thinkingLevel} STRING while Claude/Gemini-2.5 use a numeric {@code thinkingBudget} -- both
- * are surfaced verbatim (no cross-normalization). The effort->budget / level clamp TABLES are NOT
- * here: they live in {@link AntigravityModelResolver} (T7b) and are consumed elsewhere; these
- * functions only READ the raw thinking fields off the request.
+ * {@code thinkingLevel} STRING while Claude/Gemini-2.5 use a numeric {@code thinkingBudget}; both are
+ * surfaced verbatim (no cross-normalization). The effort->budget / level clamp TABLES are NOT here:
+ * they live in {@link AntigravityModelResolver}; these functions only READ the raw thinking fields
+ * off the request.
  *
  * <p>Data model = JSON tree {@code Map<String,Object>} / {@code List<Object>}; the returned config is
- * a NEW map (or {@code null} for the TS {@code undefined}) with only the keys the TS sets present --
- * a key the TS assigns {@code undefined} is left ABSENT here, matching what {@code JSON.stringify}
- * emits (the harness's source of truth). Numbers pass through as the caller's {@link Number} object;
- * {@link #DEFAULT_THINKING_BUDGET} is an {@code int}. Pure tree-read: no SPI/Clock/Random/JSON
- * re-parse. TeaVM-transpilable.
+ * a NEW map (or {@code null}) with only the keys that carry a value present; an unset key is left
+ * ABSENT, matching what {@code JSON.stringify} emits. Numbers pass through as the caller's
+ * {@link Number} object; {@link #DEFAULT_THINKING_BUDGET} is an {@code int}. Pure tree-read: no
+ * SPI/Clock/Random/JSON re-parse. TeaVM-transpilable.
  *
- * <p>Fidelity deviation (disclosed; unreachable by valid requests, exercised by no fixture): where
- * the TS accepts a value via {@code typeof x === "object"} for a config slot ({@code thinkingConfig},
+ * <p>Fidelity deviation (unreachable by valid requests): for a config slot ({@code thinkingConfig},
  * {@code thinking}, {@code google}, a {@code googleSearch}/{@code generationConfig.thinkingConfig}
- * container, or the {@code normalizeThinkingConfig} argument) this port requires a {@link Map}, so a
- * JSON ARRAY in that exact slot -- invalid input -- is treated as absent rather than having its
- * numeric indices read as (always-undefined) properties. For {@code normalizeThinkingConfig} that
- * yields the identical result the TS reaches anyway (an array's fields all read undefined -> the
- * function returns {@code undefined}).
+ * container, or the {@code normalizeThinkingConfig} argument) this code requires a {@link Map}, so a
+ * JSON ARRAY in that exact slot (invalid input) is treated as absent rather than having its numeric
+ * indices read as properties.
  */
 public final class AntigravityThinkingConfig {
 
-    /** request-helpers.ts:767 -- default token budget for thinking/reasoning. */
+    /** Default token budget for thinking/reasoning. */
     public static final int DEFAULT_THINKING_BUDGET = 16000;
 
     private AntigravityThinkingConfig() {
     }
 
-    // ---- isThinkingCapableModel (request-helpers.ts:773-778) --------------------------------------
+    // ---- isThinkingCapableModel ------------------------------------------------------------------
 
-    /** Port of {@code isThinkingCapableModel}: name contains "thinking", "gemini-3", or "opus". */
+    /** Name contains "thinking", "gemini-3", or "opus". */
     public static boolean isThinkingCapableModel(String modelName) {
         String lower = modelName.toLowerCase();
         return lower.contains("thinking") || lower.contains("gemini-3") || lower.contains("opus");
     }
 
-    // ---- extractThinkingConfig (request-helpers.ts:784-814) ---------------------------------------
+    // ---- extractThinkingConfig -------------------------------------------------------------------
 
     /**
-     * Port of {@code extractThinkingConfig}: reads Gemini-style {@code thinkingConfig} (nullish chain
-     * generationConfig -> extraBody -> requestPayload) else the Anthropic-style {@code thinking}
-     * option ({@code {type:"enabled", budgetTokens}}). Returns a {@code {includeThoughts, thinkingBudget}}
-     * map, or {@code null} (TS {@code undefined}).
+     * Reads Gemini-style {@code thinkingConfig} (nullish chain generationConfig -> extraBody ->
+     * requestPayload) else the Anthropic-style {@code thinking} option
+     * ({@code {type:"enabled", budgetTokens}}). Returns a {@code {includeThoughts, thinkingBudget}}
+     * map, or {@code null}.
      */
     public static Map<String, Object> extractThinkingConfig(
             Map<String, Object> requestPayload,
@@ -98,13 +92,13 @@ public final class AntigravityThinkingConfig {
         return null;
     }
 
-    // ---- extractVariantThinkingConfig (request-helpers.ts:843-891) --------------------------------
+    // ---- extractVariantThinkingConfig ------------------------------------------------------------
 
     /**
-     * Port of {@code extractVariantThinkingConfig}: reads OpenCode's {@code providerOptions.google}
-     * (Gemini-3 {@code thinkingLevel} string form OR budget-based {@code thinkingConfig.thinkingBudget}),
-     * plus {@code googleSearch}, falling back to {@code generationConfig.thinkingConfig}. Returns the
-     * variant map, or {@code null} when it would be empty.
+     * Reads OpenCode's {@code providerOptions.google} (Gemini-3 {@code thinkingLevel} string form OR
+     * budget-based {@code thinkingConfig.thinkingBudget}), plus {@code googleSearch}, falling back to
+     * {@code generationConfig.thinkingConfig}. Returns the variant map, or {@code null} when it would
+     * be empty.
      */
     public static Map<String, Object> extractVariantThinkingConfig(
             Map<String, Object> providerOptions,
@@ -118,7 +112,7 @@ public final class AntigravityThinkingConfig {
 
             if (google.get("thinkingLevel") instanceof String) {
                 result.put("thinkingLevel", google.get("thinkingLevel"));
-                // TS assigns `undefined` when not a boolean; we leave the key absent (JSON-omitted).
+                // Leave the key absent (JSON-omitted) when it is not a boolean.
                 if (google.get("includeThoughts") instanceof Boolean) {
                     result.put("includeThoughts", google.get("includeThoughts"));
                 }
@@ -162,13 +156,13 @@ public final class AntigravityThinkingConfig {
         return result.isEmpty() ? null : result;
     }
 
-    // ---- resolveThinkingConfig (request-helpers.ts:898-910) ---------------------------------------
+    // ---- resolveThinkingConfig -------------------------------------------------------------------
 
     /**
-     * Port of {@code resolveThinkingConfig}: a thinking model with no user config defaults to
+     * A thinking model with no user config defaults to
      * {@code {includeThoughts:true, thinkingBudget:DEFAULT}}; otherwise the user config passes through.
-     * {@code isClaudeModel}/{@code hasAssistantHistory} are unused by the TS (kept for signature
-     * fidelity -- signature validation is handled by the block filters).
+     * {@code isClaudeModel}/{@code hasAssistantHistory} are unused here (signature validation is
+     * handled by the block filters).
      */
     public static Map<String, Object> resolveThinkingConfig(
             Map<String, Object> userConfig,
@@ -185,12 +179,12 @@ public final class AntigravityThinkingConfig {
         return userConfig;
     }
 
-    // ---- normalizeThinkingConfig (request-helpers.ts:1579-1606) -----------------------------------
+    // ---- normalizeThinkingConfig -----------------------------------------------------------------
 
     /**
-     * Port of {@code normalizeThinkingConfig}: {@code includeThoughts} is only allowed when the budget
-     * is a finite positive number. Reads camelCase OR snake_case keys; emits camelCase. Returns
-     * {@code null} (TS {@code undefined}) when neither field carries a usable value.
+     * {@code includeThoughts} is only allowed when the budget is a finite positive number. Reads
+     * camelCase OR snake_case keys; emits camelCase. Returns {@code null} when neither field carries
+     * a usable value.
      */
     public static Map<String, Object> normalizeThinkingConfig(Object config) {
         if (!JsCoercion.isTruthy(config) || !(config instanceof Map)) {
@@ -216,8 +210,7 @@ public final class AntigravityThinkingConfig {
         if (thinkingBudget != null) {
             normalized.put("thinkingBudget", thinkingBudget);
         }
-        // TS: `finalInclude !== undefined` is always true (finalInclude is a boolean), so this is set
-        // unconditionally.
+        // finalInclude is a boolean, so this key is always set.
         normalized.put("includeThoughts", finalInclude);
         return normalized;
     }

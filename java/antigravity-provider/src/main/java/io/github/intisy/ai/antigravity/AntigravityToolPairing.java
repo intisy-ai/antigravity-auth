@@ -11,57 +11,51 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of antigravity-auth's Anthropic/Gemini tool-pairing helpers from
- * {@code src/plugin/request-helpers.ts} (T7c-3, the tool-pairing half): {@code fixToolResponseGrouping}
- * (:2040), {@code findOrphanedToolUseIds} (:2217), {@code fixClaudeToolPairing} (:2248) with its private
- * {@code removeOrphanedToolUse} (:2343), {@code validateAndFixClaudeToolPairing} (:2367),
- * {@code injectParameterSignatures} (:2462) with its private {@code formatTypeHint} (:2395),
- * {@code injectToolHardeningInstruction} (:2511), {@code assignToolIdsToContents} (:2560),
- * {@code matchResponseIdsToContents} (:2604) and {@code applyToolPairingFixes} (:2648). The
- * response/usage/error-parse half lives in {@link AntigravityResponseParse}; together they COMPLETE the
- * request-helpers.ts port.
+ * The Anthropic/Gemini tool-pairing helpers: {@code fixToolResponseGrouping},
+ * {@code findOrphanedToolUseIds}, {@code fixClaudeToolPairing} with its private
+ * {@code removeOrphanedToolUse}, {@code validateAndFixClaudeToolPairing}, {@code injectParameterSignatures}
+ * with its private {@code formatTypeHint}, {@code injectToolHardeningInstruction},
+ * {@code assignToolIdsToContents}, {@code matchResponseIdsToContents} and {@code applyToolPairingFixes}.
+ * The response/usage/error-parse half lives in {@link AntigravityResponseParse}.
  *
  * <p>These functions enforce the Anthropic tool_use/tool_result and Gemini functionCall/functionResponse
- * pairing rules -- an orphaned call or a mis-grouped response makes the upstream API reject the request
- * (400), so ordering/grouping/id-matching are ported EXACTLY (verified against harness snapshots).
+ * pairing rules: an orphaned call or a mis-grouped response makes the upstream API reject the request
+ * (400), so ordering/grouping/id-matching matter exactly.
  *
  * <h2>Injected edges</h2>
  * <ul>
- *   <li><b>JsonCodec SPI</b> is used only where the TS calls {@code JSON.stringify}: inside
- *       {@code formatTypeHint} (enum/const value rendering) -- threaded through
- *       {@code injectParameterSignatures}. The pairing/grouping functions are pure tree walks (no JSON
- *       (re)parse), so they take no codec.</li>
- *   <li><b>IdGenerator: NOT needed.</b> The TS assigns tool ids with a deterministic monotonic COUNTER
- *       ({@code tool-call-${++n}}), never {@code crypto}/UUID, so {@code assignToolIdsToContents} ports
- *       verbatim with an {@code int} counter -- no id-generator seam is introduced (the {@code Date.now()}
- *       edge lives in {@code createSyntheticErrorResponse}, ported in {@link AntigravityResponseParse}
- *       via the Clock SPI).</li>
+ *   <li><b>JsonCodec SPI</b> is used only for {@code JSON.stringify}: inside {@code formatTypeHint}
+ *       (enum/const value rendering), threaded through {@code injectParameterSignatures}. The
+ *       pairing/grouping functions are pure tree walks (no JSON (re)parse), so they take no codec.</li>
+ *   <li><b>IdGenerator: NOT needed.</b> Tool ids are assigned with a deterministic monotonic COUNTER
+ *       ({@code tool-call-${++n}}), never {@code crypto}/UUID, so {@code assignToolIdsToContents} uses a
+ *       plain {@code int} counter (the {@code Date.now()} edge lives in
+ *       {@code createSyntheticErrorResponse}, in {@link AntigravityResponseParse} via the Clock SPI).</li>
  *   <li><b>Store SPI (signature cache): NOT reached.</b> {@code injectParameterSignatures} works purely
  *       from the tool schema; it never touches {@code getCachedSignature}/{@code cacheSignature}.</li>
  * </ul>
  *
- * <p>Copy-vs-mutate fidelity mirrors the TS exactly: {@code assignToolIdsToContents}/
- * {@code matchResponseIdsToContents}/{@code fixClaudeToolPairing}/{@code injectParameterSignatures} build
- * NEW arrays/maps (the TS {@code .map()} + spread); {@code fixToolResponseGrouping} MUTATES the recovered
- * response parts in place (reassigning {@code functionResponse.id}/{@code name}) as the TS does;
- * {@code injectToolHardeningInstruction}/{@code applyToolPairingFixes} MUTATE the payload in place.
+ * <p>Copy-vs-mutate fidelity: {@code assignToolIdsToContents}/{@code matchResponseIdsToContents}/
+ * {@code fixClaudeToolPairing}/{@code injectParameterSignatures} build NEW arrays/maps;
+ * {@code fixToolResponseGrouping} MUTATES the recovered response parts in place (reassigning
+ * {@code functionResponse.id}/{@code name}); {@code injectToolHardeningInstruction}/
+ * {@code applyToolPairingFixes} MUTATE the payload in place.
  *
- * <p>Fidelity deviations (disclosed; none reachable by valid payloads, exercised by no fixture): (1) the
- * {@code log.debug}/{@code console.warn} diagnostics (auto-repair notices, the nuclear-option warning)
- * are omitted -- no bearing on returned data, no Logger edge in this slice. (2) Where the TS reads a
- * container via {@code typeof x === "object"} / property access on a possibly-non-object, this port
- * requires a {@link Map} (a {@code null} content entry, which throws in the TS, is passed through here);
- * every such case is invalid input unreached by any fixture. TeaVM-transpilable.
+ * <p>Deviations (none reachable by valid payloads): (1) the {@code log.debug}/{@code console.warn}
+ * diagnostics (auto-repair notices, the nuclear-option warning) are omitted (no bearing on returned data,
+ * no Logger edge). (2) Where a container is read via property access on a possibly-non-object, this class
+ * requires a {@link Map} (a {@code null} content entry is passed through here); every such case is invalid
+ * input. TeaVM-transpilable.
  */
 public final class AntigravityToolPairing {
 
-    /** request-helpers.ts:2464 -- default parameter-signature template (⚠ + variation selector as in TS). */
+    /** Default parameter-signature template (⚠ + variation selector). */
     static final String DEFAULT_SIGNATURE_TEMPLATE = "\n\n⚠️ STRICT PARAMETERS: {params}.";
 
     private AntigravityToolPairing() {
     }
 
-    // ---- fixToolResponseGrouping (request-helpers.ts:2040-2211) -----------------------------------
+    // ---- fixToolResponseGrouping -----------------------------------
 
     private static final class PendingGroup {
         final List<String> ids;
@@ -76,9 +70,9 @@ public final class AntigravityToolPairing {
     }
 
     /**
-     * Port of {@code fixToolResponseGrouping}: groups Gemini functionCalls with their functionResponses,
-     * recovering from stripped/mismatched ids (exact id -> name -> {@code unknown_function} -> first
-     * available), and synthesizing recovered placeholders when no response survives.
+     * Groups Gemini functionCalls with their functionResponses, recovering from stripped/mismatched ids
+     * (exact id -> name -> {@code unknown_function} -> first available), and synthesizing recovered
+     * placeholders when no response survives.
      */
     @SuppressWarnings("unchecked")
     public static List<Object> fixToolResponseGrouping(List<Object> contents) {
@@ -254,11 +248,11 @@ public final class AntigravityToolPairing {
         return fr instanceof Map ? (Map<String, Object>) fr : null;
     }
 
-    // ---- findOrphanedToolUseIds (request-helpers.ts:2217-2235) ------------------------------------
+    // ---- findOrphanedToolUseIds ------------------------------------
 
     /**
-     * Port of {@code findOrphanedToolUseIds}: the set of Anthropic {@code tool_use} ids that have no
-     * matching {@code tool_result}, in first-seen order.
+     * The set of Anthropic {@code tool_use} ids that have no matching {@code tool_result}, in
+     * first-seen order.
      */
     public static Set<String> findOrphanedToolUseIds(List<Object> messages) {
         Set<String> toolUseIds = new LinkedHashSet<>();
@@ -295,7 +289,7 @@ public final class AntigravityToolPairing {
         return orphans;
     }
 
-    // ---- fixClaudeToolPairing (request-helpers.ts:2248-2337) --------------------------------------
+    // ---- fixClaudeToolPairing --------------------------------------
 
     private static final class ToolUseInfo {
         final String name;
@@ -308,9 +302,8 @@ public final class AntigravityToolPairing {
     }
 
     /**
-     * Port of {@code fixClaudeToolPairing}: injects placeholder {@code tool_result} blocks for orphaned
-     * {@code tool_use}s -- merged into the following user message when present, else a new user message
-     * after the assistant turn.
+     * Injects placeholder {@code tool_result} blocks for orphaned {@code tool_use}s, merged into the
+     * following user message when present, else a new user message after the assistant turn.
      */
     @SuppressWarnings("unchecked")
     public static List<Object> fixClaudeToolPairing(List<Object> messages) {
@@ -411,7 +404,7 @@ public final class AntigravityToolPairing {
         return block;
     }
 
-    // ---- removeOrphanedToolUse (request-helpers.ts:2343-2361) -------------------------------------
+    // ---- removeOrphanedToolUse -------------------------------------
 
     @SuppressWarnings("unchecked")
     private static List<Object> removeOrphanedToolUse(List<Object> messages, Set<String> orphanIds) {
@@ -450,11 +443,11 @@ public final class AntigravityToolPairing {
         return result;
     }
 
-    // ---- validateAndFixClaudeToolPairing (request-helpers.ts:2367-2389) ---------------------------
+    // ---- validateAndFixClaudeToolPairing ---------------------------
 
     /**
-     * Port of {@code validateAndFixClaudeToolPairing}: gentle placeholder fix first; if orphans remain,
-     * the nuclear option removes the orphaned {@code tool_use} blocks (and now-empty assistant turns).
+     * Gentle placeholder fix first; if orphans remain, the nuclear option removes the orphaned
+     * {@code tool_use} blocks (and now-empty assistant turns).
      */
     public static List<Object> validateAndFixClaudeToolPairing(List<Object> messages) {
         if (messages == null || messages.isEmpty()) {
@@ -466,22 +459,21 @@ public final class AntigravityToolPairing {
         if (orphanIds.isEmpty()) {
             return fixed;
         }
-        // TS console.warn diagnostic omitted (no Logger edge; no bearing on returned data).
+        // console.warn diagnostic omitted (no Logger edge; no bearing on returned data).
         return removeOrphanedToolUse(fixed, orphanIds);
     }
 
-    // ---- injectParameterSignatures + formatTypeHint (request-helpers.ts:2395-2502) ----------------
+    // ---- injectParameterSignatures + formatTypeHint ----------------
 
-    /** Port of {@code injectParameterSignatures} (default template). */
+    /** Uses the default signature template. */
     public static List<Object> injectParameterSignatures(JsonCodec json, List<Object> tools) {
         return injectParameterSignatures(json, tools, DEFAULT_SIGNATURE_TEMPLATE);
     }
 
     /**
-     * Port of {@code injectParameterSignatures}: appends an explicit "STRICT PARAMETERS: ..." signature
-     * (built from each declaration's parameter schema) to tool descriptions, to curb parameter
-     * hallucination. Declarations already carrying the marker, or with no properties/schema, are left
-     * untouched.
+     * Appends an explicit "STRICT PARAMETERS: ..." signature (built from each declaration's parameter
+     * schema) to tool descriptions, to curb parameter hallucination. Declarations already carrying the
+     * marker, or with no properties/schema, are left untouched.
      */
     @SuppressWarnings("unchecked")
     public static List<Object> injectParameterSignatures(JsonCodec json, List<Object> tools, String promptTemplate) {
@@ -576,8 +568,8 @@ public final class AntigravityToolPairing {
             return "string ENUM[" + enumVals.size() + " options]";
         }
 
-        // TS: `propData.const !== undefined` -- an explicit `const: null` (valid JSON Schema) still
-        // renders, so key presence (not non-null) is the gate.
+        // An explicit `const: null` (valid JSON Schema) still renders, so key presence (not non-null)
+        // is the gate.
         if (propData.containsKey("const")) {
             return "string CONST=" + json.stringify(propData.get("const"));
         }
@@ -623,12 +615,12 @@ public final class AntigravityToolPairing {
         return out;
     }
 
-    // ---- injectToolHardeningInstruction (request-helpers.ts:2511-2551) ----------------------------
+    // ---- injectToolHardeningInstruction ----------------------------
 
     /**
-     * Port of {@code injectToolHardeningInstruction}: prepends a tool-hardening system instruction to
-     * {@code payload.systemInstruction} (unshift into existing parts / wrap a string / create fresh),
-     * skipping when the "CRITICAL TOOL USAGE INSTRUCTIONS" marker is already present. Mutates {@code payload}.
+     * Prepends a tool-hardening system instruction to {@code payload.systemInstruction} (unshift into
+     * existing parts / wrap a string / create fresh), skipping when the "CRITICAL TOOL USAGE
+     * INSTRUCTIONS" marker is already present. Mutates {@code payload}.
      */
     @SuppressWarnings("unchecked")
     public static void injectToolHardeningInstruction(Map<String, Object> payload, String instructionText) {
@@ -683,7 +675,7 @@ public final class AntigravityToolPairing {
         return si;
     }
 
-    // ---- assignToolIdsToContents (request-helpers.ts:2560-2594) -----------------------------------
+    // ---- assignToolIdsToContents -----------------------------------
 
     /** Result of {@link #assignToolIdsToContents}: the id-stamped contents, the name->ids queue map, and the counter. */
     public static final class AssignResult {
@@ -699,9 +691,9 @@ public final class AntigravityToolPairing {
     }
 
     /**
-     * Port of {@code assignToolIdsToContents}: stamps a deterministic {@code tool-call-<n>} id onto every
-     * functionCall missing one, tracking the assigned ids per function name for later response matching.
-     * Returns a NEW contents array (or the raw value unchanged when it is not an array).
+     * Stamps a deterministic {@code tool-call-<n>} id onto every functionCall missing one, tracking the
+     * assigned ids per function name for later response matching. Returns a NEW contents array (or the
+     * raw value unchanged when it is not an array).
      */
     @SuppressWarnings("unchecked")
     public static AssignResult assignToolIdsToContents(Object contentsRaw) {
@@ -750,12 +742,12 @@ public final class AntigravityToolPairing {
         return new AssignResult(newContents, pendingCallIdsByName, counter[0]);
     }
 
-    // ---- matchResponseIdsToContents (request-helpers.ts:2604-2634) --------------------------------
+    // ---- matchResponseIdsToContents --------------------------------
 
     /**
-     * Port of {@code matchResponseIdsToContents}: fills each id-less functionResponse's id from the
-     * pending queue for its function name (FIFO), returning a NEW contents array (or the raw value
-     * unchanged when it is not an array). Mutates the pending queues (shift), mirroring the TS.
+     * Fills each id-less functionResponse's id from the pending queue for its function name (FIFO),
+     * returning a NEW contents array (or the raw value unchanged when it is not an array). Mutates the
+     * pending queues (shift).
      */
     @SuppressWarnings("unchecked")
     public static Object matchResponseIdsToContents(Object contentsRaw, Map<String, List<String>> pendingCallIdsByName) {
@@ -795,7 +787,7 @@ public final class AntigravityToolPairing {
         return result;
     }
 
-    // ---- applyToolPairingFixes (request-helpers.ts:2648-2689) -------------------------------------
+    // ---- applyToolPairingFixes -------------------------------------
 
     /** Result of {@link #applyToolPairingFixes}: which of the two array shapes was rewritten. */
     public static final class PairingFixResult {
@@ -809,8 +801,8 @@ public final class AntigravityToolPairing {
     }
 
     /**
-     * Port of {@code applyToolPairingFixes}: for Claude requests, runs the full contents[] id-assign ->
-     * response-match -> grouping pipeline and/or the messages[] pairing fix, mutating {@code payload}.
+     * For Claude requests, runs the full contents[] id-assign -> response-match -> grouping pipeline
+     * and/or the messages[] pairing fix, mutating {@code payload}.
      */
     @SuppressWarnings("unchecked")
     public static PairingFixResult applyToolPairingFixes(JsonCodec json, Map<String, Object> payload, boolean isClaude) {

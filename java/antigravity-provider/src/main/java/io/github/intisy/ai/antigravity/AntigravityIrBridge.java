@@ -17,20 +17,20 @@ import java.util.Map;
  * GeminiTranslator.encodeRequest}). The resulting Gemini body still passes through {@link
  * AntigravityRequestPrep}'s full pipeline (tool-hardening, schema cleaning, the REAL thinking-tier
  * resolution via {@link AntigravityThinkingConfig}, signature caching, ...) exactly as a
- * native-Gemini request would -- this bridge only produces the ROUGH Gemini shape, not the final
+ * native-Gemini request would; this bridge only produces the ROUGH Gemini shape, not the final
  * wire body.
  *
  * <h2>Thinking budget: value vs format</h2>
  * The {@code thinking.budget_tokens} / {@code output_config.effort} effort-&gt;budget TABLE and the
  * disabled/precedence rules are antigravity-specific business logic (not part of any vendor's
- * neutral wire format), so they stay here, operating on {@code IrRequest.thinking} -- while the
+ * neutral wire format), so they stay here, operating on {@code IrRequest.thinking}, while the
  * actual key names/shape of {@code generationConfig.thinkingConfig} are produced by {@code
  * GeminiTranslator} itself.
  */
 public final class AntigravityIrBridge {
 
-    // anthropic-bridge.ts:74 -- effort -> Gemini thinkingBudget (xhigh/max clamp to high=32768).
-    // KEPT: this table is antigravity's own tier->budget VALUE policy, not format translation.
+    // effort -> Gemini thinkingBudget (xhigh/max clamp to high=32768). This table is antigravity's
+    // own tier->budget VALUE policy, not format translation.
     private static final Map<String, Integer> EFFORT_BUDGET = new LinkedHashMap<>();
 
     static {
@@ -46,7 +46,7 @@ public final class AntigravityIrBridge {
     private AntigravityIrBridge() {
     }
 
-    // ---- supportsThinking (anthropic-bridge.ts:13-16) --------------------------------------------
+    // ---- supportsThinking ------------------------------------------------------------------------
 
     /** {@code String(model || "").toLowerCase()} includes "thinking" or "gemini-3". */
     public static boolean supportsThinking(Object model) {
@@ -62,20 +62,18 @@ public final class AntigravityIrBridge {
         return new GeminiTranslator(irJson).encodeRequest(ir);
     }
 
-    // ---- thinking budget resolution (anthropic-bridge.ts:74-90) -----------------------------------
+    // ---- thinking budget resolution --------------------------------------------------------------
 
     /**
-     * Applies antigravity's effort/explicit-budget precedence onto {@code ir.thinking}, mirroring
-     * the old bridge exactly: an explicit {@code thinking.budget_tokens} wins; else {@code
-     * output_config.effort} looked up in {@link #EFFORT_BUDGET}; {@code thinking.type === "disabled"}
-     * always suppresses; the result only survives when {@link #supportsThinking(Object)} is true
-     * for {@code model} -- otherwise {@code ir.thinking} is cleared so {@code GeminiTranslator}
-     * never emits a {@code thinkingConfig} the old bridge wouldn't have (it never round-tripped
-     * {@code thinking} through untouched; a {@code thinkingConfig} appeared ONLY via this
-     * resolution).
+     * Applies antigravity's effort/explicit-budget precedence onto {@code ir.thinking}: an explicit
+     * {@code thinking.budget_tokens} wins; else {@code output_config.effort} looked up in {@link
+     * #EFFORT_BUDGET}; {@code thinking.type === "disabled"} always suppresses; the result only
+     * survives when {@link #supportsThinking(Object)} is true for {@code model}, otherwise {@code
+     * ir.thinking} is cleared so {@code GeminiTranslator} emits a {@code thinkingConfig} only when
+     * this resolution produces one.
      *
      * <p>{@code output_config} has no neutral IR field (it is not a real Anthropic Messages API
-     * key) -- {@code AnthropicRequestCodec} stashes it verbatim in {@code IrRequest#extensions}
+     * key), so {@code AnthropicRequestCodec} stashes it verbatim in {@code IrRequest#extensions}
      * exactly like any other unrecognized top-level field, which is where this reads it from.
      */
     public static void resolveThinkingBudget(IrRequest ir, Object model) {

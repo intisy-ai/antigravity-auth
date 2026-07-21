@@ -1,20 +1,15 @@
-// Task 7b-3: ensureProjectContext (the project-id discovery DECISION + its per-refresh-token
-// result/pending Map/Promise dedup cache) is deleted — AntigravityProjectContext.ensureProjectContext
-// (Java) owns that decision now, reached via driver/javaHandle.ts's resolveProjectIdViaJava (fetchModels)
-// and the SERVE path's handleAntigravityRequestAsync; ensureProjectContext was the cache's only
-// consumer, so the cache had no reason to survive (never wrapped loadManagedProject/onboardManagedProject
-// directly). What remains here is host I/O only: the two network fetch loops (used by BOTH Java paths
-// via the jsLoad/jsOnboard seams) + buildMetadata/detectCodeAssistPlatform, which those loops need to
-// build request bodies (also duplicated in Java, but genuinely local formatting the loops call directly
-// — not re-exposed as a standalone seam).
+// Host I/O for project-context discovery: the two network fetch loops (loadManagedProject /
+// onboardManagedProject, used by both Java paths via the jsLoad/jsOnboard seams) plus
+// buildMetadata/detectCodeAssistPlatform, the local body formatting those loops call directly. The
+// project-id discovery decision itself is owned by the Java orchestrator.
 import { getAntigravityHeaders, ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_LOAD_ENDPOINTS } from "../constants";
 import { createLogger } from "./logger";
 
 const log = createLogger("project");
 
-// The loadCodeAssist/onboardUser request body validates metadata.platform
-// against ClientMetadata.Platform — "WINDOWS"/"MACOS" are NOT valid enum values
-// (they 400 the request); it must be e.g. LINUX_AMD64 / DARWIN_ARM64 / WINDOWS_AMD64.
+// The loadCodeAssist/onboardUser request body validates metadata.platform against
+// ClientMetadata.Platform. "WINDOWS"/"MACOS" are NOT valid enum values (they 400 the request); it must
+// be e.g. LINUX_AMD64 / DARWIN_ARM64 / WINDOWS_AMD64.
 function detectCodeAssistPlatform(): string {
   const arch = process.arch === "arm64" ? "ARM64" : "AMD64";
   switch (process.platform) {

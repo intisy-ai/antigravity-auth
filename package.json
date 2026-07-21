@@ -48,14 +48,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@openauthjs/openauth": "^0.4.3",
-    "@opencode-ai/plugin": "^0.15.30",
-    "proper-lockfile": "^4.1.2",
-    "xdg-basedir": "^5.1.0"
+    "@openauthjs/openauth": "^0.4.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "@types/proper-lockfile": "^4.1.4",
     "esbuild": "^0.25.12",
     "typescript": "^5.0.0",
     "vitest": "^4.1.7"

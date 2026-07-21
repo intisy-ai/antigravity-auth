@@ -2,7 +2,7 @@
 // Module logger for the antigravity provider. Output goes through core's shared
 // logger (makeWriteLog): per-plugin file logging (config/<home>/logs, gated by the
 // `logging` flag) + global stderr mirror (the ecosystem-wide logConsole setting) +
-// per-plugin coloring — so this provider logs like every other plugin instead of
+// per-plugin coloring, so this provider logs like every other plugin instead of
 // hand-rolling its own console/file sinks. `debug`-level lines are additionally
 // gated by config.debug (off by default) to avoid flooding the log file.
 

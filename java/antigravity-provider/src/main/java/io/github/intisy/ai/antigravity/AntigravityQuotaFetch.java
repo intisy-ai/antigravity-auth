@@ -11,11 +11,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Quota-display Task 2 / SP-E E-D: typed {@link AccountQuota} producer backing {@link
- * AntigravityProvider#quota}, mirroring claude-code-auth's {@code ClaudeUsageFetch}. Reuses {@link
+ * Typed {@link AccountQuota} producer backing {@link AntigravityProvider#quota}. Reuses {@link
  * AntigravityUpstream#fetchAvailableModels} for the transport (the SAME upstream call {@link
  * AntigravityModelsFetch} makes) and {@link AntigravityQuotaParser} for the pure
- * aggregation/status logic -- this class is only the per-account iterate/persist/assemble glue.
+ * aggregation/status logic; this class is only the per-account iterate/persist/assemble glue.
  *
  * <p>Unlike {@link AntigravityModelsFetch} (single first-enabled-account discovery), this fetches
  * quota for EVERY enabled account and persists each one's aggregated per-family quota to {@code

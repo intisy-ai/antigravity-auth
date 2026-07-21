@@ -13,14 +13,13 @@ import org.teavm.jso.core.JSString;
 import java.util.Map;
 
 /**
- * One of the (3-4) async JS bridges T7g1 proves compose inside one TeaVM CPS-transformed
- * {@link AntigravityHandleOrchestrator#handle} loop: an {@link
- * AntigravityHandleOrchestrator.AttemptExecutor} (blocking-shaped -- {@code execute(accountId,
- * preparedRef): AttemptResult}) whose implementation is actually a JS-provided async function
- * ({@code fetch} + the IP-proxy pool in production; a delayed fake in the node smoke), bridged via
- * TeaVM's {@code @Async} native method + {@link AsyncCallback} mechanism -- the EXACT shape of
- * claude-code-auth's proven {@code JsAttemptExecutorBridge} (T6c1) and core-proxy's {@code
- * JsHttpClientBridge}.
+ * One of the async JS bridges that compose inside one TeaVM CPS-transformed {@link
+ * AntigravityHandleOrchestrator#handle} loop: an {@link AntigravityHandleOrchestrator.AttemptExecutor}
+ * (blocking-shaped, {@code execute(accountId, preparedRef): AttemptResult}) whose implementation is
+ * actually a JS-provided async function ({@code fetch} + the IP-proxy pool in production; a delayed
+ * fake in the node smoke), bridged via TeaVM's {@code @Async} native method + {@link AsyncCallback}
+ * mechanism, the EXACT shape of claude-code-auth's {@code JsAttemptExecutorBridge} and core-proxy's
+ * {@code JsHttpClientBridge}.
  *
  * <p>Mechanism: {@link #execute} looks synchronous to the orchestrator but internally suspends on
  * {@link #awaitExecute}, a native method marked {@code @Async}. TeaVM's whole-program CPS transform
@@ -30,23 +29,23 @@ import java.util.Map;
  * resolves. Because {@code attemptModel} calls this inside a loop that ALSO suspends on {@link
  * JsAccountOpsBridge#acquire}, {@link JsProjectLoaderBridge#load} and {@link
  * JsProjectOnboarderBridge#onboard}, this is one strand of the multi-{@code @Async}-in-one-call-graph
- * composition being de-risked.
+ * composition.
  */
 public final class JsAttemptExecutorBridge implements AntigravityHandleOrchestrator.AttemptExecutor {
 
     /**
      * JS-provided async attempt transport: {@code (accountId, preparedRefJson) => Promise<attemptResultJson>}.
      * Request handle and result cross as plain JSON strings (mirrors the claude bridge's JSON
-     * boundary) -- no per-field JSO overlay types. {@code preparedRefJson} is the opaque request
+     * boundary), no per-field JSO overlay types. {@code preparedRefJson} is the opaque request
      * handle the JS preparer minted (JSON-encoded); {@code attemptResultJson} carries antigravity's
      * {@link AntigravityHandleOrchestrator.AttemptResult} fields {@code {status, ok, transportFailed,
-     * attemptRef, errorMessage?, errorReason?, proxyUsed?}} -- NO response body (the host retains the
+     * attemptRef, errorMessage?, errorReason?, proxyUsed?}}, NO response body (the host retains the
      * live {@code Response} keyed by its own opaque {@code attemptRef}).
      *
      * <p>Uses {@link JSString} (not {@code String}) at this generic {@link JSPromise} functor
      * boundary, per the claude precedent: TeaVM's automatic String&lt;-&gt;native-JS-string conversion
      * only fires at a DECLARED (non-generic) boundary, so a value flowing through {@code
-     * JSPromise<T>}'s mapping/consumer is type-erased -- {@link JSString} overlays the native string
+     * JSPromise<T>}'s mapping/consumer is type-erased. {@link JSString} overlays the native string
      * directly; {@code String} conversion happens at the edges via {@code JSString.valueOf}/{@code
      * .stringValue()}.
      */
@@ -102,14 +101,14 @@ public final class JsAttemptExecutorBridge implements AntigravityHandleOrchestra
                 status, ok, transportFailed, attemptRef, errorMessage, errorReason, proxyUsed);
     }
 
-    // -- @Async bridge ------------------------------------------------------------
+    // @Async bridge ---------------------------------------------------------------
 
     /** Blocking-looking native entrypoint; TeaVM's async transform makes every (transitive) caller
      *  suspend/resume instead of blocking. Same shape as the claude {@code awaitExecute}. */
     @Async
     private static native String awaitExecute(JsExecFn fn, String accountId, String preparedRefJson);
 
-    // Companion: same name, void return, trailing AsyncCallback<T> -- the exact pairing TeaVM's
+    // Companion: same name, void return, trailing AsyncCallback<T>, the exact pairing TeaVM's
     // async codegen looks for.
     private static void awaitExecute(JsExecFn fn, String accountId, String preparedRefJson, AsyncCallback<String> callback) {
         fn.execute(JSString.valueOf(accountId), JSString.valueOf(preparedRefJson)).then(

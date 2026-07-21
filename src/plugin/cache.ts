@@ -24,10 +24,10 @@ let diskCache: SignatureCache | null = null;
 
 /**
  * Construct (or, when disabled, keep inert) the disk-backed signature cache from config.
- * Called once at driver startup (driver/index.ts) after config is loaded. `createSignatureCache`
+ * Called once at driver startup, after config is loaded. `createSignatureCache`
  * itself returns null when `config.enabled` is false (or config is absent), so a disabled/missing
- * config leaves `diskCache` null and cacheSignature/getCachedSignature fall back to memory-only —
- * i.e. inert, matching prior (never-constructed) behavior.
+ * config leaves `diskCache` null and cacheSignature/getCachedSignature fall back to memory-only,
+ * i.e. inert.
  */
 export function initSignatureCache(config: SignatureCacheConfig | undefined): void {
   diskCache = createSignatureCache(config);

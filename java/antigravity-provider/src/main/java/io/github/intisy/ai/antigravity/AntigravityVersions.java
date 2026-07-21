@@ -9,41 +9,34 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/versions.ts} DRIFT MATH ONLY (Bucket A, T7a):
- * {@code cmpSemver}, {@code normalize}, {@code pickVersion}, {@code nextVersionDriftDelay}, and
- * {@code driftVersion}. Deliberately does NOT port {@code refreshVersions} (network fetch of the
- * public release feed, Bucket C) or the module-level mutable {@code versionList}/{@code
- * lastFetchAt}/{@code fetching} state it maintains -- callers pass the CURRENT version pool
- * (curated {@link #FALLBACK_VERSIONS} or whatever the TS side's live-refreshed list is) as an
- * explicit {@code versionList} parameter instead, matching how {@link #pickVersion} and
- * {@link #driftVersion} read the TS's {@code versionList} closure variable.
+ * Version-drift math: {@code cmpSemver}, {@code normalize}, {@code pickVersion}, {@code
+ * nextVersionDriftDelay}, and {@code driftVersion}. Does NOT fetch the public release feed or hold
+ * any mutable version-list state; callers pass the CURRENT version pool (curated {@link
+ * #FALLBACK_VERSIONS} or a live-refreshed list) as an explicit {@code versionList} parameter.
  *
- * <p>{@link Random} is injected in place of {@code Math.random()}, for deterministic parity
- * tests -- see {@link AntigravityLanes} javadoc for the assumed {@code [0, 1)} range.
+ * <p>{@link Random} is injected in place of {@code Math.random()}, for deterministic parity tests
+ * (see {@link AntigravityLanes} for the assumed {@code [0, 1)} range).
  */
 public final class AntigravityVersions {
 
-    // versions.ts:10-14 -- curated fallback (newest-first), used both as the harness's/caller's
-    // default pool and as normalize()'s always-present floor set.
+    // Curated fallback (newest-first), used both as the caller's default pool and as normalize()'s
+    // always-present floor set.
     public static final List<String> FALLBACK_VERSIONS = Collections.unmodifiableList(java.util.Arrays.asList(
             "2.1.1", "2.0.4", "2.0.3", "2.0.2", "2.0.1",
             "1.23.2", "1.22.2", "1.21.9", "1.21.6", "1.20.6",
             "1.19.6", "1.18.4", "1.18.3"));
 
-    // versions.ts:19-20
     private static final int CONSIDER_NEWEST = 10;
     private static final double NEWER_BIAS = 0.6;
 
-    // versions.ts:26
     private static final Pattern SEMVER = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
 
-    // versions.ts:71
     private static final long DAY_MS = 24L * 60 * 60 * 1000;
 
     private AntigravityVersions() {
     }
 
-    // ---- cmpSemver (versions.ts:28-36) --------------------------------------------------------------
+    // ---- cmpSemver -------------------------------------------------------------------------------
 
     /**
      * Compares two dotted-triple version strings component-wise (major, then minor, then patch).
@@ -71,9 +64,8 @@ public final class AntigravityVersions {
 
     // Approximates `Number(segment) || 0`: a non-numeric segment (Number(...) -> NaN, which is
     // falsy) or a missing segment both coerce to 0. Real semver segments are plain non-negative
-    // integers, so a plain parseInt covers every realistic input (this port does not need
-    // AntigravityAuth/Lanes's broader JsCoercion.jsNumber -- no signs/hex/exponents/whitespace in
-    // a version-string component).
+    // integers, so a plain parseInt covers every realistic input (no need for the broader
+    // JsCoercion.jsNumber: no signs/hex/exponents/whitespace in a version-string component).
     private static int jsNumberOrZero(String segment) {
         try {
             int n = Integer.parseInt(segment);
@@ -83,7 +75,7 @@ public final class AntigravityVersions {
         }
     }
 
-    // ---- normalize (versions.ts:39-44) --------------------------------------------------------------
+    // ---- normalize -------------------------------------------------------------------------------
 
     /**
      * Merges a fetched version list with {@link #FALLBACK_VERSIONS}, keeping only valid semver
@@ -102,9 +94,9 @@ public final class AntigravityVersions {
         return list;
     }
 
-    // ---- getNewestVersion (versions.ts:50-52) ---------------------------------------------------------
+    // ---- getNewestVersion ------------------------------------------------------------------------
 
-    /** {@code versionList[0] || FALLBACK_VERSIONS[0]} -- falls back on an empty OR falsy-first-entry list. */
+    /** {@code versionList[0] || FALLBACK_VERSIONS[0]}, falling back on an empty OR falsy-first-entry list. */
     public static String getNewestVersion(List<String> versionList) {
         if (versionList != null && !versionList.isEmpty() && JsCoercion.isTruthy(versionList.get(0))) {
             return versionList.get(0);
@@ -112,13 +104,12 @@ public final class AntigravityVersions {
         return FALLBACK_VERSIONS.get(0);
     }
 
-    // ---- pickVersion (versions.ts:55-69) ----------------------------------------------------------------
+    // ---- pickVersion -----------------------------------------------------------------------------
 
     /**
      * Weighted-random pick toward newer, restricted to versions {@code >= min} (min {@code null}
      * or empty = any), drawn from a geometric distribution over the top {@link #CONSIDER_NEWEST}
-     * entries of {@code versionList} (assumed already sorted newest-first, matching the TS state
-     * invariant).
+     * entries of {@code versionList} (assumed already sorted newest-first).
      */
     public static String pickVersion(List<String> versionList, String min, Random random) {
         List<String> pool = versionList.size() > CONSIDER_NEWEST
@@ -146,7 +137,7 @@ public final class AntigravityVersions {
         return pool.isEmpty() ? getNewestVersion(versionList) : pool.get(0);
     }
 
-    // ---- nextVersionDriftDelay (versions.ts:78-82) -----------------------------------------------------
+    // ---- nextVersionDriftDelay -------------------------------------------------------------------
 
     /**
      * Per-account delay (ms) until the next User-Agent version-drift check, randomized so accounts
@@ -159,14 +150,14 @@ public final class AntigravityVersions {
         return min + (long) Math.floor(random.next() * (max - min));
     }
 
-    // ---- driftVersion (versions.ts:86-90) ----------------------------------------------------------------
+    // ---- driftVersion ----------------------------------------------------------------------------
 
     /**
      * Forward-only pick for an account that already has a version (simulates an IDE auto-update):
      * weighted-newer among versions {@code >= current}; never downgrades (falls back to the
-     * absolute newest if the weighted pick would otherwise regress -- can only happen when {@code
-     * current} is itself newer than every entry in the top-{@link #CONSIDER_NEWEST} pool, so {@code
-     * min} filtering yields no match and the unfiltered pick lands below {@code current}).
+     * absolute newest if the weighted pick would otherwise regress, which can only happen when
+     * {@code current} is itself newer than every entry in the top-{@link #CONSIDER_NEWEST} pool, so
+     * {@code min} filtering yields no match and the unfiltered pick lands below {@code current}).
      */
     public static String driftVersion(String current, List<String> versionList, Random random) {
         if (current == null || current.isEmpty()) return pickVersion(versionList, null, random);

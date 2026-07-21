@@ -15,11 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Offline parity tests for {@link AntigravityResponseParse} (T7c-3 response/usage/error-parse half),
- * expected values snapshotted from the REAL request-helpers.ts helpers via the Node harness
- * ({@code .superpowers/sdd/t7c3-harness/fixtures.json}) -- never hand-derived. JSON re-parse rides the
- * injected {@link TestJsonCodec}; {@code createSyntheticErrorResponse}'s {@code Date.now()} rides a fixed
- * {@link Clock} matching the harness's pinned {@code Date.now}.
+ * Offline tests for {@link AntigravityResponseParse} (response/usage/error-parse half). JSON re-parse
+ * rides the injected {@link TestJsonCodec}; {@code createSyntheticErrorResponse}'s {@code Date.now()}
+ * rides a fixed {@link Clock}.
  */
 class AntigravityResponseParseTest {
 

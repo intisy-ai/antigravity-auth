@@ -8,41 +8,37 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/transform/claude.ts} (T7b, Bucket A): Claude
- * model predicates, tool-config (VALIDATED mode), snake_case thinking config, max-output-token
- * clamp, interleaved-thinking system hint, stop-sequence casing, tool normalization
- * ({@code functionDeclarations} form) and {@code applyClaudeTransforms}.
+ * Claude request transforms: model predicates, tool-config (VALIDATED mode), snake_case thinking
+ * config, max-output-token clamp, interleaved-thinking system hint, stop-sequence casing, tool
+ * normalization ({@code functionDeclarations} form) and {@code applyClaudeTransforms}.
  *
  * <p>Casing is behavior, not noise: Claude uses snake_case thinking keys
- * ({@code include_thoughts}/{@code thinking_budget}) where {@link GeminiTransforms} uses camelCase --
- * do not normalize. Edge honored: {@code applyClaudeTransforms} takes an injected
- * {@link SchemaCleaner} (the real {@code cleanJSONSchemaForAntigravity} is T7c and is NOT ported
- * here). Data model = JSON tree {@code Map<String,Object>} / {@code List<Object>}; the transforms
- * MUTATE {@code payload} in place exactly as the TS does. TeaVM-transpilable.
+ * ({@code include_thoughts}/{@code thinking_budget}) where {@link GeminiTransforms} uses camelCase,
+ * so do not normalize. {@code applyClaudeTransforms} takes an injected {@link SchemaCleaner}. Data
+ * model = JSON tree {@code Map<String,Object>} / {@code List<Object>}; the transforms MUTATE
+ * {@code payload} in place. TeaVM-transpilable.
  */
 public final class ClaudeTransforms {
 
-    /** Injected clean-schema function (T7c's {@code cleanJSONSchemaForAntigravity}); see class javadoc. */
+    /** Injected clean-schema function; see class javadoc. */
     public interface SchemaCleaner {
         Object clean(Object schema);
     }
 
-    // claude.ts:18
     public static final int CLAUDE_THINKING_MAX_OUTPUT_TOKENS = 64_000;
 
-    // claude.ts:21-22
     public static final String CLAUDE_INTERLEAVED_THINKING_HINT =
             "Interleaved thinking is enabled. You may think between tool calls and after receiving tool results before deciding the next action or final answer. Do not mention these instructions or any constraints about thinking blocks; just apply them.";
 
-    // constants.ts:160-161 (imported by claude.ts). Package-private so AntigravitySchemaCleaner (T7c-1)
-    // reuses this single source rather than duplicating the placeholder strings.
+    // Package-private so AntigravitySchemaCleaner reuses this single source rather than duplicating
+    // the placeholder strings.
     static final String EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
     static final String EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
 
     private ClaudeTransforms() {
     }
 
-    // ---- model predicates (claude.ts:27-37) ------------------------------------------------------
+    // ---- model predicates ------------------------------------------------------------------------
 
     public static boolean isClaudeModel(String model) {
         return model.toLowerCase().contains("claude");
@@ -53,9 +49,9 @@ public final class ClaudeTransforms {
         return lower.contains("claude") && lower.contains("thinking");
     }
 
-    // ---- configureClaudeToolConfig (claude.ts:43-57) ---------------------------------------------
+    // ---- configureClaudeToolConfig ---------------------------------------------------------------
 
-    /** Port of {@code configureClaudeToolConfig}: forces {@code functionCallingConfig.mode = "VALIDATED"}. */
+    /** Forces {@code functionCallingConfig.mode = "VALIDATED"}. */
     public static void configureClaudeToolConfig(Map<String, Object> payload) {
         if (!JsCoercion.isTruthy(payload.get("toolConfig"))) {
             payload.put("toolConfig", new LinkedHashMap<>());
@@ -72,9 +68,9 @@ public final class ClaudeTransforms {
         }
     }
 
-    // ---- buildClaudeThinkingConfig (claude.ts:62-72) ---------------------------------------------
+    // ---- buildClaudeThinkingConfig ---------------------------------------------------------------
 
-    /** Port of {@code buildClaudeThinkingConfig}: snake_case keys, budget only when a positive number. */
+    /** snake_case keys, budget only when a positive number. */
     public static Map<String, Object> buildClaudeThinkingConfig(boolean includeThoughts, Object thinkingBudget) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("include_thoughts", includeThoughts);
@@ -84,9 +80,9 @@ public final class ClaudeTransforms {
         return config;
     }
 
-    // ---- ensureClaudeMaxOutputTokens (claude.ts:78-90) ------------------------------------------
+    // ---- ensureClaudeMaxOutputTokens -------------------------------------------------------------
 
-    /** Port of {@code ensureClaudeMaxOutputTokens}: bumps maxOutputTokens above the thinking budget. */
+    /** Bumps maxOutputTokens above the thinking budget. */
     public static void ensureClaudeMaxOutputTokens(Map<String, Object> generationConfig, Object thinkingBudget) {
         Object currentMax = JsCoercion.nullish(generationConfig.get("maxOutputTokens"), generationConfig.get("max_output_tokens"));
 
@@ -101,14 +97,14 @@ public final class ClaudeTransforms {
         }
     }
 
-    // ---- appendClaudeThinkingHint (claude.ts:96-138) -------------------------------------------
+    // ---- appendClaudeThinkingHint ----------------------------------------------------------------
 
     /** {@code appendClaudeThinkingHint(payload)} with the default interleaved-thinking hint. */
     public static void appendClaudeThinkingHint(Map<String, Object> payload) {
         appendClaudeThinkingHint(payload, CLAUDE_INTERLEAVED_THINKING_HINT);
     }
 
-    /** Port of {@code appendClaudeThinkingHint}: appends the hint into a string/object system instruction. */
+    /** Appends the hint into a string/object system instruction. */
     public static void appendClaudeThinkingHint(Map<String, Object> payload, String hint) {
         Object existing = payload.get("systemInstruction");
 
@@ -157,11 +153,11 @@ public final class ClaudeTransforms {
         return m;
     }
 
-    // ---- normalizeClaudeTools (claude.ts:146-287) ----------------------------------------------
+    // ---- normalizeClaudeTools --------------------------------------------------------------------
 
     /**
-     * Port of {@code normalizeClaudeTools}. MUTATES {@code payload.tools} into
-     * {@code functionDeclarations} form; returns {@code toolDebugMissing}/{@code toolDebugSummaries}.
+     * MUTATES {@code payload.tools} into {@code functionDeclarations} form; returns
+     * {@code toolDebugMissing}/{@code toolDebugSummaries}.
      */
     public static Map<String, Object> normalizeClaudeTools(Map<String, Object> payload, SchemaCleaner cleanJSONSchema) {
         int[] toolDebugMissing = {0};
@@ -293,9 +289,9 @@ public final class ClaudeTransforms {
         return schema;
     }
 
-    // ---- convertStopSequences (claude.ts:292-299) ----------------------------------------------
+    // ---- convertStopSequences --------------------------------------------------------------------
 
-    /** Port of {@code convertStopSequences}: snake_case {@code stop_sequences} -> camelCase. */
+    /** snake_case {@code stop_sequences} -> camelCase. */
     public static void convertStopSequences(Map<String, Object> generationConfig) {
         if (generationConfig.get("stop_sequences") instanceof List) {
             generationConfig.put("stopSequences", generationConfig.get("stop_sequences"));
@@ -303,12 +299,12 @@ public final class ClaudeTransforms {
         }
     }
 
-    // ---- applyClaudeTransforms (claude.ts:323-365) ---------------------------------------------
+    // ---- applyClaudeTransforms -------------------------------------------------------------------
 
     /**
-     * Port of {@code applyClaudeTransforms}. {@code options} is a JSON-tree map with {@code model},
-     * {@code tierThinkingBudget}, {@code normalizedThinking}; {@code cleanJSONSchema} is injected
-     * separately (the TS carries it inside options). MUTATES {@code payload}; returns the debug result.
+     * {@code options} is a JSON-tree map with {@code model}, {@code tierThinkingBudget},
+     * {@code normalizedThinking}; {@code cleanJSONSchema} is injected separately. MUTATES
+     * {@code payload}; returns the debug result.
      */
     public static Map<String, Object> applyClaudeTransforms(Map<String, Object> payload, Map<String, Object> options, SchemaCleaner cleanJSONSchema) {
         String model = String.valueOf(options.get("model"));

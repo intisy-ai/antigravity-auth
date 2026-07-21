@@ -4,23 +4,19 @@ import io.github.intisy.ai.shared.spi.Clock;
 import io.github.intisy.ai.shared.spi.Random;
 
 /**
- * Java port of antigravity-auth's {@code src/driver/lanes.ts} (Bucket A, T7a): lane derivation
- * ({@code isGeminiCliModel}/{@code laneFor}/{@code headerStyleFor}), rate-limit-reason
- * classification ({@code parseRateLimitReason}), and the exponential-backoff/jitter math
- * ({@code calculateBackoffMs}/{@code resetTimeFor}/{@code jitter}) that partitions rate-limit
- * state per quota family (claude | gemini-antigravity(pro/flash) | gpt-oss | gemini-cli).
+ * Lane derivation ({@code isGeminiCliModel}/{@code laneFor}/{@code headerStyleFor}),
+ * rate-limit-reason classification ({@code parseRateLimitReason}), and the
+ * exponential-backoff/jitter math ({@code calculateBackoffMs}/{@code resetTimeFor}/{@code jitter})
+ * that partitions rate-limit state per quota family (claude | gemini-antigravity(pro/flash) |
+ * gpt-oss | gemini-cli).
  *
- * <p>{@code jitter}/{@code calculateBackoffMs} take an injected {@link Random} in place of the
- * TS's implicit {@code Math.random()}; {@code resetTimeFor} additionally takes an injected
- * {@link Clock} in place of {@code Date.now()} -- both for deterministic parity tests. {@link
- * Random#next()} is assumed to return a value in {@code [0, 1)}, matching {@code Math.random()}
- * (no production implementation existed anywhere in this ecosystem's Java modules at port time to
- * confirm against; this is the only sane reading of a single-method {@code next(): double} SPI
- * meant to stand in for {@code Math.random()}).
+ * <p>{@code jitter}/{@code calculateBackoffMs} take an injected {@link Random} in place of {@code
+ * Math.random()}; {@code resetTimeFor} additionally takes an injected {@link Clock} in place of
+ * {@code Date.now()}, both for deterministic parity tests. {@link Random#next()} is assumed to
+ * return a value in {@code [0, 1)}, matching {@code Math.random()}.
  */
 public final class AntigravityLanes {
 
-    // lanes.ts:6-10
     private static final long[] QUOTA_EXHAUSTED_BACKOFFS = {60_000, 300_000, 1_800_000, 7_200_000};
     private static final double MODEL_CAPACITY_BASE = 45_000;
     private static final double MODEL_CAPACITY_JITTER_MAX = 30_000;
@@ -30,26 +26,25 @@ public final class AntigravityLanes {
     private AntigravityLanes() {
     }
 
-    // ---- jitter (lanes.ts:12) --------------------------------------------------------------------
+    // ---- jitter ----------------------------------------------------------------------------------
 
-    /** {@code Math.random() * maxMs - maxMs / 2} -- a signed jitter centered on zero. */
+    /** {@code Math.random() * maxMs - maxMs / 2}, a signed jitter centered on zero. */
     public static double jitter(Random random, double maxMs) {
         return random.next() * maxMs - maxMs / 2;
     }
 
-    // ---- isGeminiCliModel (lanes.ts:15-17) --------------------------------------------------------
+    // ---- isGeminiCliModel ------------------------------------------------------------------------
 
     /**
      * Bare {@code gemini-*} ids are the separate (free) Gemini CLI quota pool; anything else
      * (including {@code antigravity-}-prefixed ids) is the antigravity pool. Accepts {@code Object}
-     * (mirroring the TS's untyped {@code model} parameter, which may be any JSON value) and
-     * requires a {@code String}, matching {@code typeof model === "string"}.
+     * (any JSON value) and requires a {@code String}.
      */
     public static boolean isGeminiCliModel(Object model) {
         return model instanceof String && ((String) model).startsWith("gemini-");
     }
 
-    // ---- laneFor (lanes.ts:23-31) ------------------------------------------------------------------
+    // ---- laneFor ---------------------------------------------------------------------------------
 
     /**
      * Partitions rate-limit state by REAL quota pool so exhausting one family never blocks
@@ -65,13 +60,13 @@ public final class AntigravityLanes {
         return "gemini-pro";
     }
 
-    // ---- headerStyleFor (lanes.ts:33-35) ------------------------------------------------------------
+    // ---- headerStyleFor --------------------------------------------------------------------------
 
     public static String headerStyleFor(Object model) {
         return isGeminiCliModel(model) ? "gemini-cli" : "antigravity";
     }
 
-    // ---- parseRateLimitReason (lanes.ts:37-54) ------------------------------------------------------
+    // ---- parseRateLimitReason --------------------------------------------------------------------
 
     /**
      * Classifies a rate-limit signal from an explicit {@code reason} code, an HTTP {@code status},
@@ -107,22 +102,19 @@ public final class AntigravityLanes {
         return "UNKNOWN";
     }
 
-    // ---- calculateBackoffMs (lanes.ts:56-71) --------------------------------------------------------
+    // ---- calculateBackoffMs ----------------------------------------------------------------------
 
     /**
      * Computes the backoff duration for a classified rate-limit reason: an explicit
      * {@code retryAfterMs} wins outright (floored at {@link #MIN_BACKOFF_MS}); {@code
-     * QUOTA_EXHAUSTED} indexes a fixed escalating table (NO exponential multiplier applied,
-     * matching the TS's early {@code return} inside that {@code case}); every other reason applies
-     * a {@code 1.5^consecutiveFailures} multiplier to a reason-specific base, capped at {@link
-     * #MAX_EXPONENTIAL_BACKOFF}.
+     * QUOTA_EXHAUSTED} indexes a fixed escalating table (NO exponential multiplier applied); every
+     * other reason applies a {@code 1.5^consecutiveFailures} multiplier to a reason-specific base,
+     * capped at {@link #MAX_EXPONENTIAL_BACKOFF}.
      *
      * <p>{@code consecutiveFailures} is clamped to {@code >= 0} before indexing the
-     * {@code QUOTA_EXHAUSTED} table -- the TS's {@code consecutiveFailures || 0} only replaces a
-     * FALSY value (so a negative count is NOT replaced, unlike zero/NaN/undefined) and would then
-     * index the array negatively, returning {@code undefined}; that input is unrealistic (a
-     * negative failure count is never produced by any real caller) and is not reproduced here to
-     * avoid an {@code ArrayIndexOutOfBoundsException}.
+     * {@code QUOTA_EXHAUSTED} table: a negative count (never produced by any real caller) would
+     * otherwise index the array negatively, so it is clamped to avoid an {@code
+     * ArrayIndexOutOfBoundsException}.
      */
     public static long calculateBackoffMs(String reason, Integer consecutiveFailures, Long retryAfterMs, Random random) {
         if (retryAfterMs != null && retryAfterMs > 0) return Math.max(retryAfterMs, MIN_BACKOFF_MS);
@@ -145,7 +137,7 @@ public final class AntigravityLanes {
         return Math.min(Math.round(base * multiplier), MAX_EXPONENTIAL_BACKOFF);
     }
 
-    // ---- resetTimeFor (lanes.ts:73-75) ---------------------------------------------------------------
+    // ---- resetTimeFor ----------------------------------------------------------------------------
 
     public static long resetTimeFor(String reason, Integer consecutiveFailures, Long retryAfterMs, Random random, Clock clock) {
         return clock.now() + calculateBackoffMs(reason, consecutiveFailures, retryAfterMs, random);

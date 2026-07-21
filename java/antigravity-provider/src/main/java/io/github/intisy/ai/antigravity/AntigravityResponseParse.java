@@ -12,53 +12,48 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of antigravity-auth's response/usage/error-parse helpers from
- * {@code src/plugin/request-helpers.ts} (T7c-3, the response-parse half): {@code parseAntigravityApiBody}
- * (:1611), {@code extractUsageMetadata} (:1635), {@code extractUsageFromSsePayload} (:1660),
- * {@code rewriteAntigravityPreviewAccessError} (:1688) with its private closure {@code
- * needsPreviewAccessOverride} (:1713) + {@code isAntigravityModel} (:1730), {@code isEmptyResponseBody}
- * (:1750), {@code isMeaningfulSseLine} (:1840), {@code recursivelyParseJsonStrings} (:1927) with its
- * {@code SKIP_PARSE_KEYS} set (:1901), and {@code createSyntheticErrorResponse} (:2703). The Anthropic
- * tool-pairing half lives in {@link AntigravityToolPairing}; together they COMPLETE the
- * request-helpers.ts port (T7a small units, T7b transform layer, T7c-1 schema cleaning, T7c-2 thinking
- * config/blocks precede this).
+ * Response/usage/error-parse helpers: {@code parseAntigravityApiBody}, {@code extractUsageMetadata},
+ * {@code extractUsageFromSsePayload}, {@code rewriteAntigravityPreviewAccessError} (with its private
+ * {@code needsPreviewAccessOverride} + {@code isAntigravityModel}), {@code isEmptyResponseBody},
+ * {@code isMeaningfulSseLine}, {@code recursivelyParseJsonStrings} (with its {@code SKIP_PARSE_KEYS}
+ * set), and {@code createSyntheticErrorResponse}. The Anthropic tool-pairing half lives in
+ * {@link AntigravityToolPairing}.
  *
  * <h2>Injected edges</h2>
  * <ul>
- *   <li><b>JsonCodec SPI</b> ({@code io.github.intisy.ai.shared.spi.JsonCodec}) replaces every TS
- *       {@code JSON.parse}/{@code JSON.stringify} -- {@code parseAntigravityApiBody},
+ *   <li><b>JsonCodec SPI</b> ({@code io.github.intisy.ai.shared.spi.JsonCodec}) carries every
+ *       {@code JSON.parse}/{@code JSON.stringify}: {@code parseAntigravityApiBody},
  *       {@code extractUsageFromSsePayload}, {@code isEmptyResponseBody}, {@code isMeaningfulSseLine},
  *       {@code recursivelyParseJsonStrings} and {@code createSyntheticErrorResponse} take it as their
- *       first parameter (never gson directly), exactly as T7a/T7c-1 do.</li>
- *   <li><b>Clock SPI</b> replaces the {@code Date.now()} inside {@code createSyntheticErrorResponse}'s
- *       synthetic message id ({@code msg_synthetic_<now>}) -- no {@code System.currentTimeMillis} at the
- *       edge; deterministic in the parity tests.</li>
+ *       first parameter (never gson directly).</li>
+ *   <li><b>Clock SPI</b> supplies the {@code Date.now()} inside {@code createSyntheticErrorResponse}'s
+ *       synthetic message id ({@code msg_synthetic_<now>}): no {@code System.currentTimeMillis} at the
+ *       edge, and deterministic in the parity tests.</li>
  *   <li>The signature cache ({@code getCachedSignature}/{@code cacheSignature}, Store SPI) is NOT
- *       reached by this slice -- none of these functions touch it -- so no Store seam is introduced.</li>
+ *       reached by these functions, so no Store seam is introduced.</li>
  * </ul>
  *
  * <p>Data model = JSON tree {@code Map<String,Object>}/{@code List<Object>}/{@code String}/{@code Number}/
  * {@code Boolean}/{@code null}. Copy-vs-mutate fidelity: {@code rewriteAntigravityPreviewAccessError}
  * returns a NEW map ({@code {...body, error:{...error, message}}}); {@code recursivelyParseJsonStrings}
- * returns new arrays/maps (the TS {@code .map()}/{@code Object.entries} rebuild). Numbers pass through as
- * the caller's {@link Number} object. Pure logic, no java.net/nio/reflection/threads -- TeaVM-transpilable.
+ * returns new arrays/maps. Numbers pass through as the caller's {@link Number} object. Pure logic, no
+ * java.net/nio/reflection/threads, TeaVM-transpilable.
  *
- * <p>Fidelity deviations (disclosed; none reachable by valid payloads, exercised by no fixture):
+ * <p>Fidelity deviations (none reachable by valid payloads):
  * (1) the {@code log.debug} calls inside {@code recursivelyParseJsonStrings}' malformed-JSON branches
- * are omitted -- they have no bearing on the returned data and this slice was given no Logger edge.
- * (2) Wherever the TS reads a nested slot via {@code typeof x === "object"} (a {@code response}/{@code
- * usageMetadata}/{@code content}/{@code message} container), this port requires a {@link Map}; a JSON
- * ARRAY in that exact slot -- invalid input -- is treated the way the TS's (all-undefined) property
- * reads would resolve it (usually {@code null}/{@code true}), never crashing. {@code extractUsageMetadata}
- * with an ARRAY {@code usageMetadata} returns {@code null} here vs the TS's empty object -- unreachable.
- * (3) {@code fixToolResponseGrouping}-adjacent aside: not in this class.
+ * are omitted; they have no bearing on the returned data and this class has no Logger edge.
+ * (2) Wherever a nested slot is read via {@code typeof x === "object"} (a {@code response}/{@code
+ * usageMetadata}/{@code content}/{@code message} container), this code requires a {@link Map}; a JSON
+ * ARRAY in that exact slot (invalid input) is treated the way the all-undefined property reads would
+ * resolve it (usually {@code null}/{@code true}), never crashing. {@code extractUsageMetadata} with an
+ * ARRAY {@code usageMetadata} returns {@code null} here rather than an empty object (unreachable).
  */
 public final class AntigravityResponseParse {
 
-    /** request-helpers.ts:14 -- preview-access enrollment link. */
+    /** preview-access enrollment link. */
     static final String ANTIGRAVITY_PREVIEW_LINK = "https://goo.gle/enable-preview-features";
 
-    /** request-helpers.ts:1901 -- keys whose string values are preserved verbatim (never re-parsed as JSON). */
+    /** keys whose string values are preserved verbatim (never re-parsed as JSON). */
     static final Set<String> SKIP_PARSE_KEYS = new LinkedHashSet<>(Arrays.asList(
             "oldString", "newString", "content", "filePath", "path", "text", "code", "source", "data",
             "body", "message", "prompt", "input", "output", "result", "value", "query", "pattern",
@@ -67,13 +62,13 @@ public final class AntigravityResponseParse {
     private AntigravityResponseParse() {
     }
 
-    // ---- parseAntigravityApiBody (request-helpers.ts:1611-1630) ------------------------------------
+    // ---- parseAntigravityApiBody ------------------------------------------------------------------
 
     /**
-     * Port of {@code parseAntigravityApiBody}: parses {@code rawText}; handles the cloudcode-pa
-     * ARRAY-wrapped shape ({@code [{...}]}) by returning the first array element that is a non-null
-     * object (Map OR List, mirroring JS {@code typeof x === "object" && x !== null}). A non-array object
-     * is returned as-is; anything else (or a parse failure) yields {@code null}.
+     * Parses {@code rawText}; handles the cloudcode-pa ARRAY-wrapped shape ({@code [{...}]}) by
+     * returning the first array element that is a non-null object (Map OR List, i.e. JS
+     * {@code typeof x === "object" && x !== null}). A non-array object is returned as-is; anything
+     * else (or a parse failure) yields {@code null}.
      */
     public static Object parseAntigravityApiBody(JsonCodec json, String rawText) {
         Object parsed;
@@ -97,12 +92,12 @@ public final class AntigravityResponseParse {
         return null;
     }
 
-    // ---- extractUsageMetadata (request-helpers.ts:1635-1655) ---------------------------------------
+    // ---- extractUsageMetadata ---------------------------------------------------------------------
 
     /**
-     * Port of {@code extractUsageMetadata}: reads {@code body.response.usageMetadata} and returns a map
-     * with only the finite-number token counts present (each TS-{@code undefined} field is left ABSENT,
-     * matching {@code JSON.stringify}). Returns {@code null} when there is no usageMetadata object.
+     * Reads {@code body.response.usageMetadata} and returns a map with only the finite-number token
+     * counts present (each undefined field is left ABSENT, matching {@code JSON.stringify}). Returns
+     * {@code null} when there is no usageMetadata object.
      */
     public static Map<String, Object> extractUsageMetadata(Map<String, Object> body) {
         Object response = body != null ? body.get("response") : null;
@@ -122,7 +117,7 @@ public final class AntigravityResponseParse {
         return result;
     }
 
-    // TS toNumber: `typeof value === "number" && Number.isFinite(value) ? value : undefined`.
+    // toNumber: `typeof value === "number" && Number.isFinite(value) ? value : undefined`.
     private static void putIfFiniteNumber(Map<String, Object> target, String key, Object value) {
         if (value instanceof Number) {
             double d = ((Number) value).doubleValue();
@@ -132,12 +127,11 @@ public final class AntigravityResponseParse {
         }
     }
 
-    // ---- extractUsageFromSsePayload (request-helpers.ts:1660-1683) ---------------------------------
+    // ---- extractUsageFromSsePayload ---------------------------------------------------------------
 
     /**
-     * Port of {@code extractUsageFromSsePayload}: scans {@code data:} SSE lines for the first parseable
-     * chunk whose {@code response.usageMetadata} yields usage. Non-{@code data:} lines, empty payloads
-     * and unparseable JSON are skipped.
+     * Scans {@code data:} SSE lines for the first parseable chunk whose {@code response.usageMetadata}
+     * yields usage. Non-{@code data:} lines, empty payloads and unparseable JSON are skipped.
      */
     public static Map<String, Object> extractUsageFromSsePayload(JsonCodec json, String payload) {
         String[] lines = payload.split("\n", -1);
@@ -167,12 +161,11 @@ public final class AntigravityResponseParse {
         return null;
     }
 
-    // ---- rewriteAntigravityPreviewAccessError (request-helpers.ts:1688-1737) -----------------------
+    // ---- rewriteAntigravityPreviewAccessError -----------------------------------------------------
 
     /**
-     * Port of {@code rewriteAntigravityPreviewAccessError}: for a 404 tied to an Antigravity/Claude/Opus
-     * model, appends the preview-access enrollment hint to the error message and returns a NEW body;
-     * otherwise {@code null}.
+     * For a 404 tied to an Antigravity/Claude/Opus model, appends the preview-access enrollment hint
+     * to the error message and returns a NEW body; otherwise {@code null}.
      */
     public static Map<String, Object> rewriteAntigravityPreviewAccessError(
             Map<String, Object> body, int status, String requestedModel) {
@@ -203,7 +196,6 @@ public final class AntigravityResponseParse {
         return result;
     }
 
-    // request-helpers.ts:1713-1728
     private static boolean needsPreviewAccessOverride(int status, Map<String, Object> body, String requestedModel) {
         if (status != 404) {
             return false;
@@ -217,7 +209,7 @@ public final class AntigravityResponseParse {
         return isAntigravityModel(errorMessage);
     }
 
-    // request-helpers.ts:1730-1737 -- /antigravity/i || /opus/i || /claude/i (case-insensitive substring).
+    // /antigravity/i || /opus/i || /claude/i (case-insensitive substring).
     private static boolean isAntigravityModel(String target) {
         if (target == null || target.isEmpty()) {
             return false;
@@ -226,13 +218,12 @@ public final class AntigravityResponseParse {
         return lower.contains("antigravity") || lower.contains("opus") || lower.contains("claude");
     }
 
-    // ---- isEmptyResponseBody (request-helpers.ts:1750-1832) ---------------------------------------
+    // ---- isEmptyResponseBody ----------------------------------------------------------------------
 
     /**
-     * Port of {@code isEmptyResponseBody}: {@code true} when the JSON body carries no usable content --
-     * no Gemini candidates/parts, no OpenAI choices/message content, or an empty wrapped {@code response}.
-     * Any parse failure (including a {@code null} literal, whose property read throws in JS) is treated
-     * as empty.
+     * {@code true} when the JSON body carries no usable content: no Gemini candidates/parts, no OpenAI
+     * choices/message content, or an empty wrapped {@code response}. Any parse failure (including a
+     * {@code null} literal, whose property read throws in JS) is treated as empty.
      */
     public static boolean isEmptyResponseBody(JsonCodec json, String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -244,7 +235,7 @@ public final class AntigravityResponseParse {
         } catch (RuntimeException e) {
             return true;
         }
-        // TS reads parsed.candidates directly; a null literal throws -> catch -> true.
+        // a null literal throws on the property read -> catch -> true.
         if (parsed == null) {
             return true;
         }
@@ -331,13 +322,12 @@ public final class AntigravityResponseParse {
         return false;
     }
 
-    // ---- isMeaningfulSseLine (request-helpers.ts:1840-1880) ---------------------------------------
+    // ---- isMeaningfulSseLine ----------------------------------------------------------------------
 
     /**
-     * Port of {@code isMeaningfulSseLine}: {@code true} only for a {@code data: } line whose JSON
-     * carries at least one candidate part with non-empty text or a functionCall (recursing through a
-     * wrapped {@code response}). {@code [DONE]}, empty, non-{@code data: } and unparseable lines are not
-     * meaningful.
+     * {@code true} only for a {@code data: } line whose JSON carries at least one candidate part with
+     * non-empty text or a functionCall (recursing through a wrapped {@code response}). {@code [DONE]},
+     * empty, non-{@code data: } and unparseable lines are not meaningful.
      */
     public static boolean isMeaningfulSseLine(JsonCodec json, String line) {
         if (!line.startsWith("data: ")) {
@@ -393,13 +383,12 @@ public final class AntigravityResponseParse {
         return false;
     }
 
-    // ---- recursivelyParseJsonStrings (request-helpers.ts:1927-2022) -------------------------------
+    // ---- recursivelyParseJsonStrings --------------------------------------------------------------
 
     /**
-     * Port of {@code recursivelyParseJsonStrings}: recursively expands JSON-stringified values in the
-     * tree (default {@link #SKIP_PARSE_KEYS} preserved verbatim), unescapes lone control-char escapes,
-     * and auto-corrects double-encoded JSON with trailing junk. Public entry uses the default skip set
-     * with no current key.
+     * Recursively expands JSON-stringified values in the tree (default {@link #SKIP_PARSE_KEYS}
+     * preserved verbatim), unescapes lone control-char escapes, and auto-corrects double-encoded JSON
+     * with trailing junk. Public entry uses the default skip set with no current key.
      */
     public static Object recursivelyParseJsonStrings(JsonCodec json, Object obj) {
         return recursivelyParseJsonStrings(json, obj, SKIP_PARSE_KEYS, null);
@@ -491,15 +480,14 @@ public final class AntigravityResponseParse {
         return str;
     }
 
-    // ---- createSyntheticErrorResponse (request-helpers.ts:2703-2788) ------------------------------
+    // ---- createSyntheticErrorResponse -------------------------------------------------------------
 
     /**
-     * Structured stand-in for the TS web {@code Response} returned by {@code createSyntheticErrorResponse}
-     * -- the load-bearing bytes (SSE {@code body}), the {@code status} and the {@code headers} the host
+     * Structured stand-in for the web {@code Response} returned by {@code createSyntheticErrorResponse}:
+     * the load-bearing bytes (SSE {@code body}), the {@code status} and the {@code headers} the host
      * reads. A {@code Response} object is not TeaVM-portable; this record-like holder carries the same
-     * data. NOTE: the TS header keys are the literal-cased strings below; the browser fetch {@code
-     * Response} lowercases them on read (the harness snapshot is lowercased) -- the SSE body/status are
-     * the byte-exact contract asserted against the harness.
+     * data. NOTE: the header keys are the literal-cased strings below; the browser fetch {@code
+     * Response} lowercases them on read. The SSE body/status are the byte-exact contract.
      */
     public static final class SyntheticResponse {
         public final int status;
@@ -514,9 +502,9 @@ public final class AntigravityResponseParse {
     }
 
     /**
-     * Port of {@code createSyntheticErrorResponse}: builds a fake-success (200) Anthropic SSE stream that
-     * carries {@code errorMessage} as assistant text, so the host session is not locked by a raw
-     * 400/500. The synthetic message id's {@code Date.now()} is sourced from the injected {@link Clock}.
+     * Builds a fake-success (200) Anthropic SSE stream that carries {@code errorMessage} as assistant
+     * text, so the host session is not locked by a raw 400/500. The synthetic message id's
+     * {@code Date.now()} is sourced from the injected {@link Clock}.
      */
     public static SyntheticResponse createSyntheticErrorResponse(
             JsonCodec json, Clock clock, String errorMessage, String requestedModel) {
@@ -591,20 +579,19 @@ public final class AntigravityResponseParse {
         return new SyntheticResponse(200, headers, body.toString());
     }
 
-    // Each TS event is `event: <name>\ndata: <json>\n\n` (a template literal with a trailing blank line).
+    // Each event is `event: <name>\ndata: <json>\n\n` (trailing blank line).
     private static void appendEvent(StringBuilder sb, String eventName, String dataJson) {
         sb.append("event: ").append(eventName).append("\ndata: ").append(dataJson).append("\n\n");
     }
 
-    // ---- detectErrorType (recovery.ts:41-70, TeaVM de-dup Task 1) ----------------------------------
+    // ---- detectErrorType --------------------------------------------------------------------------
 
     /**
-     * Port of {@code detectErrorType}: classifies an already-extracted upstream error message into a
-     * recoverable error type ({@code tool_result_missing} / {@code thinking_block_order} /
-     * {@code thinking_disabled_violation}), or {@code null}. The TS's polymorphic {@code
-     * getErrorMessage} unwrapping (error-object/{@code .data}/{@code .error} nesting, {@code
-     * JSON.stringify} fallback) is not ported -- request.ts's one call site (:1802) always passes the
-     * already-extracted message string.
+     * Classifies an already-extracted upstream error message into a recoverable error type
+     * ({@code tool_result_missing} / {@code thinking_block_order} / {@code thinking_disabled_violation}),
+     * or {@code null}. The polymorphic {@code getErrorMessage} unwrapping (error-object/{@code .data}/
+     * {@code .error} nesting, {@code JSON.stringify} fallback) is not reproduced: the one call site
+     * always passes the already-extracted message string.
      */
     public static String detectErrorType(String message) {
         String m = message != null ? message.toLowerCase() : "";

@@ -113,8 +113,8 @@ const harness = H.harness;
 const PROD = "https://cloudcode-pa.googleapis.com";
 const jsonHeaders = { "content-type": "application/json" };
 
-// A fixed fingerprint so prepareAntigravityRequestProd's headers are deterministic (bypasses
-// getSessionFingerprint).
+// A fixed fingerprint so prepareAntigravityRequestProd's headers are deterministic (bypasses live
+// fingerprint generation).
 const FIXED_FP = {
   deviceId: "dev-fixed", sessionToken: "sess-fixed", userAgent: "antigravity/1.2.3",
   apiClient: "cli-fixed", clientMetadata: { ideType: "ANTIGRAVITY", platform: "LINUX_AMD64", pluginType: "GEMINI" },
@@ -215,46 +215,46 @@ afterAll(() => { globalThis.fetch = realFetch; globalThis.Date = RealDate; vi.re
 
 const scenarios: any[] = [
   {
-    name: "happy path — 200 on attempt 0 (SERVE via transformAntigravityResponse + reportSuccess)",
+    name: "happy path, 200 on attempt 0 (SERVE via transformAntigravityResponse + reportSuccess)",
     accounts: [quietAccount("acc1")],
     acquire: [{ id: "acc1", access: "tok1" }],
     fetch: [resp(200, jsonHeaders, '{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}}')],
   },
   {
-    name: "happy path via proxy — proxy.reportResult(true) then SERVE",
+    name: "happy path via proxy, proxy.reportResult(true) then SERVE",
     accounts: [quietAccount("acc1")],
     acquire: [{ id: "acc1", access: "tok1" }],
     proxy: { acc1: "http://proxy1" },
     fetch: [resp(200, jsonHeaders, '{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}}')],
   },
   {
-    name: "429 (reset-after) x3 endpoints then rotate to ok via proxy — ipSuspected:true (has quota)",
+    name: "429 (reset-after) x3 endpoints then rotate to ok via proxy, ipSuspected:true (has quota)",
     accounts: [quietAccount("acc1", { cachedQuota: { Claude: { remainingFraction: 0.5, resetTime: "2099-01-01T00:00:00Z" } } }), quietAccount("acc2")],
     acquire: [{ id: "acc1", access: "tok1" }, { id: "acc2", access: "tok2" }],
     proxy: { acc1: "http://proxy1" },
     fetch: [rate(429, "quota reached, resets after 30s"), rate(429, "quota reached, resets after 30s"), rate(429, "quota reached, resets after 30s"), resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
   },
   {
-    name: "429 x3 endpoints then rotate to ok via proxy — ipSuspected:false (no quota)",
+    name: "429 x3 endpoints then rotate to ok via proxy, ipSuspected:false (no quota)",
     accounts: [quietAccount("acc1"), quietAccount("acc2")],
     acquire: [{ id: "acc1", access: "tok1" }, { id: "acc2", access: "tok2" }],
     proxy: { acc1: "http://proxy1" },
     fetch: [rate(429, "quota reached, resets after 30s"), rate(429, "quota reached, resets after 30s"), rate(429, "quota reached, resets after 30s"), resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
   },
   {
-    name: "429 cloudcode-pa [{error}] array unwrap (capacity) then rotate to ok — reason classification parity",
+    name: "429 cloudcode-pa [{error}] array unwrap (capacity) then rotate to ok, reason classification parity",
     accounts: [quietAccount("acc1"), quietAccount("acc2")],
     acquire: [{ id: "acc1", access: "tok1" }, { id: "acc2", access: "tok2" }],
     fetch: [rate(429, "resource exhausted", "RESOURCE_EXHAUSTED", true), rate(429, "resource exhausted", "RESOURCE_EXHAUSTED", true), rate(429, "resource exhausted", "RESOURCE_EXHAUSTED", true), resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
   },
   {
-    name: "503 no-reset then rotate to ok — MODEL_CAPACITY cooldown parity (jitter pinned)",
+    name: "503 no-reset then rotate to ok, MODEL_CAPACITY cooldown parity (jitter pinned)",
     accounts: [quietAccount("acc1"), quietAccount("acc2")],
     acquire: [{ id: "acc1", access: "tok1" }, { id: "acc2", access: "tok2" }],
     fetch: [rate(503, "overloaded"), rate(503, "overloaded"), rate(503, "overloaded"), resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
   },
   {
-    name: "endpoint fallback — PROD 403 (non-rate-limit) then DAILY 200 (SERVE on the 2nd endpoint)",
+    name: "endpoint fallback, PROD 403 (non-rate-limit) then DAILY 200 (SERVE on the 2nd endpoint)",
     accounts: [quietAccount("acc1")],
     acquire: [{ id: "acc1", access: "tok1" }],
     fetch: [resp(403, jsonHeaders, "no valid license"), resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
@@ -277,7 +277,7 @@ const scenarios: any[] = [
     nextAvailable: 1_700_000_000_000 + 30_000,
   },
   {
-    name: "Auto fall-through — candidate1 (gemini-pro) 503 rotates to candidate2 (claude) ok",
+    name: "Auto fall-through, candidate1 (gemini-pro) 503 rotates to candidate2 (claude) ok",
     model: "antigravity-auto",
     url: PROD + "/v1internal/models/antigravity-auto:generateContent",
     autoCandidates: ["antigravity-gemini-3-pro", "antigravity-claude-sonnet-4-6"],
@@ -286,7 +286,7 @@ const scenarios: any[] = [
     fetch: [resp(200, jsonHeaders, '{"response":{"candidates":[]}}')],
   },
   {
-    name: "TERMINAL gemini-cli exhausted — bare gemini model all rate-limited",
+    name: "TERMINAL gemini-cli exhausted, bare gemini model all rate-limited",
     model: "gemini-3-pro",
     url: PROD + "/v1internal/models/gemini-3-pro:generateContent",
     accounts: [],
@@ -294,29 +294,26 @@ const scenarios: any[] = [
     nextAvailable: 1_700_000_000_000 + 5_000,
   },
   {
-    name: "TERMINAL antigravity quota-reset — all rate-limited + a pool exhausted with a reset time",
+    name: "TERMINAL antigravity quota-reset, all rate-limited + a pool exhausted with a reset time",
     accounts: [quietAccount("acc1", { cachedQuota: { Claude: { remainingFraction: 0, resetTime: "2099-06-15T12:34:00Z" } } })],
     acquire: [null],
     nextAvailable: 1_700_000_000_000 + 5_000,
   },
   {
-    name: "exhaustion — 6 accounts all 429 -> SERVE_RAW the last real upstream 429 (transient, no quota)",
+    name: "exhaustion, 6 accounts all 429 -> SERVE_RAW the last real upstream 429 (transient, no quota)",
     accounts: Array.from({ length: 6 }, (_, i) => quietAccount("acc" + i)),
     acquire: Array.from({ length: 6 }, (_, i) => ({ id: "acc" + i, access: "tok" + i })),
     fetch: Array.from({ length: 18 }, () => rate(429, "quota reached, resets after 30s")()),
   },
 ];
 
-// SP-3 T2 / T3c-2: two IR-native handleIr error scenarios. They are NOT part of the serve-path loop
-// above (that loop drives the provider's Gemini upstream core via runGeminiViaJava); the legacy
-// Anthropic-wire wrapper that used to drive them from a /v1/messages request was deleted in T4.
-// Anthropic re-encoding is now the front-door's job, so the "anthropic bridge success" scenario
-// (which only asserted Anthropic SSE encoding) was dropped. These two set up account/fetch state
-// for the handleIr throw assertions in the T3c-2 describe block below (the provider logic they
-// cover: upstream 400 -> typed error, no-account terminal quota-reset -> 429 with a real reset).
+// Two IR-native handleIr error scenarios. They are not part of the serve-path loop above (that loop
+// drives the provider's Gemini upstream core via runGeminiViaJava); they set up account/fetch state
+// for the handleIr throw assertions in the describe block below. The provider logic they cover:
+// upstream 400 -> typed error, no-account terminal quota-reset -> 429 with a real reset.
 const irErrorScenarios: any[] = [
   {
-    name: "anthropic bridge api_error — /v1/messages -> inner non-ok 400 -> api_error passthrough",
+    name: "anthropic bridge api_error, /v1/messages -> inner non-ok 400 -> api_error passthrough",
     url: "https://loader.local/v1/messages",
     body: JSON.stringify({ model: "claude-sonnet-4", messages: [{ role: "user", content: "hi" }] }),
     accounts: [quietAccount("acc1")],
@@ -324,7 +321,7 @@ const irErrorScenarios: any[] = [
     fetch: [resp(400, jsonHeaders, "bad request"), resp(400, jsonHeaders, "bad request"), resp(400, jsonHeaders, "bad request")],
   },
   {
-    name: "anthropic bridge rate_limit_error — /v1/messages -> inner terminal quota-reset -> 429 rate_limit_error",
+    name: "anthropic bridge rate_limit_error, /v1/messages -> inner terminal quota-reset -> 429 rate_limit_error",
     url: "https://loader.local/v1/messages",
     body: JSON.stringify({ model: "claude-sonnet-4", messages: [{ role: "user", content: "hi" }] }),
     accounts: [quietAccount("acc1", { cachedQuota: { Claude: { remainingFraction: 0, resetTime: "2099-06-15T12:34:00Z" } } })],
@@ -361,11 +358,11 @@ describe("serve-path regression: Java path (runGeminiViaJava) vs frozen fixture"
   });
 });
 
-// CRITICAL-1 regression guard: fresh accounts (no discovered managed project, no pre-set synthetic id)
-// must mint a UNIQUE per-account synthetic project id — otherwise every such account gets the SAME
+// Regression guard: fresh accounts (no discovered managed project, no pre-set synthetic id) must mint
+// a UNIQUE per-account synthetic project id, otherwise every such account gets the SAME
 // x-goog-user-project-equivalent (the outbound body `project` field) and gets correlated. Uses REAL
 // entropy (not the deterministic pin) via runGeminiViaJava directly.
-describe("CRITICAL-1: fresh-account synthetic project id is unique per account (no correlation)", () => {
+describe("fresh-account synthetic project id is unique per account (no correlation)", () => {
   it("two fresh accounts get DISTINCT persisted meta.syntheticProjectId AND distinct outbound body project on the Java path", async () => {
     vi.spyOn(crypto, "randomUUID").mockImplementation(() => realRandomUuid()); // un-pin -> real entropy
 
@@ -405,11 +402,10 @@ describe("CRITICAL-1: fresh-account synthetic project id is unique per account (
   });
 });
 
-// T3c-2: handleIrViaJavaOrchestrator throws the canonical core-proxy HandleIrError (instead of an
-// ad-hoc enriched Error) so core-proxy's IR front door can reconstruct a real Response from it. This
-// is the provider's IR-native serving path exercised directly (no legacy Anthropic-wire wrapper),
-// at the point where the front door would actually catch the throw.
-describe("T3c-2: handleIr throws the typed HandleIrError with the real status/body/retryAfterMs", () => {
+// handleIrViaJavaOrchestrator throws the canonical HandleIrError so the IR front door can reconstruct
+// a real Response from it. Exercises the provider's IR-native serving path directly, at the point
+// where the front door would catch the throw.
+describe("handleIr throws the typed HandleIrError with the real status/body/retryAfterMs", () => {
   async function throwsFrom(scenarioName: string) {
     const sc = irErrorScenarios.find((s) => s.name === scenarioName);
     resetForRun(sc);
@@ -421,7 +417,7 @@ describe("T3c-2: handleIr throws the typed HandleIrError with the real status/bo
   }
 
   it("upstream 400 -> HandleIrError(400, api_error), verbatim upstream detail as the message", async () => {
-    const error = await throwsFrom("anthropic bridge api_error — /v1/messages -> inner non-ok 400 -> api_error passthrough");
+    const error = await throwsFrom("anthropic bridge api_error, /v1/messages -> inner non-ok 400 -> api_error passthrough");
     expect(error).toBeInstanceOf(HandleIrError);
     expect(error.status).toBe(400);
     expect(JSON.parse(error.body)).toEqual({ type: "error", error: { type: "api_error", message: "bad request" } });
@@ -429,12 +425,12 @@ describe("T3c-2: handleIr throws the typed HandleIrError with the real status/bo
   });
 
   it("no-account terminal quota-reset -> HandleIrError(429, rate_limit_error) carrying the pool's own retryAfterMs", async () => {
-    const error = await throwsFrom("anthropic bridge rate_limit_error — /v1/messages -> inner terminal quota-reset -> 429 rate_limit_error");
+    const error = await throwsFrom("anthropic bridge rate_limit_error, /v1/messages -> inner terminal quota-reset -> 429 rate_limit_error");
     expect(error).toBeInstanceOf(HandleIrError);
     expect(error.status).toBe(429);
     expect(error.headers["x-hub-rate-limited"]).toBe("1");
     // The account's own cachedQuota.resetTime (2099-06-15T12:34:00Z) is the SAME reset the pool's
-    // soonestQuotaReset math uses — proves retryAfterMs is threaded from the real quota logic, not
+    // soonestQuotaReset math uses, proves retryAfterMs is threaded from the real quota logic, not
     // a made-up constant.
     const expectedResetEpoch = new Date("2099-06-15T12:34:00Z").getTime();
     expect(error.retryAfterMs).toBe(expectedResetEpoch - harness.now);

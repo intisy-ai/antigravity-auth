@@ -14,18 +14,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Offline parity tests for {@link AntigravityStreamTransform}, expected values snapshotted from the
- * REAL {@code transformer.ts} pure halves (src/plugin/core/streaming/transformer.ts) via the Node
- * harness ({@code .superpowers/sdd/t7d-harness/}, fixtures.json {@code hashString} /
- * {@code transformStreamingPayload} / {@code deduplicateThinkingText} /
- * {@code cacheThinkingSignaturesFromResponse} / {@code transformSseLine}) -- never hand-derived.
- *
- * <p>{@code hashString} is module-private in transformer.ts, so its exact source was reproduced
- * verbatim in the harness ({@code hashOracle}) and executed under Node for the true JS
- * {@code >>> 0}/{@code toString(16)} bytes; the DROP behaviour that consumes it is snapshotted from
- * the real exported {@code deduplicateThinkingText} (the {@code hashSet*} cases). The
- * {@link AntigravityThinkingBlocks.ImageSink} seam ({@code processImageData}, Bucket C) is exercised
- * with a capturing sink (its real output is a non-deterministic file path), matching T7c-2.
+ * Offline tests for {@link AntigravityStreamTransform}. {@code hashString} produces JS-compatible
+ * {@code >>> 0}/{@code toString(16)} bytes, which {@code deduplicateThinkingText} consumes to drop
+ * repeats. The {@link AntigravityThinkingBlocks.ImageSink} seam ({@code processImageData}) is
+ * exercised with a capturing sink, since its real output is a non-deterministic file path.
  */
 class AntigravityStreamTransformTest {
 
@@ -202,7 +194,7 @@ class AntigravityStreamTransformTest {
         assertTrue(hashes.contains("7c9dca2b"));
     }
 
-    // ImageSink seam (Java-only, per T7c-2): inlineData -> {text: sinkResult}; falsy result falls through.
+    // ImageSink seam (Java-only): inlineData -> {text: sinkResult}; falsy result falls through.
     @Test
     void dedup_imageSinkSeam() {
         AntigravityStreamTransform.ThoughtBuffer b = buf();

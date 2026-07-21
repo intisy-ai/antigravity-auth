@@ -10,11 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Offline parity tests for {@link AntigravityThinkingConfig}, expected values snapshotted from the
- * REAL thinking-config helpers (src/plugin/request-helpers.ts) via the Node harness
- * ({@code .superpowers/sdd/t7c2-harness/}, fixtures.json {@code keepFalse.*}) -- never hand-derived.
- */
 class AntigravityThinkingConfigTest {
 
     private static final int DEF = 16000;

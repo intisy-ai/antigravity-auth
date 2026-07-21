@@ -9,11 +9,9 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline parity tests for {@link CrossModelSanitizer}, expected values snapshotted from the real
- * {@code src/plugin/transform/cross-model-sanitizer.ts} via the Node harness
- * ({@code .superpowers/sdd/t7b-harness/}) -- see t7b-report.md. Covers both sides of the
- * MIN_SIGNATURE_LENGTH=50 gate, the thinking-block always-strip path, and the copy-vs-mutate
- * contract of the deep walk vs the in-place walk.
+ * Offline tests for {@link CrossModelSanitizer}. Covers both sides of the MIN_SIGNATURE_LENGTH=50
+ * gate, the thinking-block always-strip path, and the copy-vs-mutate contract of the deep walk vs
+ * the in-place walk.
  */
 class CrossModelSanitizerTest {
 

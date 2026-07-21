@@ -8,21 +8,19 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's thinking-recovery module ({@code src/plugin/thinking-recovery.ts},
- * TeaVM de-dup Task 1): the "let it crash and start again" last-resort recovery for corrupted
- * thinking state -- detect an incomplete tool loop that started without thinking, then close it with
- * synthetic model/user messages so the model starts a fresh turn. Implements {@link
- * AntigravityRequestPrep.ThinkingRecovery} (the seam {@link AntigravityRequestPrep} already injects)
- * so the JVM (and later TeaVM) path gets a real implementation instead of {@code AntigravityProvider}'s
- * former {@code NOOP_THINKING_RECOVERY} stub.
+ * The "let it crash and start again" last-resort recovery for corrupted thinking state: detect an
+ * incomplete tool loop that started without thinking, then close it with synthetic model/user messages
+ * so the model starts a fresh turn. Implements the {@link AntigravityRequestPrep.ThinkingRecovery} seam
+ * that {@link AntigravityRequestPrep} injects, so the JVM (and later TeaVM) path gets a real
+ * implementation.
  *
- * <p>{@link JsonCodec} is accepted but unused by this slice's pure logic (thinking-recovery.ts never
- * calls {@code JSON.parse}/{@code JSON.stringify}) -- kept only so this class's constructor matches
- * every other {@code Deps}-injected seam class in this package, wired identically at every call site.
+ * <p>{@link JsonCodec} is accepted but unused by this pure logic (no {@code JSON.parse}/
+ * {@code JSON.stringify}); it is kept only so this class's constructor matches every other
+ * {@code Deps}-injected seam class in this package, wired identically at every call site.
  *
- * <p>Copy-vs-mutate fidelity: {@code closeToolLoopForThinking}/{@code stripAllThinkingBlocks} build
- * NEW lists/maps (the TS {@code .map()}/spread); {@code analyzeConversationState} never mutates its
- * input. TeaVM-transpilable (String/Map/List only, no reflection/streams/regex).
+ * <p>Copy-vs-mutate fidelity: {@code closeToolLoopForThinking}/{@code stripAllThinkingBlocks} build NEW
+ * lists/maps; {@code analyzeConversationState} never mutates its input. TeaVM-transpilable (String/Map/
+ * List only, no reflection/streams/regex).
  */
 public final class AntigravityThinkingRecovery implements AntigravityRequestPrep.ThinkingRecovery {
 
@@ -32,7 +30,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         this.json = json;
     }
 
-    /** thinking-recovery.ts's {@code ConversationState}. */
+    /** Conversation-state snapshot. */
     public static final class ConversationState {
         public boolean inToolLoop;
         public int turnStartIdx = -1;
@@ -42,7 +40,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         public boolean lastModelHasToolCalls;
     }
 
-    // ---- analyzeConversationState (thinking-recovery.ts:113-166) ----------------------------------
+    // ---- analyzeConversationState ----------------------------------
 
     @Override
     public Object analyzeConversationState(List<Object> contents) {
@@ -88,7 +86,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         return state;
     }
 
-    // ---- needsThinkingRecovery (thinking-recovery.ts:288-290) -------------------------------------
+    // ---- needsThinkingRecovery -------------------------------------
 
     @Override
     public boolean needsThinkingRecovery(Object stateObj) {
@@ -96,7 +94,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         return state.inToolLoop && !state.turnHasThinking;
     }
 
-    // ---- closeToolLoopForThinking (thinking-recovery.ts:247-277) ----------------------------------
+    // ---- closeToolLoopForThinking ----------------------------------
 
     @Override
     public List<Object> closeToolLoopForThinking(List<Object> contents) {
@@ -134,9 +132,9 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         return parts;
     }
 
-    // ---- looksLikeCompactedThinkingTurn (thinking-recovery.ts:309-351) ----------------------------
+    // ---- looksLikeCompactedThinkingTurn ----------------------------
 
-    /** Port of {@code looksLikeCompactedThinkingTurn}: LLM-API-Key-Proxy's compacted-turn heuristic. */
+    /** Compacted-turn detection heuristic. */
     public boolean looksLikeCompactedThinkingTurn(Object msgObj) {
         Map<String, Object> msg = asMsg(msgObj);
         if (msg == null) {
@@ -189,7 +187,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
         return partObj instanceof Map && JsCoercion.isTruthy(((Map<?, ?>) partObj).get("functionCall"));
     }
 
-    // ---- private helpers (thinking-recovery.ts:33-104,169-228) ------------------------------------
+    // ---- private helpers ------------------------------------
 
     private static boolean isThinkingPart(Map<?, ?> part) {
         return Boolean.TRUE.equals(part.get("thought"))
@@ -197,7 +195,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
                 || "redacted_thinking".equals(part.get("type"));
     }
 
-    // TS `"functionResponse" in part` -- key existence, not truthiness (a present falsy value counts).
+    // `"functionResponse" in part`: key existence, not truthiness (a present falsy value counts).
     private static boolean isFunctionResponsePart(Object partObj) {
         return partObj instanceof Map && ((Map<?, ?>) partObj).containsKey("functionResponse");
     }
@@ -282,7 +280,7 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
                         filteredParts.add(part);
                     }
                 }
-                // TS guard: never strip down to zero parts if there were any to begin with.
+                // Guard: never strip down to zero parts if there were any to begin with.
                 if (filteredParts.isEmpty() && !parts.isEmpty()) {
                     out.add(contentObj);
                     continue;

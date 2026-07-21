@@ -1,15 +1,13 @@
 // @ts-nocheck
-// Antigravity version pool for the User-Agent. A real user runs one of many
-// released versions — mostly recent ones — and auto-updates over time, so a single
-// hardcoded version is an obvious fingerprint. This module owns the pool itself
-// (curated fallback + runtime refresh from the public release feed); the entropy-
-// bearing pick/drift decisions (weighted-newer pick, per-account drift + jittered
-// scheduling) are OWNED by Java (AntigravityVersions.java / AntigravityHandleRouting.
-// driftAccountVersions), called via the TeaVM prod exports `pickVersionProd` (fingerprint.ts)
-// and `driftAccountVersionsProd` (driver/index.ts) — see Task 7b-1.
+// Antigravity version pool for the User-Agent. A real user runs one of many released versions (mostly
+// recent ones) and auto-updates over time, so a single hardcoded version is an obvious fingerprint.
+// This module owns the pool itself (curated fallback plus runtime refresh from the public release
+// feed); the entropy-bearing pick/drift decisions (weighted-newer pick, per-account drift, jittered
+// scheduling) live in Java (AntigravityVersions / AntigravityHandleRouting.driftAccountVersions),
+// called via the TeaVM prod exports `pickVersionProd` and `driftAccountVersionsProd`.
 
-// Curated fallback (newest-first) — real Antigravity releases. Used before/if the
-// live refresh fails so the pool is never empty or stale-to-one-value.
+// Curated fallback (newest-first) of real Antigravity releases. Used before/if the live refresh fails
+// so the pool is never empty or stale-to-one-value.
 const FALLBACK_VERSIONS = [
   "2.1.1", "2.0.4", "2.0.3", "2.0.2", "2.0.1",
   "1.23.2", "1.22.2", "1.21.9", "1.21.6", "1.20.6",
@@ -48,10 +46,10 @@ export function getVersionList() {
   return versionList;
 }
 
-// Pure/deterministic (no entropy) — intentionally KEPT in TS rather than routed through Java: its
-// only consumer (constants.ts's getAntigravityHeaders, used synchronously across ~7 call sites)
-// would otherwise need an async ripple (or a circular import back into driver/javaHandle.ts) for a
-// one-line, zero-correlation-risk accessor. The entropy-bearing pick/drift live in Java exclusively.
+// Pure and deterministic (no entropy), kept in TS rather than routed through Java: its only consumer
+// (constants.ts's getAntigravityHeaders, used synchronously across ~7 call sites) would otherwise need
+// an async ripple (or a circular import back into driver/javaHandle.ts) for a one-line,
+// zero-correlation-risk accessor. The entropy-bearing pick/drift live in Java exclusively.
 export function getNewestVersion() {
   return versionList[0] || FALLBACK_VERSIONS[0];
 }

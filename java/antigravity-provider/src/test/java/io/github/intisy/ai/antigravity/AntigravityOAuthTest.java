@@ -25,13 +25,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-E/E-D: {@link AntigravityOAuth} is a GENUINELY NEW capability (no {@code /v1/oauth/*} URL
- * branch existed in the Java provider before this migration), ported from {@code
- * src/antigravity/oauth.ts}. Covers {@code authorize()}'s loopback {@link AuthorizeInfo} shape,
- * {@code exchange()}'s happy path (token exchange + userinfo email lookup, skipping the
- * loadCodeAssist project-discovery call when the state already carries a project id) and its
- * failure paths (bad state, non-2xx token endpoint, missing refresh token) -- never a throw, never
- * a token/secret in the returned error map.
+ * Tests for {@link AntigravityOAuth}. Covers {@code authorize()}'s loopback {@link AuthorizeInfo}
+ * shape, {@code exchange()}'s happy path (token exchange + userinfo email lookup, skipping the
+ * loadCodeAssist project-discovery call when the state already carries a project id) and its failure
+ * paths (bad state, non-2xx token endpoint, missing refresh token): never a throw, never a
+ * token/secret in the returned error map.
  */
 class AntigravityOAuthTest {
 
@@ -77,7 +75,7 @@ class AntigravityOAuthTest {
         assertEquals("acc-tok", account.get("access"));
         assertTrue(((Number) account.get("expires")).longValue() > System.currentTimeMillis());
 
-        // Only the token exchange + userinfo calls -- no loadCodeAssist, since the state already
+        // Only the token exchange + userinfo calls, no loadCodeAssist, since the state already
         // carried a project id.
         assertEquals(2, http.requests.size());
         assertTrue(http.requests.get(0).url.contains("oauth2.googleapis.com/token"));

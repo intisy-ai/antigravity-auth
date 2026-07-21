@@ -17,9 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Offline parity tests for {@link AntigravityToolPairing} (T7c-3 tool-pairing half), expected values
- * snapshotted from the REAL request-helpers.ts helpers via the Node harness
- * ({@code .superpowers/sdd/t7c3-harness/fixtures.json}) -- never hand-derived. These cover the Anthropic
+ * Offline tests for {@link AntigravityToolPairing} (tool-pairing half). These cover the Anthropic
  * tool_use/tool_result and Gemini functionCall/functionResponse pairing rules whose violation makes the
  * upstream API 400: orphan detection, regrouping, id-assignment/matching round-trip, and the nuclear
  * fallback. JSON.stringify inside {@code formatTypeHint} rides the injected {@link TestJsonCodec}.

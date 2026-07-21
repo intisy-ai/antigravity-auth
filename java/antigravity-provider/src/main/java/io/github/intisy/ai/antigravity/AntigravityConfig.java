@@ -11,33 +11,27 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * SP-E/E-D: JVM port of antigravity-auth's TS config surface ({@code src/plugin/config/schema.ts}
- * + {@code loader.ts}/{@code edit.ts}) as a typed {@link
- * io.github.intisy.ai.shared.routing.ConfigurableProvider} -- a GENUINELY NEW capability for the
- * Java provider (mirrors {@link AntigravityOAuth}'s "new capability" shape, and claude-code-auth's
- * {@code ClaudeConfig} for the GET-merged/PUT-persisted pattern). Reads/writes the SAME on-disk
- * file the TS driver's core config store uses ({@code config/antigravity.json}, via the injected
- * {@link io.github.intisy.ai.shared.spi.Store} -- never a self-assembled {@code FileStore}), so
- * JVM and TS share one settings file.
+ * A typed {@link io.github.intisy.ai.shared.routing.ConfigurableProvider} implementing
+ * antigravity's config surface, following claude-code-auth's {@code ClaudeConfig}
+ * GET-merged/PUT-persisted pattern. Reads/writes the config store's on-disk file
+ * ({@code config/antigravity.json}) via the injected {@link io.github.intisy.ai.shared.spi.Store}
+ * (never a self-assembled {@code FileStore}), so JVM and host share one settings file.
  *
- * <p>The nested TS group {@code signature_cache} is flattened to dotted {@link ConfigField#key}s
- * (e.g. {@code "signature_cache.enabled"}) for the flat {@code ConfigField} wire shape, then
- * un-flattened back into the SAME nested JSON structure on read/persist so the on-disk file stays
- * byte-compatible with what the TS side writes.
+ * <p>The nested config group {@code signature_cache} is flattened to dotted
+ * {@link ConfigField#key}s (e.g. {@code "signature_cache.enabled"}) for the flat
+ * {@code ConfigField} wire shape, then un-flattened back into the SAME nested JSON structure
+ * on read/persist so the on-disk file stays byte-compatible.
  */
 final class AntigravityConfig {
 
-    // Matches the TS config-file name (config/antigravity.json) exactly -- see loader.ts/edit.ts.
+    // Matches the on-disk config-file name (config/antigravity.json) exactly.
     private static final String STORE_KEY = "antigravity.json";
 
     private static final List<String> ACCOUNT_STRATEGIES = Arrays.asList("sticky", "round-robin", "hybrid");
 
-    // Mirrors schema.ts's AntigravityConfig shape + DEFAULT_CONFIG exactly, grouped by the
-    // sections schema.ts's own comments already delineate. Dotted keys are the flattened form of
-    // a nested TS group (see class doc). ONLY keys with a real runtime consumer are exposed here
-    // (the 9 pre-existing functional keys + the 3 E-wired features: request_jitter_max_ms,
-    // cli_first, signature_cache.*) -- the rest of the historical schema.ts surface was dead
-    // (no consumer in either the TS driver or this JVM provider) and was deleted, not just hidden.
+    // Dotted keys are the flattened form of a nested config group (see class doc). ONLY keys with
+    // a real runtime consumer are exposed here (request_jitter_max_ms, cli_first,
+    // signature_cache.* included).
     private static final List<GroupDef> GROUPS = Arrays.asList(
             new GroupDef("General", Arrays.asList(
                     field("debug", "Debug logging", "bool", null, Boolean.FALSE),
@@ -84,8 +78,7 @@ final class AntigravityConfig {
                 if (!values.containsKey(f.key)) continue;
                 Object raw = values.get(f.key);
                 if (raw == null) {
-                    // Explicit null clears an optional field (log_dir) back to
-                    // "use the default" -- matches the TS's optional (`?`) schema fields.
+                    // Explicit null clears an optional field (log_dir) back to "use the default".
                     setNested(overrides, f.key, null);
                     continue;
                 }

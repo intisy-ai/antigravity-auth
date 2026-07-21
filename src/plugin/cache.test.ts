@@ -92,8 +92,8 @@ describe("Signature Cache", () => {
     });
   });
 
-  // signature_cache (E-wiring): the disk-backed SignatureCache module (cache/signature-cache.ts) is
-  // now actually constructed (initSignatureCache), instead of `diskCache` staying permanently null.
+  // The disk-backed SignatureCache module (cache/signature-cache.ts) is constructed by
+  // initSignatureCache; when config disables it `diskCache` stays null.
   describe("initSignatureCache (disk-backed signature cache wiring)", () => {
     // Hermetic disk dir: SignatureCache resolves its cache file from XDG_CONFIG_HOME/APPDATA
     // at construct time, so point both at a fresh temp dir per test. Without this the cache
@@ -120,7 +120,7 @@ describe("Signature Cache", () => {
       try { rmSync(tmpConfigDir, { recursive: true, force: true }); } catch {}
     });
 
-    it("stays inert (diskCache null) when config is undefined — matches the prior never-constructed behavior", () => {
+    it("stays inert (diskCache null) when config is undefined, matches the prior never-constructed behavior", () => {
       initSignatureCache(undefined);
       expect(getDiskCacheForTesting()).toBeNull();
     });

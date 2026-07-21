@@ -14,10 +14,9 @@ import org.teavm.jso.core.JSString;
 /**
  * The {@link AntigravityProjectContext.ProjectOnboarder} bridge: a FOURTH distinct {@code @Async}
  * native method + {@link AsyncCallback}, driving the host-side {@code onboardManagedProject} fetch
- * loop (project.ts:176-233). It suspends INSIDE {@code ensureProjectContext} only when {@link
- * JsProjectLoaderBridge#load} yields no managed project id -- so the fully-cold-account path chains
- * acquire -&gt; load -&gt; onboard -&gt; execute across FOUR separate {@code @Async} bridges in one
- * CPS-transformed call graph (the strongest composition this task proves).
+ * loop. It suspends INSIDE {@code ensureProjectContext} only when {@link JsProjectLoaderBridge#load}
+ * yields no managed project id, so the fully-cold-account path chains acquire -&gt; load -&gt; onboard
+ * -&gt; execute across FOUR separate {@code @Async} bridges in one CPS-transformed call graph.
  *
  * <p>{@code (accessToken, tierId, projectId, proxy) => Promise<managedIdJson | null>}; resolves the
  * provisioned managed project id string, or {@code null} when provisioning did not complete. {@link

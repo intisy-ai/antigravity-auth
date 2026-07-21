@@ -13,14 +13,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Java port of the PURE {@code prepareAntigravityRequest} pipeline spine + {@code generateSyntheticProjectId}
- * from {@code src/plugin/request.ts} (T7e, :706-1702). Given already-extracted request primitives
- * ({@code url}/{@code method}/{@code headers} map/{@code body} string -- the web-type marshalling
- * :721-816 STAYS TS) it returns a plain {@link PrepareResult} carrying the rewritten url, the mutated
- * headers, the final wrapped-Gemini body string, and the driver metadata. The fs debug block
- * (:1564-1594) is DROPPED (Bucket C); {@code transformAntigravityResponse} (:1711+) STAYS TS.
+ * The pure {@code prepareAntigravityRequest} pipeline spine + {@code generateSyntheticProjectId}.
+ * Given already-extracted request primitives ({@code url}/{@code method}/{@code headers} map/{@code
+ * body} string) it returns a plain {@link PrepareResult} carrying the rewritten url, the mutated
+ * headers, the final wrapped-Gemini body string, and the driver metadata. The fs debug block and
+ * {@code transformAntigravityResponse} are out of scope.
  *
- * <h2>Reused (not re-ported)</h2>
+ * <h2>Reused</h2>
  * {@link AntigravityModelResolver#resolveModelForHeaderStyle}, {@link ClaudeTransforms} model
  * predicates + {@code CLAUDE_THINKING_MAX_OUTPUT_TOKENS}/{@code CLAUDE_INTERLEAVED_THINKING_HINT}/
  * placeholder constants, {@link AntigravityThinkingConfig} (extract/resolve/normalize thinking +
@@ -30,21 +29,20 @@ import java.util.regex.Pattern;
  * {@link CrossModelSanitizer#sanitizeCrossModelPayloadInPlace} + {@code MIN_SIGNATURE_LENGTH},
  * {@link AntigravityThinkingBlocks#deepFilterThinkingBlocks}, {@link AntigravityToolPairing}
  * (id-assign/response-match/grouping/validate/hardening), and the {@link AntigravityRequestKeys}/
- * {@link AntigravityRequestSignatures} helpers ported alongside this in T7e.
+ * {@link AntigravityRequestSignatures} helpers.
  *
  * <h2>Injected seams</h2>
  * {@link JsonCodec} (parse/stringify), {@link IdGenerator} ({@code crypto.randomUUID} for
  * {@code requestId} + the synthetic-project id part; {@code PLUGIN_SESSION_ID} passed in as
- * {@code pluginSessionId} -- the TS module-load constant), {@link Random} (synthetic-project
- * adjective/noun pick), {@link AntigravityRequestKeys.Hasher} (sha256 conversation-seed),
+ * {@code pluginSessionId}), {@link Random} (synthetic-project adjective/noun pick),
+ * {@link AntigravityRequestKeys.Hasher} (sha256 conversation-seed),
  * {@link AntigravityThinkingBlocks.CachedSignatureLookup} ({@code getCachedSignature}),
  * {@link AntigravityRequestSignatures.SignatureStore} ({@code defaultSignatureStore} get/has/delete),
- * {@link ThinkingRecovery} (the {@code thinking-recovery.ts} analyze/needs/close trio -- a DIFFERENT
- * file, deferred to its own slice, so injected here), {@link Logger} (the gemini transforms' warn
- * sink) and a boolean {@code keepThinking} ({@code getKeepThinking()} as a PARAM, per T7c-2). The
- * {@code getRandomizedHeaders} result + resolved {@code fingerprint} come in as {@code selectedHeaders}
- * / {@code fingerprint} (both computed by the TS shell, since {@code getSessionFingerprint}/version
- * pool are Bucket C).
+ * {@link ThinkingRecovery} (the {@code thinking-recovery.ts} analyze/needs/close trio, a separate file
+ * injected here), {@link Logger} (the gemini transforms' warn sink) and a boolean {@code keepThinking}
+ * ({@code getKeepThinking()} as a PARAM). The {@code getRandomizedHeaders} result + resolved
+ * {@code fingerprint} come in as {@code selectedHeaders} / {@code fingerprint} (both computed by the
+ * host shell, since {@code getSessionFingerprint}/version pool stay host-side).
  *
  * <h2>Gotchas honored</h2>
  * <ul>
@@ -54,17 +52,16 @@ import java.util.regex.Pattern;
  *       (the last three only for {@code headerStyle==="antigravity"}); URL -> {@code {endpoint}/v1internal:{action}}
  *       (+{@code ?alt=sse} for {@code streamGenerateContent}).</li>
  *   <li><b>Synthetic project id</b>: {@code projectId.trim() || (antigravity ? generateSyntheticProjectId() : "")};
- *       the {@code ANTIGRAVITY_DEFAULT_PROJECT_ID} fallback is applied upstream (project.ts) not here.</li>
+ *       the {@code ANTIGRAVITY_DEFAULT_PROJECT_ID} fallback is applied upstream (project context) not here.</li>
  *   <li><b>Signature gates</b>: {@code SKIP_THOUGHT_SIGNATURE} + {@code MIN_SIGNATURE_LENGTH} honored via
  *       the reused {@link AntigravityRequestSignatures} helpers.</li>
- *   <li><b>mutate-vs-copy</b>: the wrapped branch MUTATES the parsed request objects in place (matching
- *       TS); the unwrapped branch mutates {@code requestPayload} and reassigns array fields with the
- *       transform outputs exactly as TS.</li>
+ *   <li><b>mutate-vs-copy</b>: the wrapped branch MUTATES the parsed request objects in place; the
+ *       unwrapped branch mutates {@code requestPayload} and reassigns array fields with the transform
+ *       outputs.</li>
  * </ul>
  *
- * <p>Disclosed deviations (unreachable by valid payloads; no fixture): a non-object parsed body / a
- * truthy non-object {@code generationConfig}/{@code extra_body} is treated as absent (the TS would
- * {@code JSON}-error or throw on the {@code "request" in x} / property-set); the {@code log.debug}/
+ * <p>Deviations (unreachable by valid payloads): a non-object parsed body / a truthy non-object
+ * {@code generationConfig}/{@code extra_body} is treated as absent; the {@code log.debug}/
  * {@code log.warn} diagnostics are omitted (no data effect). TeaVM-transpilable.
  */
 public final class AntigravityRequestPrep {
@@ -72,17 +69,16 @@ public final class AntigravityRequestPrep {
     public static final String STREAM_ACTION = "streamGenerateContent";
     public static final String ANTIGRAVITY_ENDPOINT = "https://cloudcode-pa.googleapis.com";
     public static final String GEMINI_CLI_ENDPOINT = "https://cloudcode-pa.googleapis.com";
-    /** constants.ts:76 -- hardcoded fallback when Antigravity returns no project (applied upstream). */
+    /** hardcoded fallback when Antigravity returns no project (applied upstream). */
     public static final String ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-    // constants.ts GEMINI_CLI_HEADERS
+    // GEMINI_CLI_HEADERS
     static final String GEMINI_CLI_UA = "google-api-nodejs-client/9.15.1";
     static final String GEMINI_CLI_XGOOG = "gl-node/22.17.0";
     static final String GEMINI_CLI_CLIENT_METADATA = "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI";
 
     static final String INTERLEAVED_BETA = "interleaved-thinking-2025-05-14";
 
-    // constants.ts:183-189
     static final String ANTIGRAVITY_SYSTEM_INSTRUCTION =
             "You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.\n"
                     + "You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n"
@@ -91,7 +87,6 @@ public final class AntigravityRequestPrep {
                     + "\n"
                     + "<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>\n";
 
-    // constants.ts:141-152
     static final String CLAUDE_TOOL_SYSTEM_INSTRUCTION =
             "CRITICAL TOOL USAGE INSTRUCTIONS:\n"
                     + "You are operating in a custom environment where tool definitions differ from your training data.\n"
@@ -118,7 +113,7 @@ public final class AntigravityRequestPrep {
         String randomUuid();
     }
 
-    /** The {@code thinking-recovery.ts} trio (a separate file; injected -- deferred to its own slice). */
+    /** The {@code thinking-recovery.ts} trio (a separate file, injected here). */
     public interface ThinkingRecovery {
         Object analyzeConversationState(List<Object> contents);
 
@@ -156,9 +151,9 @@ public final class AntigravityRequestPrep {
         public boolean forceThinkingRecovery;
         public Boolean claudeToolHardening;      // options?.claudeToolHardening (default true)
         public boolean claudePromptAutoCaching;  // options?.claudePromptAutoCaching (default false)
-        public boolean cliFirst;                 // config.cli_first -- prefer gemini-cli routing (default false)
+        public boolean cliFirst;                 // config.cli_first: prefer gemini-cli routing (default false)
         public Map<String, Object> fingerprint;  // options?.fingerprint ?? getSessionFingerprint() (resolved by shell)
-        public String imageAspectRatio;          // process.env.OPENCODE_IMAGE_ASPECT_RATIO (Bucket C)
+        public String imageAspectRatio;          // process.env.OPENCODE_IMAGE_ASPECT_RATIO
     }
 
     /** The plain result handed back to the TS shell. */
@@ -183,7 +178,7 @@ public final class AntigravityRequestPrep {
     private AntigravityRequestPrep() {
     }
 
-    // ---- generateSyntheticProjectId (request.ts:706-713) ----------------------------------------
+    // ---- generateSyntheticProjectId -------------------------------------------------------------
 
     public static String generateSyntheticProjectId(IdGenerator ids, Random random) {
         String[] adjectives = {"useful", "bright", "swift", "calm", "bold"};
@@ -195,7 +190,7 @@ public final class AntigravityRequestPrep {
         return adj + "-" + noun + "-" + randomPart;
     }
 
-    // ---- prepareAntigravityRequest (request.ts:834-1702) ----------------------------------------
+    // ---- prepareAntigravityRequest --------------------------------------------------------------
 
     @SuppressWarnings("unchecked")
     public static PrepareResult prepare(Input in, Deps deps) {
@@ -355,7 +350,7 @@ public final class AntigravityRequestPrep {
         return r;
     }
 
-    // ---- wrapped branch (request.ts:944-1024) ---------------------------------------------------
+    // ---- wrapped branch -------------------------------------------------------------------------
 
     private static final class WrappedState {
         String effectiveModel;
@@ -432,7 +427,7 @@ public final class AntigravityRequestPrep {
         return deps.json.stringify(wrappedBody);
     }
 
-    // ---- unwrapped branch (request.ts:1025-1641) -----------------------------------------------
+    // ---- unwrapped branch -----------------------------------------------------------------------
 
     private static final class UnwrappedState {
         String effectiveModel;
@@ -695,8 +690,6 @@ public final class AntigravityRequestPrep {
         AntigravityRequestSignatures.stripInjectedDebugFromRequestPayload(requestPayload);
         AntigravityRequestSignatures.sanitizeRequestPayloadForAntigravity(requestPayload);
 
-        // fs debug block (request.ts:1564-1594) DROPPED (Bucket C).
-
         if (!st.isClaude && requestPayload.get("contents") instanceof List) {
             requestPayload.put("contents", GeminiTransforms.sanitizeGeminiContents(JsCoercion.asList(requestPayload.get("contents"))));
             requestPayload.put("contents", GeminiTransforms.fixGeminiToolPairing(JsCoercion.asList(requestPayload.get("contents"))));
@@ -733,7 +726,7 @@ public final class AntigravityRequestPrep {
 
     // ---- unwrapped sub-steps --------------------------------------------------------------------
 
-    // request.ts:1195-1233 -- append the interleaved-thinking hint to the systemInstruction.
+    // append the interleaved-thinking hint to the systemInstruction.
     private static void applyInterleavedHint(Map<String, Object> requestPayload) {
         String hint = ClaudeTransforms.CLAUDE_INTERLEAVED_THINKING_HINT;
         Object existing = requestPayload.get("systemInstruction");
@@ -771,7 +764,7 @@ public final class AntigravityRequestPrep {
         }
     }
 
-    // request.ts:1235-1256 -- cached-content normalization.
+    // cached-content normalization.
     private static void applyCachedContent(Map<String, Object> requestPayload, Map<String, Object> extraBody) {
         Object cachedContentFromExtra = extraBody != null
                 ? JsCoercion.nullish(extraBody.get("cached_content"), extraBody.get("cachedContent"))
@@ -783,9 +776,8 @@ public final class AntigravityRequestPrep {
             requestPayload.put("cachedContent", cachedContent);
         }
         requestPayload.remove("cached_content");
-        // Re-remove cachedContent only if it was not (re)set above? TS deletes both unconditionally
-        // AFTER the set -- but the set used key "cachedContent", so a truthy cachedContent would be
-        // removed here too. Mirror TS exactly: delete both.
+        // cachedContent is removed unconditionally after the set above (the set used key
+        // "cachedContent"), so even a truthy value set above is deleted here too.
         requestPayload.remove("cachedContent");
         if (requestPayload.get("extra_body") instanceof Map) {
             Map<String, Object> eb = JsCoercion.asMap(requestPayload.get("extra_body"));
@@ -797,7 +789,7 @@ public final class AntigravityRequestPrep {
         }
     }
 
-    // request.ts:1596-1622 -- prepend ANTIGRAVITY_SYSTEM_INSTRUCTION + force role:user.
+    // prepend ANTIGRAVITY_SYSTEM_INSTRUCTION + force role:user.
     private static void applyAntigravitySystemInstruction(Map<String, Object> requestPayload) {
         Object existing = requestPayload.get("systemInstruction");
         if (existing instanceof Map) {
@@ -831,7 +823,7 @@ public final class AntigravityRequestPrep {
         }
     }
 
-    // request.ts:1263-1386 -- Claude tools -> functionDeclarations (with placeholder normalization).
+    // Claude tools -> functionDeclarations (with placeholder normalization).
     @SuppressWarnings("unchecked")
     private static List<Object> buildClaudeFunctionDeclarations(Deps deps, List<Object> tools, int[] toolDebugMissing, List<Object> toolDebugSummaries) {
         List<Object> functionDeclarations = new ArrayList<>();
@@ -1028,7 +1020,7 @@ public final class AntigravityRequestPrep {
         return false;
     }
 
-    // request.ts:1696 -- toolDebugSummaries.slice(0,20).join(" | ")
+    // toolDebugSummaries.slice(0,20).join(" | ")
     private static String joinSummaries(List<Object> summaries) {
         StringBuilder sb = new StringBuilder();
         int limit = Math.min(20, summaries.size());
@@ -1039,7 +1031,7 @@ public final class AntigravityRequestPrep {
         return sb.toString();
     }
 
-    // safe nested get: `x?.key` -- returns null for a non-Map x.
+    // safe nested get: `x?.key` returns null for a non-Map x.
     private static Object g(Object obj, String key) {
         return obj instanceof Map ? JsCoercion.asMap(obj).get(key) : null;
     }

@@ -20,11 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * Decision-sequence + synthetic-body parity tests for {@link AntigravityHandleOrchestrator}. Every
- * expected ordered sequence + decision is transcribed VERBATIM from the Node harness fixtures
- * ({@code .superpowers/sdd/t7f-harness/fixtures.json}), which drives the module-private
- * {@code attemptModel}/{@code handle}/{@code resolveProjectId}/{@code syntheticProjectFor} +
- * anthropic-classification logic reproduced from {@code src/driver/index.ts}. Not hand-derived.
+ * Decision-sequence and synthetic-body tests for {@link AntigravityHandleOrchestrator}, covering
+ * {@code attemptModel}, {@code handle}, {@code resolveProjectId}, and {@code syntheticProjectFor}.
  */
 class AntigravityHandleOrchestratorTest {
 
@@ -115,7 +112,7 @@ class AntigravityHandleOrchestratorTest {
         assertEquals(AntigravityHandleOrchestrator.HandleDecision.Kind.SYNTHETIC, d.kind);
         assertEquals(503, d.status);
         assertEquals("application/json", d.headers.get("content-type"));
-        assertEquals("{\"error\":{\"message\":\"claude quota exhausted — resets in ~42s. Pick another model or use Auto (it falls through to a free pool).\"}}", d.body);
+        assertEquals("{\"error\":{\"message\":\"claude quota exhausted, resets in ~42s. Pick another model or use Auto (it falls through to a free pool).\"}}", d.body);
     }
 
     @Test

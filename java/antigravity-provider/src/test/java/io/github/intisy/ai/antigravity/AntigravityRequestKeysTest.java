@@ -11,7 +11,6 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** T7e parity: {@link AntigravityRequestKeys} vs the real request.ts key/seed helpers (fixtures.json). */
 final class AntigravityRequestKeysTest {
 
     private final Hasher sha = RequestTestDoubles.sha256();

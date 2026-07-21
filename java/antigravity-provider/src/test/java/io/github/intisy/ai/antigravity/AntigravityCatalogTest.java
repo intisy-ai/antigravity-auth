@@ -12,12 +12,8 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline deterministic parity tests for {@link AntigravityCatalog}, checked against antigravity-
- * auth's actual {@code src/plugin/models-fetch.ts} behavior: the TS's exported functions were
- * extracted verbatim into a throwaway Node harness and executed with {@code node} (v26.3.1) to
- * snapshot the exact expected values used below (including the antigravity gotchas: effort-variant
- * family collapse and the Gemini CLI free-pool group) -- not hand-derived. See task-7a-report.md
- * for the harness.
+ * Offline deterministic tests for {@link AntigravityCatalog}, including the antigravity gotchas:
+ * effort-variant family collapse and the Gemini CLI free-pool group.
  */
 class AntigravityCatalogTest {
 

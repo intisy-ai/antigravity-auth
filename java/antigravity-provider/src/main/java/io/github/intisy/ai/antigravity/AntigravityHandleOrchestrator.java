@@ -11,11 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Java port of the DECISION state machine of antigravity-auth's {@code handle}/{@code attemptModel}/
- * {@code handleAnthropicMessages} (Bucket B, {@code .superpowers/port-grounding-map.md} "§T7f";
- * {@code src/driver/index.ts:128-243,304-349,395-445} + {@code resolveProjectId}/{@code
- * syntheticProjectFor} :97-119). Mirrors claude-code-auth's {@code ClaudeHandleOrchestrator} Option-B
- * boundary: <b>Java owns every branch/retry/rotation/fall-through decision; the TS host owns raw
+ * The DECISION state machine for serving a request. <b>Java owns every branch/retry/rotation/
+ * fall-through decision; the TS host owns raw
  * transport</b> -- {@code fetch}, the IP-proxy pool (select/fallback/{@code reportResult}), the SSE
  * byte-stream, {@code transformAntigravityResponse}, the {@code geminiToAnthropicStream} pipe, {@code
  * chatError} + its locale date-formatting, {@code getAutoCandidates} and the version-feed refresh --
@@ -24,22 +21,22 @@ import java.util.Map;
  * retained live response back verbatim.
  *
  * <p>Reuses {@link AntigravityLanes} (lane/header-style/rate-limit-reason/reset-time),
- * {@link AntigravityHandleRouting} (§4 pure helpers), {@link AntigravityQuotaParser#accountHasQuota}
+ * {@link AntigravityHandleRouting} (pure helpers), {@link AntigravityQuotaParser#accountHasQuota}
  * (proxy ip-suspected signal), {@link AntigravityProjectContext} (project discovery),
  * {@link AntigravityRequestPrep#generateSyntheticProjectId} and {@link AntigravityAuth}. Uses only
  * {@link JsonCodec}/{@link Clock}/{@link Random} + an {@link AntigravityRequestPrep.IdGenerator};
  * no gson/java.net/java.nio/reflection/threads/{@code System.currentTimeMillis}/locale APIs --
- * TeaVM-transpilable. This class is DORMANT (T7f): the TS handle is NOT yet wired to it (that is T7g).
+ * TeaVM-transpilable.
  */
 public final class AntigravityHandleOrchestrator {
 
-    // index.ts:24 -- total account/endpoint attempts before giving up.
+    // Total account/endpoint attempts before giving up.
     public static final int MAX_ATTEMPTS = 6;
 
-    // index.ts:432 -- exact gemini-cli terminal wording (host wraps in chatError).
+    // Exact gemini-cli terminal wording (host wraps in chatError).
     public static final String GEMINI_CLI_EXHAUSTED_MESSAGE =
             "The Gemini CLI free pool is exhausted for this model. Pick another model or try again later.";
-    // index.ts:439-440 -- the antigravity quota-reset message, split around the host-formatted date.
+    // The antigravity quota-reset message, split around the host-formatted date.
     public static final String QUOTA_RESET_PREFIX =
             "All Antigravity accounts are rate-limited for this model. Quota resets ";
     public static final String QUOTA_RESET_SUFFIX = ". Try again later or pick another model.";
@@ -88,10 +85,10 @@ public final class AntigravityHandleOrchestrator {
      * #reportProxyRateLimit} (the host owns the proxy URL it selected for this account).
      */
     public interface AccountOps {
-        /** {@code manager.acquire(lane)} (index.ts:133). {@code null}/blank id &lt;=&gt; {@code !acquired||!acquired.account}. */
+        /** {@code manager.acquire(lane)}. {@code null}/blank id &lt;=&gt; {@code !acquired||!acquired.account}. */
         Acquired acquire(String lane);
 
-        /** {@code manager.nextAvailableAt(lane)} (index.ts:136) -- epoch ms, or {@code null}. */
+        /** {@code manager.nextAvailableAt(lane)} -- epoch ms, or {@code null}. */
         Long nextAvailableAt(String lane);
 
         void reportError(String accountId, int attempt, String message);
@@ -100,7 +97,7 @@ public final class AntigravityHandleOrchestrator {
 
         void reportSuccess(String accountId);
 
-        /** {@code proxyManager.reportRateLimit(proxyUrl,{ipSuspected})} (index.ts:213-216) -- host owns the URL. */
+        /** {@code proxyManager.reportRateLimit(proxyUrl,{ipSuspected})} -- host owns the URL. */
         void reportProxyRateLimit(String accountId, boolean ipSuspected);
 
         /** {@code manager.list()} -- the stored accounts (each a plain JSON {@code Map}). */
@@ -115,7 +112,7 @@ public final class AntigravityHandleOrchestrator {
         void apply(Map<String, Object> account);
     }
 
-    /** {@code manager.acquire()} result: {@code {account, access}} (index.ts:133,147,153). */
+    /** {@code manager.acquire()} result: {@code {account, access}}. */
     public static final class Acquired {
         public final String accountId;
         public final String access;
@@ -129,11 +126,11 @@ public final class AntigravityHandleOrchestrator {
     }
 
     /**
-     * Builds the outbound request via the reused {@link AntigravityRequestPrep} spine (T7e) -- kept
-     * a host seam because {@code prepareAntigravityRequest}'s inputs include Bucket-C singletons
+     * Builds the outbound request via the reused {@link AntigravityRequestPrep} spine -- kept
+     * a host seam because {@code prepareAntigravityRequest}'s inputs include per-session singletons
      * ({@code getSessionFingerprint}, the {@code getRandomizedHeaders} version pool) whose
      * resolution must not leak into the DECISION orchestrator. The "prepare threw -&gt; skip this
-     * endpoint" DECISION (index.ts:169) stays in Java (this is called in a try/catch).
+     * endpoint" DECISION stays in Java (this is called in a try/catch).
      */
     public interface RequestPreparer {
         /** @throws RuntimeException on a prepare failure (Java catches it and skips the endpoint). */
@@ -153,7 +150,7 @@ public final class AntigravityHandleOrchestrator {
         }
     }
 
-    /** The params {@code transformAntigravityResponse} needs (index.ts:222-226) -- carried on SERVE. */
+    /** The params {@code transformAntigravityResponse} needs -- carried on SERVE. */
     public static final class TransformParams {
         public final String requestedModel;
         public final String projectId;
@@ -175,7 +172,7 @@ public final class AntigravityHandleOrchestrator {
 
     /**
      * Executes ONE prepared request: {@code fetch} + IP-proxy select/fallback/{@code reportResult}
-     * are ALL host-internal (index.ts:170-189). Only the decision-relevant summary comes back --
+     * are ALL host-internal. Only the decision-relevant summary comes back --
      * the host extracts the rate-limit classification strings ({@code errorMessage}/{@code
      * errorReason}) from the body (unwrapping the cloudcode-pa {@code [{error}]} array); NO body
      * bytes cross into Java.
@@ -188,14 +185,14 @@ public final class AntigravityHandleOrchestrator {
     public static final class AttemptResult {
         public final int status;
         public final boolean ok;
-        /** Host exhausted proxy + direct fetch for this endpoint (index.ts:176-188) -&gt; skip endpoint. */
+        /** Host exhausted proxy + direct fetch for this endpoint -&gt; skip endpoint. */
         public final boolean transportFailed;
         public final Object attemptRef;
         /** cloudcode-pa {@code error.message} (rate-limit body), or {@code null}. */
         public final String errorMessage;
         /** cloudcode-pa {@code error.status || error.reason}, or {@code null}. */
         public final String errorReason;
-        /** {@code !!proxyUrl} (index.ts:213) -- the host selected a proxy for this account/attempt. */
+        /** {@code !!proxyUrl} -- the host selected a proxy for this account/attempt. */
         public final boolean proxyUsed;
 
         public AttemptResult(int status, boolean ok, boolean transportFailed, Object attemptRef,
@@ -313,13 +310,13 @@ public final class AntigravityHandleOrchestrator {
         public String bodyText;
         /** {@code ctx.model} -- the router's assigned model. */
         public String ctxModel;
-        /** {@code getAutoCandidates(PROVIDER_ID)} (index.ts:409) -- leaderboard stays host, PASSED IN. */
+        /** {@code getAutoCandidates(PROVIDER_ID)} -- leaderboard stays host, PASSED IN. */
         public List<String> autoCandidates;
         /** {@code ctx.log}; {@code null} defaults to a no-op. */
         public Logger log;
     }
 
-    // ---- handle (index.ts:395-445) --------------------------------------------------------------
+    // ---- handle --------------------------------------------------------------------------------
 
     /**
      * The Gemini-path {@code handle} (the {@code isAnthropicMessages} route + {@code
@@ -355,7 +352,7 @@ public final class AntigravityHandleOrchestrator {
             }
         }
 
-        // Everything rate-limited -- surface a lane-accurate TERMINAL error (index.ts:424-444).
+        // Everything rate-limited -- surface a lane-accurate TERMINAL error.
         if (lastOutcome != null && AntigravityHandleRouting.isRateLimitStatus(lastOutcome.status)) {
             String lane = AntigravityLanes.laneFor(lastModel != null ? lastModel : requestedModel);
             if ("gemini-cli".equals(lane)) {
@@ -371,12 +368,12 @@ public final class AntigravityHandleOrchestrator {
                 : HandleDecision.synthetic(502, jsonHeaders(), errorBody("all antigravity Auto candidates exhausted"));
     }
 
-    // ---- attemptModel (index.ts:128-243) --------------------------------------------------------
+    // ---- attemptModel ----------------------------------------------------------------------------
 
     /**
      * Runs ONE model through the account/endpoint attempt loop. A rate-limit outcome means "all
      * accounts for this model's lane are spent" so the Auto caller can fall through to the next.
-     * Branch order is ported 1:1: no-account 503, missing-access, per-endpoint prepare(catch skip),
+     * Branch order: no-account 503, missing-access, per-endpoint prepare(catch skip),
      * execute, transport-failed skip, rate-limit (classify+report+proxy report), ok (success+SERVE),
      * non-ok fallback (never masking a real rate-limit).
      */
@@ -391,7 +388,7 @@ public final class AntigravityHandleOrchestrator {
                 Long next = accounts.nextAvailableAt(lane);
                 long secs = next != null ? Math.max(0, Math.round((next - clock.now()) / 1000.0)) : 0;
                 String msg = secs > 0
-                        ? lane + " quota exhausted — resets in ~" + secs
+                        ? lane + " quota exhausted, resets in ~" + secs
                             + "s. Pick another model or use Auto (it falls through to a free pool)."
                         : "No available antigravity account for lane " + lane + ".";
                 return HandleDecision.synthetic(503, jsonHeaders(), errorBody(msg));
@@ -430,7 +427,7 @@ public final class AntigravityHandleOrchestrator {
                     long retryAfterMs = AntigravityHandleRouting.retryAfterMsFromMessage(result.errorMessage);
                     long resetMs = AntigravityLanes.resetTimeFor(parsed, attempt, retryAfterMs, random, clock);
                     accounts.reportRateLimit(accountId, lane, resetMs);
-                    if (result.proxyUsed) { // index.ts:213 -- only when a proxy was selected
+                    if (result.proxyUsed) { // only when a proxy was selected
                         Map<String, Object> fresh = findAccount(accountId, account);
                         accounts.reportProxyRateLimit(accountId, AntigravityQuotaParser.accountHasQuota(fresh));
                     }
@@ -443,7 +440,7 @@ public final class AntigravityHandleOrchestrator {
                 }
 
                 // Non-ok, non-rate-limit (e.g. sandbox 403): keep as fallback, but NEVER overwrite a
-                // real rate-limit lastResponse (index.ts:229-237).
+                // real rate-limit lastResponse.
                 if (lastOutcome == null || !AntigravityHandleRouting.isRateLimitStatus(lastOutcome.status)) {
                     lastOutcome = HandleDecision.serveRaw(result.attemptRef, result.status);
                 }
@@ -457,7 +454,7 @@ public final class AntigravityHandleOrchestrator {
                         errorBody("antigravity request failed after " + MAX_ATTEMPTS + " attempts"));
     }
 
-    // ---- resolveProjectId / syntheticProjectFor (index.ts:97-119) -------------------------------
+    // ---- resolveProjectId / syntheticProjectFor -------------------------------------------------
 
     /**
      * Resolves the effective project id for an acquired account, persisting a newly discovered
@@ -506,7 +503,7 @@ public final class AntigravityHandleOrchestrator {
     /**
      * A stable per-account synthetic project id (so accounts without a discovered managed project
      * never share the same {@code x-goog-user-project}). Generates + persists one via {@link
-     * AccountOps#mutate} on first use (index.ts:97-104).
+     * AccountOps#mutate} on first use.
      */
     @SuppressWarnings("unchecked")
     public String syntheticProjectFor(Map<String, Object> account) {
@@ -529,13 +526,11 @@ public final class AntigravityHandleOrchestrator {
         return synthetic;
     }
 
-    // ---- handleAnthropicMessages classification (index.ts:318-346) ------------------------------
+    // ---- inner-result classification ------------------------------
 
     /**
-     * The inner {@code handle} result the host extracts for the Anthropic-bridge classification
-     * (index.ts:318-346). The recursion (build the Gemini request via {@code anthropicToGemini}
-     * [reused {@link AntigravityIrBridge}, SP-2], call {@code handle}) is host-driven; Java only
-     * classifies. The {@code pipeThrough(geminiToAnthropicStream)} on the ok path stays host.
+     * The inner result the host extracts for classification. The host builds the Gemini request
+     * (via {@link AntigravityIrBridge}) and drives transport; Java only classifies the outcome.
      */
     public static final class AnthropicInnerResult {
         /** {@code geminiRes != null}. */
@@ -565,7 +560,7 @@ public final class AntigravityHandleOrchestrator {
      * becomes a 429 rate_limit_error (carrying {@code x-hub-rate-limited}/{@code -retry-after-ms}) or
      * a {@code status||400} invalid_request_error; a missing/non-ok/bodiless result becomes a
      * {@code status||502} api_error; an ok result signals the host to pipe through {@code
-     * geminiToAnthropicStream}. Byte-exact bodies + header sets (index.ts:327-347).
+     * geminiToAnthropicStream}. Byte-exact bodies + header sets.
      */
     public HandleDecision classifyAnthropicResult(AnthropicInnerResult r) {
         if (r.present && r.chatError) {
@@ -606,7 +601,7 @@ public final class AntigravityHandleOrchestrator {
         return h;
     }
 
-    /** {@code errorResponse(status, message)}: {@code {error:{message}}} (index.ts:121-123). */
+    /** {@code errorResponse(status, message)}: {@code {error:{message}}}. */
     private String errorBody(String message) {
         Map<String, Object> error = new LinkedHashMap<>();
         error.put("message", message);
@@ -615,7 +610,7 @@ public final class AntigravityHandleOrchestrator {
         return json.stringify(body);
     }
 
-    /** {@code {type:"error", error:{type, message}}} (index.ts:332,337,345). */
+    /** {@code {type:"error", error:{type, message}}}. */
     private String anthropicErrorBody(String type, String message) {
         Map<String, Object> error = new LinkedHashMap<>();
         error.put("type", type);
