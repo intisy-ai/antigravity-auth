@@ -388,7 +388,7 @@ public final class AntigravityHandleOrchestrator {
                 Long next = accounts.nextAvailableAt(lane);
                 long secs = next != null ? Math.max(0, Math.round((next - clock.now()) / 1000.0)) : 0;
                 String msg = secs > 0
-                        ? lane + " quota exhausted — resets in ~" + secs
+                        ? lane + " quota exhausted, resets in ~" + secs
                             + "s. Pick another model or use Auto (it falls through to a free pool)."
                         : "No available antigravity account for lane " + lane + ".";
                 return HandleDecision.synthetic(503, jsonHeaders(), errorBody(msg));

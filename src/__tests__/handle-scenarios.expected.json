@@ -601,7 +601,7 @@
       "headers": {
         "content-type": "application/json"
       },
-      "body": "{\"error\":{\"message\":\"claude quota exhausted — resets in ~30s. Pick another model or use Auto (it falls through to a free pool).\"}}"
+      "body": "{\"error\":{\"message\":\"claude quota exhausted, resets in ~30s. Pick another model or use Auto (it falls through to a free pool).\"}}"
     },
     "calls": [
       [

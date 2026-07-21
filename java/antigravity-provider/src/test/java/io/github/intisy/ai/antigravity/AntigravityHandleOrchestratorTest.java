@@ -112,7 +112,7 @@ class AntigravityHandleOrchestratorTest {
         assertEquals(AntigravityHandleOrchestrator.HandleDecision.Kind.SYNTHETIC, d.kind);
         assertEquals(503, d.status);
         assertEquals("application/json", d.headers.get("content-type"));
-        assertEquals("{\"error\":{\"message\":\"claude quota exhausted — resets in ~42s. Pick another model or use Auto (it falls through to a free pool).\"}}", d.body);
+        assertEquals("{\"error\":{\"message\":\"claude quota exhausted, resets in ~42s. Pick another model or use Auto (it falls through to a free pool).\"}}", d.body);
     }
 
     @Test
