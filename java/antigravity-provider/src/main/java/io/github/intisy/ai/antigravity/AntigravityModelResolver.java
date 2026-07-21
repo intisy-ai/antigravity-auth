@@ -67,7 +67,6 @@ public final class AntigravityModelResolver {
     private static final Pattern TIER_REGEX = Pattern.compile("-(minimal|low|medium|high)$");
     private static final Pattern QUOTA_PREFIX_REGEX = Pattern.compile("^antigravity-", Pattern.CASE_INSENSITIVE);
     private static final Pattern GEMINI_3_PRO_REGEX = Pattern.compile("^gemini-3(?:\\.\\d+)?-pro", Pattern.CASE_INSENSITIVE);
-    private static final Pattern GEMINI_3_FLASH_REGEX = Pattern.compile("^gemini-3(?:\\.\\d+)?-flash", Pattern.CASE_INSENSITIVE);
     private static final Pattern IMAGE_GENERATION_MODELS = Pattern.compile("image|imagen", Pattern.CASE_INSENSITIVE);
 
     // resolveModelForHeaderStyle regexes (model-resolver.ts:324-347)
@@ -110,10 +109,6 @@ public final class AntigravityModelResolver {
 
     private static boolean isGemini3ProModel(String model) {
         return GEMINI_3_PRO_REGEX.matcher(model).find();
-    }
-
-    private static boolean isGemini3FlashModel(String model) {
-        return GEMINI_3_FLASH_REGEX.matcher(model).find();
     }
 
     /** {@code resolveModelWithTier(requestedModel)} with default (empty) options. */

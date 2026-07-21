@@ -58,18 +58,6 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
 ] as const;
 
-/**
- * Primary endpoint to use (prod - where regular accounts are licensed).
- */
-export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
-
-/**
- * Gemini CLI endpoint (production).
- * Used for models without :antigravity suffix.
- * Same as opencode-gemini-auth's GEMINI_CODE_ASSIST_ENDPOINT.
- */
-export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
-
 // The newest real released version (from the runtime-refreshed version pool), so
 // the quota/models headers don't advertise a stale hardcoded build. The per-account
 // serving User-Agent is picked separately (weighted) in fingerprint.ts.
