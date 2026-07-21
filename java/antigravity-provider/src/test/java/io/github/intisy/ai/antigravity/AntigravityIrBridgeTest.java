@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AntigravityIrBridgeTest {
 
     @Test
-    void supportsThinking_parity() {
+    void supportsThinkingByModelName() {
         assertTrue(AntigravityIrBridge.supportsThinking("claude-thinking"));
         assertTrue(AntigravityIrBridge.supportsThinking("Claude-Thinking"));
         assertTrue(AntigravityIrBridge.supportsThinking("gemini-3-pro"));

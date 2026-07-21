@@ -31,7 +31,7 @@ class AntigravityStreamTransformTest {
     // ---- hashString (>>> 0 unsigned, base16) -----------------------------------------------------
 
     @Test
-    void hashString_parity() {
+    void hashStringComputesUnsignedBase16() {
         assertEquals("1505", AntigravityStreamTransform.hashString(""));
         assertEquals("2b606", AntigravityStreamTransform.hashString("a"));
         assertEquals("f923099", AntigravityStreamTransform.hashString("hello"));
@@ -53,7 +53,7 @@ class AntigravityStreamTransformTest {
     };
 
     @Test
-    void transformStreamingPayload_parity() {
+    void transformStreamingPayloadRewritesDataFrames() {
         assertEquals("event: x\n:comment\nplain",
                 AntigravityStreamTransform.transformStreamingPayload(JSON, "event: x\n:comment\nplain", null));
         assertEquals("data: {\"wrapped\":{\"a\":1}}",

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Offline tests for {@link AntigravitySchemaCleaner#clean}. Each group mirrors a pipeline phase;
- * {@link #mutateVsCopy_matchesTs()} pins the mutate-vs-copy behavior (inputMutated:false / sameRef
+ * {@link #cleanCopiesObjectsWithoutMutatingInput()} pins the mutate-vs-copy behavior (inputMutated:false / sameRef
  * only for primitives).
  */
 class AntigravitySchemaCleanerTest {
@@ -296,7 +296,7 @@ class AntigravitySchemaCleanerTest {
     // ---- mutate-vs-copy fidelity -----------------------------------------------------------------
 
     @Test
-    void mutateVsCopy_matchesTs() {
+    void cleanCopiesObjectsWithoutMutatingInput() {
         // object input: NOT mutated, output is a new tree (inputMutated:false / sameRef:false)
         Map<String, Object> input = map("type", "object", "properties", map("a", map("type", list("string", "null"))), "required", list("a"));
         Map<String, Object> snapshot = map("type", "object", "properties", map("a", map("type", list("string", "null"))), "required", list("a"));
