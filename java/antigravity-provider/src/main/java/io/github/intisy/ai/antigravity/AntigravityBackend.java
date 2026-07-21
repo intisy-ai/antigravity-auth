@@ -24,22 +24,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * AccountManager} lazily, memoized per {@code configDir}/{@link Store} so repeated {@code
  * handle()}/capability calls on the same provider instance reuse one {@code Store}/{@code
  * AccountManager} rather than re-opening the accounts file store on every request (mirrors {@code
- * io.github.intisy.ai.jvm.AiJava#accountManager}, which this provider cannot call directly -- a
+ * io.github.intisy.ai.jvm.AiJava#accountManager}, which this provider cannot call directly, since a
  * {@code Provider} is handed only {@code HandlerCtx}, never an {@code AiJava} instance).
  *
  * <p>Store-threading (mirrors claude-code-auth's {@code ClaudeBackend}): {@link #forCtx} prefers
  * the server's injected {@link HandlerCtx#store}, so this backend never self-assembles a {@code
- * FileStore} when a host has one to give -- {@link #forConfigDir}'s {@code FileStore} path is kept
- * only as the store-less/legacy-host fallback {@link #forCtx} itself falls back to.
+ * FileStore} when a host has one to give; {@link #forConfigDir}'s {@code FileStore} path is kept
+ * only as the store-less-host fallback {@link #forCtx} itself falls back to.
  *
- * <p>Google OAuth endpoint/client (plan DECISION FLAG C): the antigravity refresh token is stored
- * RAW in {@code account.refresh} (project ids live in {@code account.meta}, read directly by
- * {@link AntigravityProvider}), so {@link AccountManager#ensureAccess} can refresh it against
- * Google's token endpoint unmodified. Client id/secret mirror {@code src/constants.ts}'s
- * {@code ANTIGRAVITY_CLIENT_ID}/{@code ANTIGRAVITY_CLIENT_SECRET} (the same values
- * {@code src/antigravity/oauth.ts} POSTs to {@code https://oauth2.googleapis.com/token}) --
- * {@link AntigravityOAuth} reuses these same two constants for the authorize/exchange capability
- * rather than redeclaring them.
+ * <p>Google OAuth endpoint/client: the antigravity refresh token is stored RAW in {@code
+ * account.refresh} (project ids live in {@code account.meta}, read directly by {@link
+ * AntigravityProvider}), so {@link AccountManager#ensureAccess} can refresh it against Google's
+ * token endpoint unmodified. {@link AntigravityOAuth} reuses the same {@code ANTIGRAVITY_CLIENT_ID}
+ * + client-secret constants for the authorize/exchange capability rather than redeclaring them.
  */
 final class AntigravityBackend {
 
@@ -71,7 +68,7 @@ final class AntigravityBackend {
      * Testability seam: lets a test inject a scripted {@link HttpClient} while everything else
      * self-assembles exactly like the production path (real {@code FileStore}, so a test can seed
      * {@code accounts.json} under a temp {@code configDir} via {@link #accountStore}). NOT
-     * memoized in {@link #CACHE} -- every call builds a fresh instance, and production call sites
+     * memoized in {@link #CACHE}: every call builds a fresh instance, and production call sites
      * never see this constructor (package-private, only {@link #forConfigDir}/{@link #forCtx} are
      * public API).
      */
@@ -119,7 +116,7 @@ final class AntigravityBackend {
     }
 
     /** Serving entry point: prefer the server's injected store; fall back to a FileStore only for a
-     *  legacy/store-less host (ctx.store == null) -- behavior-neutral there. Never forces a store. */
+     *  store-less host (ctx.store == null), behavior-neutral there. Never forces a store. */
     static AntigravityBackend forCtx(HandlerCtx ctx) {
         if (ctx != null && ctx.store != null) return forStore(ctx.store);
         return forConfigDir(ctx != null ? ctx.configDir : null);
@@ -140,7 +137,7 @@ final class AntigravityBackend {
      * {@code configDir} (e.g. from inside {@code AntigravityProvider#handle}) resolves to the
      * given (already-built, presumably {@link #forTest}) backend instead of self-assembling a
      * production one. Lets a test drive {@code AntigravityProvider#handle} end-to-end with a
-     * scripted {@link HttpClient} WITHOUT changing any production call site -- {@link
+     * scripted {@link HttpClient} WITHOUT changing any production call site: {@link
      * #forConfigDir} itself is untouched; this only ever matters when a test has pre-populated the
      * map for its own (temp-directory) key first.
      */

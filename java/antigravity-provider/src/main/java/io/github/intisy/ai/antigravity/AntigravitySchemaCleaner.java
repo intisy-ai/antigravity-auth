@@ -9,42 +9,37 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of antigravity-auth's {@code cleanJSONSchemaForAntigravity} and its full private phase-
- * helper closure ({@code src/plugin/request-helpers.ts:38-726}, T7c-1): the {@code $ref}->hint
- * rewrite, {@code const}->{@code enum} conversion, enum hints + Gemini enum normalization,
+ * Cleans a JSON Schema into the form Antigravity/Gemini accepts, as a phase pipeline: {@code $ref}
+ * ->hint rewrite, {@code const}->{@code enum} conversion, enum hints + Gemini enum normalization,
  * {@code additionalProperties}/constraint description hints, {@code allOf} merge, {@code anyOf}/
  * {@code oneOf} flatten (incl. enum-union merge + best-option scoring), type-array flatten,
  * unsupported-keyword + {@code x-*} stripping, {@code required} cleanup and the empty-object
- * placeholder. This IS the real implementation of {@link ClaudeTransforms.SchemaCleaner}
- * ({@code AntigravitySchemaCleaner::clean}); T7b tested that seam only with an identity double.
+ * placeholder. This is the real implementation of {@link ClaudeTransforms.SchemaCleaner}
+ * ({@code AntigravitySchemaCleaner::clean}).
  *
  * <p>Data model = JSON tree {@code Map<String,Object>} / {@code List<Object>}; every phase returns a
- * NEW tree and never mutates its input (the TS pipeline seeds {@code result = schema} then reassigns
- * through phases that each {@code {...schema}}-copy, so the caller's schema is untouched -- pinned by
- * the harness {@code inputMutated:false}/{@code sameRef} snapshots). Keyword lists are transcribed
- * verbatim from {@code request-helpers.ts:20-33} -- a missed keyword is a 400 from the real API. The
- * {@code EMPTY_SCHEMA_PLACEHOLDER_*} constants are REUSED from {@link ClaudeTransforms} (single
- * source, not duplicated). Pure tree-walk: no SPI, Clock, Random or JSON re-parse needed.
- * TeaVM-transpilable.
+ * NEW tree and never mutates its input, so the caller's schema is untouched. The keyword lists must
+ * stay exhaustive: a missed keyword is a 400 from the real API. The {@code EMPTY_SCHEMA_PLACEHOLDER_*}
+ * constants are reused from {@link ClaudeTransforms} (single source, not duplicated). Pure tree-walk:
+ * no SPI, Clock, Random or JSON re-parse needed. TeaVM-transpilable.
  *
- * <p>Fidelity deviations (disclosed; none reachable by valid JSON Schema and none exercised by any
- * harness fixture): wherever the TS accepts a value via {@code typeof x === "object"} for a
+ * <p>Fidelity deviation (unreachable by valid JSON Schema): wherever a value is accepted for a
  * schema/properties slot ({@code allOf} items, {@code anyOf}/{@code oneOf} options, a {@code
- * properties}/{@code required} container, an {@code appendDescriptionHint} target, a selected
- * flatten option) this port requires a {@link Map} (plain object), so a JSON array in that exact
- * slot -- invalid schema -- is skipped/ignored rather than having its numeric indices spread. The
- * generic tree-recursion still descends into arrays exactly as the TS does.
+ * properties}/{@code required} container, an {@code appendDescriptionHint} target, a selected flatten
+ * option) this code requires a {@link Map} (plain object), so a JSON array in that exact slot
+ * (invalid schema) is skipped/ignored rather than having its numeric indices spread. The generic
+ * tree-recursion still descends into arrays.
  */
 public final class AntigravitySchemaCleaner {
 
-    // request-helpers.ts:20-24 -- constraint keywords moved to description hints (order matters: the
-    // hint is built by iterating this list in order).
+    // Constraint keywords moved to description hints (order matters: the hint is built by iterating
+    // this list in order).
     private static final List<String> UNSUPPORTED_CONSTRAINTS = Arrays.asList(
             "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum",
             "pattern", "minItems", "maxItems", "format",
             "default", "examples");
 
-    // request-helpers.ts:29-33 -- UNSUPPORTED_CONSTRAINTS + the keywords removed after hint extraction.
+    // UNSUPPORTED_CONSTRAINTS + the keywords removed after hint extraction.
     private static final Set<String> UNSUPPORTED_KEYWORDS = new LinkedHashSet<>();
     static {
         UNSUPPORTED_KEYWORDS.addAll(UNSUPPORTED_CONSTRAINTS);
@@ -56,9 +51,9 @@ public final class AntigravitySchemaCleaner {
     private AntigravitySchemaCleaner() {
     }
 
-    // ---- cleanJSONSchemaForAntigravity (request-helpers.ts:698-726) --------------------------------
+    // ---- cleanJSONSchemaForAntigravity -----------------------------------------------------------
 
-    /** Port of {@code cleanJSONSchemaForAntigravity}: the full 12-phase pipeline, returning a new tree. */
+    /** The full 12-phase pipeline, returning a new tree. */
     public static Object clean(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
             return schema;
@@ -80,7 +75,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- appendDescriptionHint (request-helpers.ts:38-45) -----------------------------------------
+    // ---- appendDescriptionHint -------------------------------------------------------------------
 
     private static Object appendDescriptionHint(Object schema, String hint) {
         if (!(schema instanceof Map)) {
@@ -94,7 +89,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- convertRefsToHints (request-helpers.ts:51-76) -------------------------------------------
+    // ---- convertRefsToHints ----------------------------------------------------------------------
 
     private static Object convertRefsToHints(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -124,13 +119,13 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // JS `refVal.split("/").pop()` -- last segment, keeping a trailing empty segment.
+    // JS `refVal.split("/").pop()`: last segment, keeping a trailing empty segment.
     private static String lastPathSegment(String refVal) {
         String[] parts = refVal.split("/", -1);
         return parts[parts.length - 1];
     }
 
-    // ---- convertConstToEnum (request-helpers.ts:82-100) -----------------------------------------
+    // ---- convertConstToEnum ----------------------------------------------------------------------
 
     private static Object convertConstToEnum(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -155,7 +150,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- addEnumHints (request-helpers.ts:106-131) ----------------------------------------------
+    // ---- addEnumHints ----------------------------------------------------------------------------
 
     private static Object addEnumHints(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -186,7 +181,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- normalizeEnums (request-helpers.ts:141-169) --------------------------------------------
+    // ---- normalizeEnums --------------------------------------------------------------------------
 
     private static Object normalizeEnums(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -227,7 +222,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- addAdditionalPropertiesHints (request-helpers.ts:175-198) ------------------------------
+    // ---- addAdditionalPropertiesHints ------------------------------------------------------------
 
     private static Object addAdditionalPropertiesHints(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -255,7 +250,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- moveConstraintsToDescription (request-helpers.ts:204-230) ------------------------------
+    // ---- moveConstraintsToDescription ------------------------------------------------------------
 
     private static Object moveConstraintsToDescription(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -269,8 +264,8 @@ public final class AntigravitySchemaCleaner {
 
         for (String constraint : UNSUPPORTED_CONSTRAINTS) {
             Object v = result.get(constraint);
-            // TS: `result[c] !== undefined && typeof result[c] !== "object"` -> a present, non-null,
-            // non-object primitive (null/Map/List all have typeof "object" or are undefined).
+            // Keep only a present, non-null, non-object primitive (in JS terms null/Map/List are all
+            // typeof "object" or undefined, so they are excluded).
             if (v != null && !(v instanceof Map) && !(v instanceof List)) {
                 result = (Map<String, Object>) appendDescriptionHint(result, constraint + ": " + jsString(v));
             }
@@ -285,7 +280,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- mergeAllOf (request-helpers.ts:237-305) ------------------------------------------------
+    // ---- mergeAllOf ------------------------------------------------------------------------------
 
     private static Object mergeAllOf(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -364,7 +359,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- scoreSchemaOption (request-helpers.ts:311-335) ----------------------------------------
+    // ---- scoreSchemaOption -----------------------------------------------------------------------
 
     private static final class ScoreResult {
         final int score;
@@ -395,7 +390,7 @@ public final class AntigravitySchemaCleaner {
         return new ScoreResult(0, JsCoercion.isTruthy(type) ? type : "null");
     }
 
-    // ---- tryMergeEnumFromUnion (request-helpers.ts:346-391) ------------------------------------
+    // ---- tryMergeEnumFromUnion -------------------------------------------------------------------
 
     private static List<Object> tryMergeEnumFromUnion(List<Object> options) {
         if (options == null || options.isEmpty()) {
@@ -410,7 +405,7 @@ public final class AntigravitySchemaCleaner {
             }
             Map<String, Object> option = JsCoercion.asMap(optionObj);
 
-            if (option.containsKey("const")) { // TS: `option.const !== undefined`
+            if (option.containsKey("const")) { // present const, even when null
                 enumValues.add(jsString(option.get("const")));
                 continue;
             }
@@ -442,7 +437,7 @@ public final class AntigravitySchemaCleaner {
         return enumValues.isEmpty() ? null : enumValues;
     }
 
-    // ---- flattenAnyOfOneOf (request-helpers.ts:402-486) ----------------------------------------
+    // ---- flattenAnyOfOneOf -----------------------------------------------------------------------
 
     private static Object flattenAnyOfOneOf(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -492,8 +487,8 @@ public final class AntigravitySchemaCleaner {
                 if (selectedObj instanceof Map) {
                     selected = new LinkedHashMap<>(JsCoercion.asMap(selectedObj));
                 } else {
-                    // TS: `... || { type: "string" }` (falsy fallback); a truthy non-object selected
-                    // option is invalid schema and appears in no fixture (see class deviations).
+                    // Falsy fallback to `{ type: "string" }`; a truthy non-object selected option is
+                    // invalid schema (see class deviation).
                     selected = new LinkedHashMap<>();
                     selected.put("type", "string");
                 }
@@ -530,7 +525,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- flattenTypeArrays (request-helpers.ts:492-566) ----------------------------------------
+    // ---- flattenTypeArrays -----------------------------------------------------------------------
 
     private static Object flattenTypeArrays(Object schema, Map<String, List<Object>> nullableFields, String currentPath) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -547,7 +542,7 @@ public final class AntigravitySchemaCleaner {
 
         Map<String, Object> result = new LinkedHashMap<>(JsCoercion.asMap(schema));
         Map<String, List<Object>> localNullableFields = nullableFields != null ? nullableFields : new LinkedHashMap<String, List<Object>>();
-        boolean topLevel = nullableFields == null; // TS `!nullableFields` (a Map is always truthy)
+        boolean topLevel = nullableFields == null; // null only on the top-level call
 
         if (result.get("type") instanceof List) {
             List<Object> types = JsCoercion.asList(result.get("type"));
@@ -633,7 +628,7 @@ public final class AntigravitySchemaCleaner {
         return (currentPath != null && !currentPath.isEmpty()) ? currentPath : "";
     }
 
-    // ---- removeUnsupportedKeywords (request-helpers.ts:572-609) --------------------------------
+    // ---- removeUnsupportedKeywords ---------------------------------------------------------------
 
     private static Object removeUnsupportedKeywords(Object schema, boolean insideProperties) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -678,7 +673,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- cleanupRequiredFields (request-helpers.ts:614-645) ------------------------------------
+    // ---- cleanupRequiredFields -------------------------------------------------------------------
 
     private static Object cleanupRequiredFields(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -715,7 +710,7 @@ public final class AntigravitySchemaCleaner {
         return result;
     }
 
-    // ---- addEmptySchemaPlaceholder (request-helpers.ts:651-690) --------------------------------
+    // ---- addEmptySchemaPlaceholder ---------------------------------------------------------------
 
     private static Object addEmptySchemaPlaceholder(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
@@ -779,7 +774,7 @@ public final class AntigravitySchemaCleaner {
         return sb.toString();
     }
 
-    // JS String(x) for the string/number/boolean/null values this port encounters.
+    // JS String(x) for the string/number/boolean/null values encountered here.
     private static String jsString(Object v) {
         if (v == null) {
             return "null";

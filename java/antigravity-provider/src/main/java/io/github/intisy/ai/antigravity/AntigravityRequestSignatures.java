@@ -6,41 +6,38 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's PURE payload mutators + thinking-signature helpers from
- * {@code src/plugin/request.ts} (T7e). Payload mutators (:233-426): {@code injectDebugThinking},
+ * The pure payload mutators + thinking-signature helpers. Payload mutators: {@code injectDebugThinking},
  * {@code stripInjectedDebugFromParts}, {@code stripInjectedDebugFromRequestPayload},
- * {@code isValidRequestPart}, {@code sanitizeRequestPayloadForAntigravity}. Signature helpers
- * (:428-697): {@code isGeminiToolUsePart}, {@code isGeminiThinkingPart}, {@code getThinkingPartText},
+ * {@code isValidRequestPart}, {@code sanitizeRequestPayloadForAntigravity}. Signature helpers:
+ * {@code isGeminiToolUsePart}, {@code isGeminiThinkingPart}, {@code getThinkingPartText},
  * {@code hasCachedMatchingSignature}, {@code ensureThoughtSignature}, {@code hasSignedThinkingPart},
  * {@code ensureMessageThinkingSignature}, {@code hasToolUseInContents}/{@code hasSignedThinkingInContents},
  * {@code hasToolUseInMessages}/{@code hasSignedThinkingInMessages},
  * {@code ensureThinkingBeforeToolUseInContents}/{@code ensureThinkingBeforeToolUseInMessages}.
  *
- * <h2>Constants (REUSED, not redefined)</h2>
- * {@code MIN_SIGNATURE_LENGTH=50} -> {@link CrossModelSanitizer#MIN_SIGNATURE_LENGTH};
- * {@code SKIP_THOUGHT_SIGNATURE} -> {@link AntigravityThinkingBlocks#SKIP_THOUGHT_SIGNATURE}. The
- * request.ts-local {@code SENTINEL_SIGNATURE} (:441) has the SAME string value
+ * <h2>Shared constants</h2>
+ * {@code MIN_SIGNATURE_LENGTH=50} comes from {@link CrossModelSanitizer#MIN_SIGNATURE_LENGTH};
+ * {@code SKIP_THOUGHT_SIGNATURE} from {@link AntigravityThinkingBlocks#SKIP_THOUGHT_SIGNATURE}. The
+ * local {@code SENTINEL_SIGNATURE} has the SAME string value
  * ({@code "skip_thought_signature_validator"}) as {@code SKIP_THOUGHT_SIGNATURE}; both reference the
- * single reused constant.
+ * single shared constant.
  *
  * <h2>Injected seams</h2>
  * <ul>
- *   <li>{@link AntigravityThinkingBlocks.CachedSignatureLookup} -- REUSED for {@code getCachedSignature}
+ *   <li>{@link AntigravityThinkingBlocks.CachedSignatureLookup} backs {@code getCachedSignature}
  *       ({@code hasCachedMatchingSignature}).</li>
- *   <li>{@link SignatureStore} -- the {@code defaultSignatureStore} reads
+ *   <li>{@link SignatureStore} is the {@code defaultSignatureStore} reads
  *       ({@code get}/{@code has}/{@code delete}); {@code ensureThinkingBeforeToolUse*} uses
  *       {@code get(key).text}.</li>
  * </ul>
  *
- * <p>Copy-vs-mutate fidelity reproduced exactly: {@code ensureThinkingBeforeToolUse*} +
- * {@code injectDebugThinking} return NEW trees (TS {@code .map()}/{@code {...spread}}); the two
- * {@code sanitize}/{@code stripInjectedDebug} mutators reassign {@code payload.contents}/
- * {@code payload.messages} in place with freshly-built arrays but REUSE unchanged element refs where
- * the TS {@code .map} returns the item unchanged. The single {@code log.debug} lines inside
- * {@code ensureThinkingBeforeToolUse*} are omitted (no data effect; no Logger edge). Disclosed
- * deviation: {@code injectDebugThinking} on a non-{@link Map} (a JSON array or primitive) returns the
- * value unchanged -- matching the string fixture; a JS array (typeof "object") would instead be
- * spread, an invalid, unreachable edge exercised by no fixture. TeaVM-transpilable.
+ * <p>Copy-vs-mutate fidelity: {@code ensureThinkingBeforeToolUse*} + {@code injectDebugThinking} return
+ * NEW trees; the two {@code sanitize}/{@code stripInjectedDebug} mutators reassign
+ * {@code payload.contents}/{@code payload.messages} in place with freshly-built arrays but REUSE
+ * unchanged element refs. The single {@code log.debug} lines inside {@code ensureThinkingBeforeToolUse*}
+ * are omitted (no data effect; no Logger edge). Deviation: {@code injectDebugThinking} on a
+ * non-{@link Map} (a JSON array or primitive) returns the value unchanged; a JS array would instead be
+ * spread, an invalid, unreachable edge. TeaVM-transpilable.
  */
 public final class AntigravityRequestSignatures {
 
@@ -55,14 +52,14 @@ public final class AntigravityRequestSignatures {
 
     static final String DEBUG_MESSAGE_PREFIX = "[opencode-antigravity-auth debug]";
     static final String SYNTHETIC_THINKING_PLACEHOLDER = "[Thinking preserved]\n";
-    // request.ts:441 SENTINEL_SIGNATURE == constants SKIP_THOUGHT_SIGNATURE (same string value).
+    // SENTINEL_SIGNATURE == SKIP_THOUGHT_SIGNATURE (same string value).
     private static final String SENTINEL_SIGNATURE = AntigravityThinkingBlocks.SKIP_THOUGHT_SIGNATURE;
     private static final int MIN_SIGNATURE_LENGTH = CrossModelSanitizer.MIN_SIGNATURE_LENGTH;
 
     private AntigravityRequestSignatures() {
     }
 
-    // ---- injectDebugThinking (request.ts:233-269) -----------------------------------------------
+    // ---- injectDebugThinking -----------------------------------------------
 
     public static Object injectDebugThinking(Object response, String debugText) {
         if (!(response instanceof Map)) {
@@ -122,7 +119,7 @@ public final class AntigravityRequestSignatures {
         return p;
     }
 
-    // ---- stripInjectedDebugFromParts (request.ts:278-303) ---------------------------------------
+    // ---- stripInjectedDebugFromParts ---------------------------------------
 
     static Object stripInjectedDebugFromParts(Object parts) {
         if (!(parts instanceof List)) {
@@ -148,7 +145,7 @@ public final class AntigravityRequestSignatures {
         return out;
     }
 
-    // ---- stripInjectedDebugFromRequestPayload (request.ts:305-339) -------------------------------
+    // ---- stripInjectedDebugFromRequestPayload -------------------------------
 
     public static void stripInjectedDebugFromRequestPayload(Map<String, Object> payload) {
         if (payload.get("contents") instanceof List) {
@@ -194,7 +191,7 @@ public final class AntigravityRequestSignatures {
         }
     }
 
-    // ---- isValidRequestPart (request.ts:341-358) ------------------------------------------------
+    // ---- isValidRequestPart ------------------------------------------------
 
     public static boolean isValidRequestPart(Object part) {
         if (!(part instanceof Map)) {
@@ -211,7 +208,7 @@ public final class AntigravityRequestSignatures {
                 || r.containsKey("thought");
     }
 
-    // ---- sanitizeRequestPayloadForAntigravity (request.ts:360-426) ------------------------------
+    // ---- sanitizeRequestPayloadForAntigravity ------------------------------
 
     public static void sanitizeRequestPayloadForAntigravity(Map<String, Object> payload) {
         if (payload.get("contents") instanceof List) {
@@ -278,8 +275,8 @@ public final class AntigravityRequestSignatures {
         Object sig = JsCoercion.firstTruthy(p.get("thoughtSignature"), p.get("thought_signature"), null);
         if (!foundFirstFunctionCall[0]) {
             foundFirstFunctionCall[0] = true;
-            // JS `!sig || sig.length < MIN`: length< only applies to a string; a truthy non-string
-            // value keeps sig unchanged (its `.length` is undefined -> `undefined < MIN` is false).
+            // `!sig || sig.length < MIN`: the length check only applies to a string; a truthy non-string
+            // value keeps sig unchanged (its `.length` is undefined, and `undefined < MIN` is false).
             if (!JsCoercion.isTruthy(sig) || (sig instanceof String && ((String) sig).length() < MIN_SIGNATURE_LENGTH)) {
                 sig = AntigravityThinkingBlocks.SKIP_THOUGHT_SIGNATURE;
             }
@@ -298,7 +295,7 @@ public final class AntigravityRequestSignatures {
         return newPart;
     }
 
-    // ---- part predicates (request.ts:428-457) ---------------------------------------------------
+    // ---- part predicates ---------------------------------------------------
 
     public static boolean isGeminiToolUsePart(Object part) {
         if (!(part instanceof Map)) {
@@ -326,7 +323,7 @@ public final class AntigravityRequestSignatures {
         return "";
     }
 
-    // ---- hasCachedMatchingSignature (request.ts:459-479) ----------------------------------------
+    // ---- hasCachedMatchingSignature ----------------------------------------
 
     public static boolean hasCachedMatchingSignature(Object part, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         if (!(part instanceof Map)) {
@@ -347,7 +344,7 @@ public final class AntigravityRequestSignatures {
         return expectedSignature.equals(p.get("signature"));
     }
 
-    // ---- ensureThoughtSignature (request.ts:481-504) --------------------------------------------
+    // ---- ensureThoughtSignature --------------------------------------------
 
     public static Object ensureThoughtSignature(Object part, String sessionId) {
         if (!(part instanceof Map)) {
@@ -375,7 +372,7 @@ public final class AntigravityRequestSignatures {
         return part;
     }
 
-    // ---- hasSignedThinkingPart (request.ts:506-544) ---------------------------------------------
+    // ---- hasSignedThinkingPart ---------------------------------------------
 
     public static boolean hasSignedThinkingPart(Object part, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         if (!(part instanceof Map)) {
@@ -415,7 +412,7 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
-    // ---- ensureMessageThinkingSignature (request.ts:589-608) ------------------------------------
+    // ---- ensureMessageThinkingSignature ------------------------------------
 
     static Object ensureMessageThinkingSignature(Object block, String sessionId) {
         if (!(block instanceof Map)) {
@@ -438,7 +435,7 @@ public final class AntigravityRequestSignatures {
         return out;
     }
 
-    // ---- hasToolUse* / hasSignedThinking* (request.ts:610-646) ----------------------------------
+    // ---- hasToolUse* / hasSignedThinking* ----------------------------------
 
     public static boolean hasToolUseInContents(List<Object> contents) {
         for (Object content : contents) {
@@ -499,7 +496,7 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
-    // ---- ensureThinkingBeforeToolUseInContents (request.ts:546-587) -----------------------------
+    // ---- ensureThinkingBeforeToolUseInContents -----------------------------
 
     public static List<Object> ensureThinkingBeforeToolUseInContents(
             List<Object> contents, String signatureSessionKey,
@@ -556,7 +553,7 @@ public final class AntigravityRequestSignatures {
         return out;
     }
 
-    // ---- ensureThinkingBeforeToolUseInMessages (request.ts:648-697) -----------------------------
+    // ---- ensureThinkingBeforeToolUseInMessages -----------------------------
 
     public static List<Object> ensureThinkingBeforeToolUseInMessages(
             List<Object> messages, String signatureSessionKey,
@@ -637,7 +634,6 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
-    // blocks.some(b => b && typeof b === "object" && (b.type === "tool_use" || b.type === "tool_result"))
     private static boolean anyToolUseBlock(List<Object> blocks) {
         for (Object b : blocks) {
             if (b instanceof Map) {
@@ -654,7 +650,6 @@ public final class AntigravityRequestSignatures {
         return "thinking".equals(type) || "redacted_thinking".equals(type);
     }
 
-    // existingThinking?.thinking || existingThinking?.text || ""
     private static String existingBlockText(Object block) {
         if (!(block instanceof Map)) return "";
         Map<String, Object> b = JsCoercion.asMap(block);

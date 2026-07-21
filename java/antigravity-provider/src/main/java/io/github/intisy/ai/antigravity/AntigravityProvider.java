@@ -31,30 +31,28 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * IR-native JVM {@code AntigravityProvider}: {@link #handleIr} runs every request through the
- * fully-ported {@link AntigravityHandleOrchestrator} -- retry/account-rotation/Auto-walk/terminal-
- * error/synthetic-response all come from the orchestrator's DECISION loop. This provider is
- * IR&lt;-&gt;upstream ONLY: the front-door owns app&lt;-&gt;IR translation, so no app-wire (Anthropic)
- * format code lives here. The legacy Anthropic-wire {@code handle(HttpRequest, HandlerCtx)} override
- * was removed in T4 (canonical-IR migration); this class now inherits {@link Provider}'s throwing
- * {@code handle} default. {@code handleIr} (1) builds the orchestrator per request (wiring the host
- * seams from {@link AntigravityHostSeams}, including the IR-native {@link
- * AntigravityHostSeams.HostIrRequestPreparer}), (2) builds the orchestrator's {@code RequestInputs},
- * and (3) decodes the returned {@code HandleDecision} into an {@link IrResponse} (via {@link
- * AntigravityGeminiSseBridge#bufferedGeminiSseToIr}) or throws {@link HandleIrException}.
+ * IR-native JVM {@code AntigravityProvider}: {@link #handleIr} runs every request through
+ * {@link AntigravityHandleOrchestrator}, whose DECISION loop owns retry, account-rotation,
+ * Auto-walk, terminal-error and synthetic-response. This provider is IR&lt;-&gt;upstream ONLY: the
+ * front-door owns app&lt;-&gt;IR translation, so no app-wire (Anthropic) format code lives here, and
+ * this class inherits {@link Provider}'s throwing {@code handle} default. {@code handleIr} (1) builds
+ * the orchestrator per request (wiring the host seams from {@link AntigravityHostSeams}, including
+ * the IR-native {@link AntigravityHostSeams.HostIrRequestPreparer}), (2) builds the orchestrator's
+ * {@code RequestInputs}, and (3) decodes the returned {@code HandleDecision} into an {@link
+ * IrResponse} (via {@link AntigravityGeminiSseBridge#bufferedGeminiSseToIr}) or throws {@link
+ * HandleIrException}.
  *
  * <p>Shape discipline: {@code compileOnly project(":routing")} + {@code compileOnly
  * "io.github.intisy:jvm:0.1.0"} keep this module's own jar THIN (no {@code :routing}/{@code :jvm}
- * classes bundled -- the host's {@code ProviderRegistry} classloader already has them); only the
+ * classes bundled, the host's {@code ProviderRegistry} classloader already has them); only the
  * seam glue lives here, no {@code AntigravityRequestPrep}/{@code AntigravityHandleOrchestrator}
  * logic is duplicated.
  *
- * <p>SP-E/E-D typed capability SPI: discovery/quota are served by the typed capabilities, not by a
- * URL branch -- {@link ModelCatalogProvider#models}/{@link QuotaProvider#quota} (mechanical re-expose of the
- * existing {@link AntigravityModelsFetch}/{@link AntigravityQuotaFetch} logic as typed POJOs), and
- * {@link ConfigurableProvider}/{@link OAuthProvider} are genuinely NEW capabilities ported from the
- * TS {@code src/plugin/config/*} and {@code src/antigravity/oauth.ts} (see {@link AntigravityConfig}/
- * {@link AntigravityOAuth}). All four capabilities resolve their backend via {@link
+ * <p>Discovery and quota are served by the typed capabilities, not by a URL branch: {@link
+ * ModelCatalogProvider#models}/{@link QuotaProvider#quota} re-expose the {@link
+ * AntigravityModelsFetch}/{@link AntigravityQuotaFetch} logic as typed POJOs, and {@link
+ * ConfigurableProvider}/{@link OAuthProvider} back {@link AntigravityConfig}/{@link
+ * AntigravityOAuth}. All four capabilities resolve their backend via {@link
  * AntigravityBackend#forCtx}, which serves from the host's injected {@link
  * io.github.intisy.ai.shared.spi.Store} rather than self-assembling a {@code FileStore}.
  */

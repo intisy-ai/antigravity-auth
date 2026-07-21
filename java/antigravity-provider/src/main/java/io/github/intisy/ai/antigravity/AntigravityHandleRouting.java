@@ -12,30 +12,27 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Java port of the PURE decision helpers the antigravity {@code handle}/{@code attemptModel}
- * state machine calls (Bucket B "§4 pure helpers" of {@code .superpowers/port-grounding-map.md},
- * T7f): {@code src/driver/index.ts}'s {@code isRateLimitStatus} (:82-84), {@code isAutoModel}
- * (:245-248), {@code rewriteModelInUrl} (:250-252), {@code modelFromRequest} (:87-93), {@code
- * requestedThinkingLevel} (:263-276), {@code resolveEffortVariant} (:280-299), {@code
- * soonestQuotaReset} (:30-45), {@code endpointsFor} (:78-80), {@code buildAuth} (:68-76) and {@code
- * driftAccountVersions} (:356-382). Every method is static and side-effect-free (drift returns the
- * per-account mutations as data rather than applying them, mirroring T6b's "decision returns, host
- * applies" boundary); the model-cache read is an injected {@link ModelCacheLookup} seam (the TS
- * {@code readModelCache} touches disk, Bucket C).
+ * Pure decision helpers the antigravity {@code handle}/{@code attemptModel} state machine calls:
+ * {@code isRateLimitStatus}, {@code isAutoModel}, {@code rewriteModelInUrl}, {@code modelFromRequest},
+ * {@code requestedThinkingLevel}, {@code resolveEffortVariant}, {@code soonestQuotaReset}, {@code
+ * endpointsFor}, {@code buildAuth} and {@code driftAccountVersions}. Every method is static and
+ * side-effect-free (drift returns the per-account mutations as data rather than applying them, keeping
+ * the "decision returns, host applies" boundary); the model-cache read is an injected
+ * {@link ModelCacheLookup} seam (the disk read stays host-side).
  *
  * <p>Reuses {@link AntigravityLanes} (lanes), {@link AntigravityAuth#formatRefreshParts} (buildAuth),
  * {@link AntigravityVersions} (drift math) and {@link AntigravityQuotaParser#parseDateToEpochMillis}
- * ({@code Date.parse} stand-in) -- no re-porting. No gson/java.net/java.nio/reflection/threads/
- * {@code System.currentTimeMillis} -- TeaVM-transpilable.
+ * ({@code Date.parse} stand-in). No gson/java.net/java.nio/reflection/threads/
+ * {@code System.currentTimeMillis}, TeaVM-transpilable.
  */
 public final class AntigravityHandleRouting {
 
-    // constants.ts:36,34,35 -- endpoint fallback order (prod -> daily -> autopush).
+    // endpoint fallback order (prod -> daily -> autopush).
     public static final String ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
     public static final String ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
     public static final String ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
 
-    // index.ts:278 -- effort-variant ordering.
+    // effort-variant ordering.
     private static final List<String> LEVEL_ORDER = Arrays.asList("minimal", "low", "medium", "high");
 
     private static final Pattern MODELS_IN_URL = Pattern.compile("/models/([^:/?]+)");
@@ -47,13 +44,13 @@ public final class AntigravityHandleRouting {
     private AntigravityHandleRouting() {
     }
 
-    // ---- isRateLimitStatus (index.ts:82-84) -----------------------------------------------------
+    // ---- isRateLimitStatus ----------------------------------------------------------------------
 
     public static boolean isRateLimitStatus(int status) {
         return status == 429 || status == 503 || status == 529;
     }
 
-    // ---- isAutoModel (index.ts:245-248) ---------------------------------------------------------
+    // ---- isAutoModel ----------------------------------------------------------------------------
 
     /** {@code String(model||"").replace(/^antigravity-/i,"")} then {@code ==="auto" || startsWith("auto-")}. */
     public static boolean isAutoModel(Object model) {
@@ -62,14 +59,14 @@ public final class AntigravityHandleRouting {
         return "auto".equals(stripped) || stripped.startsWith("auto-");
     }
 
-    // ---- rewriteModelInUrl (index.ts:250-252) ---------------------------------------------------
+    // ---- rewriteModelInUrl ----------------------------------------------------------------------
 
     /** Replaces the FIRST {@code /models/<id>} segment with {@code /models/<model>} (JS replace = first only). */
     public static String rewriteModelInUrl(Object url, String model) {
         return MODELS_REWRITE.matcher(String.valueOf(url)).replaceFirst(Matcher.quoteReplacement("/models/" + model));
     }
 
-    // ---- modelFromRequest (index.ts:87-93) ------------------------------------------------------
+    // ---- modelFromRequest -----------------------------------------------------------------------
 
     /**
      * The requested model id: {@code ctxModel} wins outright; else the {@code /models/<id>} URL
@@ -89,17 +86,17 @@ public final class AntigravityHandleRouting {
                 if (JsCoercion.isTruthy(model)) return String.valueOf(model);
             }
         } catch (RuntimeException ignored) {
-            // TS: empty catch {} -> falls through to the default.
+            // empty catch: falls through to the default.
         }
         return "antigravity-auto";
     }
 
-    // ---- requestedThinkingLevel (index.ts:263-276) ----------------------------------------------
+    // ---- requestedThinkingLevel -----------------------------------------------------------------
 
     /**
      * Requested thinking level from the body: opencode's {@code providerOptions.google.thinkingLevel}
      * / {@code .thinkingConfig}, or the Claude bridge's {@code generationConfig.thinkingConfig}. A
-     * numeric {@code thinkingBudget} maps to low/medium/high by the TS thresholds. Returns {@code
+     * numeric {@code thinkingBudget} maps to low/medium/high by budget thresholds. Returns {@code
      * null} when none is present. Wrapped bodies ({@code parsed.request}) are unwrapped first.
      */
     @SuppressWarnings("unchecked")
@@ -131,24 +128,24 @@ public final class AntigravityHandleRouting {
                 }
             }
         } catch (RuntimeException ignored) {
-            // TS: empty catch {} -> null.
+            // empty catch: null.
         }
         return null;
     }
 
-    /** {@code readModelCache(PROVIDER_ID).models[modelId].variants} (disk read is Bucket C). */
+    /** {@code readModelCache(PROVIDER_ID).models[modelId].variants} (the disk read stays host-side). */
     public interface ModelCacheLookup {
         /** The catalog entry's {@code variants} map for {@code modelId}, or {@code null}. */
         Map<String, Object> variantsFor(String modelId);
     }
 
-    // ---- resolveEffortVariant (index.ts:280-299) ------------------------------------------------
+    // ---- resolveEffortVariant -------------------------------------------------------------------
 
     /**
      * Picks the concrete backend model id for the requested thinking level from the catalog entry's
      * {@code variants} map: exact level, else the highest available level not above the request,
      * else the lowest. Returns {@code modelId} unchanged when there are no variants / no requested
-     * level / an unknown level / no usable variant. {@code json} is threaded so the TS's inner
+     * level / an unknown level / no usable variant. {@code json} is threaded so the inner
      * {@code JSON.parse} (inside {@code requestedThinkingLevel}) stays on the SPI.
      */
     @SuppressWarnings("unchecked")
@@ -157,7 +154,7 @@ public final class AntigravityHandleRouting {
         try {
             variants = cache != null ? cache.variantsFor(modelId) : null;
         } catch (RuntimeException ignored) {
-            // TS: empty catch {} around readModelCache -> treated as "no variants".
+            // empty catch around readModelCache: treated as "no variants".
         }
         if (variants == null || variants.isEmpty()) return modelId;
         String level = requestedThinkingLevel(bodyText, json);
@@ -185,7 +182,7 @@ public final class AntigravityHandleRouting {
         return JsCoercion.isTruthy(targetStr) ? targetStr : modelId;
     }
 
-    // ---- endpointsFor (index.ts:78-80) ----------------------------------------------------------
+    // ---- endpointsFor ---------------------------------------------------------------------------
 
     public static List<String> endpointsFor(String headerStyle) {
         if ("gemini-cli".equals(headerStyle)) {
@@ -195,12 +192,12 @@ public final class AntigravityHandleRouting {
                 ANTIGRAVITY_ENDPOINT_PROD, ANTIGRAVITY_ENDPOINT_DAILY, ANTIGRAVITY_ENDPOINT_AUTOPUSH));
     }
 
-    // ---- soonestQuotaReset (index.ts:30-45) -----------------------------------------------------
+    // ---- soonestQuotaReset ----------------------------------------------------------------------
 
     /**
      * Soonest quota-pool reset (epoch ms) among EXHAUSTED pools across all accounts'
      * {@code meta.cachedQuota}. A pool counts as exhausted when its {@code remainingFraction} is 0
-     * or absent. Returns 0 when unknown (matches the TS {@code let soonest = 0}). Uses {@link
+     * or absent. Returns 0 when unknown. Uses {@link
      * AntigravityQuotaParser#parseDateToEpochMillis} as the {@code Date.parse} stand-in.
      */
     @SuppressWarnings("unchecked")
@@ -227,12 +224,12 @@ public final class AntigravityHandleRouting {
         return soonest;
     }
 
-    // ---- buildAuth (index.ts:68-76) -------------------------------------------------------------
+    // ---- buildAuth ------------------------------------------------------------------------------
 
     /**
      * Reconstructs the {@code OAuthAuthDetails} the project/transform code expects from a stored
-     * account + a fresh access token. Returns a plain {@code {type,access,expires,refresh}} map (the
-     * TS shape); {@code refresh} packs the project ids via {@link AntigravityAuth#formatRefreshParts}.
+     * account + a fresh access token. Returns a plain {@code {type,access,expires,refresh}} map;
+     * {@code refresh} packs the project ids via {@link AntigravityAuth#formatRefreshParts}.
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> buildAuth(Map<String, Object> account, String access) {
@@ -253,7 +250,7 @@ public final class AntigravityHandleRouting {
         return auth;
     }
 
-    // ---- driftAccountVersions (index.ts:356-382) ------------------------------------------------
+    // ---- driftAccountVersions -------------------------------------------------------------------
 
     /** One per-account version-drift mutation the host applies via {@code manager.mutate}. */
     public static final class VersionDrift {
@@ -282,8 +279,8 @@ public final class AntigravityHandleRouting {
      * each on its OWN randomized due date so they never move in lockstep. First sight schedules a
      * staggered due date and changes nothing; a due account drifts forward via {@link
      * AntigravityVersions#driftVersion} and reschedules. Accounts without a {@code
-     * meta.fingerprint.userAgent} are skipped. Returns the ordered per-account mutations (the TS
-     * applies them inline via {@code manager.mutate}; here the host applies).
+     * meta.fingerprint.userAgent} are skipped. Returns the ordered per-account mutations for the
+     * host to apply.
      */
     @SuppressWarnings("unchecked")
     public static List<VersionDrift> driftAccountVersions(List<Map<String, Object>> accounts, long now,
@@ -320,7 +317,7 @@ public final class AntigravityHandleRouting {
 
     // ---- reset-after regex + percent-decode helpers ---------------------------------------------
 
-    /** {@code /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i} on the error message -> ms, or 0 (index.ts:210-211). */
+    /** {@code /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i} on the error message -> ms, or 0. */
     public static long retryAfterMsFromMessage(String message) {
         if (message == null || message.isEmpty()) return 0;
         Matcher m = RESET_AFTER.matcher(message);
@@ -339,8 +336,8 @@ public final class AntigravityHandleRouting {
     /**
      * Minimal {@code decodeURIComponent} for the {@code /models/<id>} path segment: decodes
      * {@code %XX} escapes as single bytes (ASCII). Model ids are always plain ASCII in practice, so
-     * the full multi-byte UTF-8 decode {@code decodeURIComponent} performs is not reproduced -- an
-     * unreachable edge (disclosed), never exercised by any real model id.
+     * the full multi-byte UTF-8 decode {@code decodeURIComponent} performs is not reproduced, an
+     * unreachable edge never exercised by any real model id.
      */
     private static String decodeUriComponent(String s) {
         if (s.indexOf('%') < 0) return s;

@@ -10,10 +10,9 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline parity tests for {@link GeminiTransforms}, expected values snapshotted from the real
- * {@code src/plugin/transform/gemini.ts} via the Node harness ({@code .superpowers/sdd/t7b-harness/})
- * -- see t7b-report.md. The tool-normalization transforms mutate {@code payload.tools} in place, so
- * these tests assert on the mutated payload plus the returned debug/wrap result.
+ * Offline tests for {@link GeminiTransforms}. The tool-normalization transforms mutate
+ * {@code payload.tools} in place, so these tests assert on the mutated payload plus the returned
+ * debug/wrap result.
  */
 class GeminiTransformsTest {
 

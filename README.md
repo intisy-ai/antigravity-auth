@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/antigravity-auth)](https://www.npmjs.com/package/antigravity-auth)
 [![CI](https://img.shields.io/github/actions/workflow/status/intisy-ai/antigravity-auth/publish.yml)](https://github.com/intisy-ai/antigravity-auth/actions)
 
-Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work — multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state — while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.
+Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work (multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state) while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.
 
 ## Under-the-Hood Architecture
 
@@ -39,14 +39,14 @@ flowchart TD
 ## Structure
 
 - `src/`
-  - `index.ts` — OpenCode entry (the core-auth provider plugin)
-  - `handler.ts` — Claude Code entry (`handleIr()` for the claude-code-loader proxy front-door)
-  - `cli.ts` — `antigravity login | list | remove`
-  - `driver/` — `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)
-  - `antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts` — the host I/O this driver still owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform + decision logic itself lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)
-  - `commands.ts` — cross-app slash-command definitions + their CLI actions
-  - `core-auth/` — the core-auth library (git submodule, bundled into the output)
-  - `core/` — shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in
+  - `index.ts`: OpenCode entry (the core-auth provider plugin)
+  - `handler.ts`: Claude Code entry (`handleIr()` for the claude-code-loader proxy front-door)
+  - `cli.ts`: `antigravity login | list | remove`
+  - `driver/`: `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)
+  - `antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts`: the host I/O this driver owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform and decision logic lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)
+  - `commands.ts`: cross-app slash-command definitions and their CLI actions
+  - `core-auth/`: the core-auth library (git submodule, bundled into the output)
+  - `core/`: shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in
 - `dist/`
   - bundled `index.js`, `handler.js`, `cli.js` (generated; not committed)
 

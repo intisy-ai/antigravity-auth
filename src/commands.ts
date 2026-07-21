@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Cross-app slash-commands for antigravity-auth. The config command targets the
-// provider's real config file (config/antigravity.json — note the name differs
+// provider's real config file (config/antigravity.json, note the name differs
 // from the package), so `/antigravity-config` edits exactly what the driver reads.
 // Account name is namespaced (`/antigravity-accounts`) so it never collides with
 // the other providers' account commands; the loaders own the unified `/accounts`.

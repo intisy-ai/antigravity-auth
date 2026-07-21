@@ -11,10 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-2 successor to the deleted {@code AntigravityStreamMapperTest}/{@code
- * AntigravityAnthropicBridgeTest}: exercises {@link AntigravityGeminiSseBridge}, now built on
- * core-ir's {@code GeminiTranslator} stream decoder + {@code AnthropicTranslator} stream encoder
- * instead of the bespoke {@code AntigravityStreamMapper} state machine.
+ * Exercises {@link AntigravityGeminiSseBridge}, built on core-ir's {@code GeminiTranslator} stream
+ * decoder and {@code AnthropicTranslator} stream encoder.
  */
 class AntigravityGeminiSseBridgeTest {
 
@@ -53,16 +51,16 @@ class AntigravityGeminiSseBridgeTest {
         assertTrue(body.contains("event: content_block_stop"), body);
         assertTrue(body.contains("\"stop_reason\":\"end_turn\""), body);
         assertTrue(body.contains("event: message_stop"), body);
-        // A real Anthropic message_start/message_delta always carries usage -- default-zeroed here
-        // since this fixture's Gemini frame never reports usageMetadata (core-ir main@a57bdd5).
+        // A real Anthropic message_start/message_delta always carries usage, default-zeroed here
+        // since this fixture's Gemini frame never reports usageMetadata.
         assertTrue(body.contains("\"usage\":{\"input_tokens\":0,\"output_tokens\":0}"), body);
     }
 
     @Test
     void functionCall_getsFreshMintedToolUseId_regardlessOfWireId() {
-        // The old bridge NEVER trusted a Gemini functionCall's own id (rarely present anyway),
-        // always minting a fresh one -- this bridge preserves that policy explicitly (see class
-        // javadoc), which also protects two parallel calls to the SAME tool name from colliding.
+        // The bridge never trusts a Gemini functionCall's own id (rarely present anyway), always
+        // minting a fresh one, which also protects two parallel calls to the SAME tool name from
+        // colliding.
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "gemini-3-pro");
         StringBuilder out = new StringBuilder();
         for (String ev : bridge.handle(sse("{\"candidates\":[{\"content\":{\"parts\":["
@@ -148,8 +146,8 @@ class AntigravityGeminiSseBridgeTest {
 
     @Test
     void bufferedGeminiSseToAnthropic_emptyContent_fallsBackToUpstreamVerbatim() {
-        // Upstream had bytes but they never opened a content block (envelope shape mismatch) --
-        // same safety net as the deleted AntigravityAnthropicBridge.
+        // Upstream had bytes but they never opened a content block (envelope shape mismatch), so
+        // fall back to the upstream response verbatim.
         HttpResponse upstream = new HttpResponse();
         upstream.status = 200;
         upstream.headers = new LinkedHashMap<>();

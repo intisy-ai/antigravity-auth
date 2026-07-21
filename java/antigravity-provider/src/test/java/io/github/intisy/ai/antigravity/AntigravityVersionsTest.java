@@ -9,14 +9,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Offline deterministic parity tests for {@link AntigravityVersions}, checked against antigravity-
- * auth's actual {@code src/plugin/versions.ts} drift math: the TS's functions were extracted
- * verbatim into a throwaway Node harness (with the module-level {@code versionList} closure
- * variable turned into an explicit parameter, matching this port's parameterized signature) and
- * executed with {@code node} (v26.3.1), stubbing {@code Math.random} to fixed values, to snapshot
- * the exact expected values used below -- not hand-derived. See task-7a-report.md for the harness.
- */
 class AntigravityVersionsTest {
 
     private static final List<String> POOL = AntigravityVersions.FALLBACK_VERSIONS; // already newest-first

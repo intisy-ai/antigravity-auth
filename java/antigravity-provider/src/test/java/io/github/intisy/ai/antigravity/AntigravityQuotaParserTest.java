@@ -9,11 +9,8 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline deterministic parity tests for {@link AntigravityQuotaParser}, checked against
- * antigravity-auth's actual {@code src/driver/accounts-controller.ts} behavior: the TS's pure
- * helpers (plus the pure per-family aggregation slice of {@code fetchQuotaFamilies}) were extracted
- * verbatim into a throwaway Node harness and executed with {@code node} (v26.3.1) to snapshot the
- * exact expected values used below -- not hand-derived. See task-7a-report.md for the harness.
+ * Offline deterministic tests for {@link AntigravityQuotaParser}, including the pure per-family
+ * aggregation slice of {@code fetchQuotaFamilies}.
  */
 class AntigravityQuotaParserTest {
 

@@ -5,16 +5,9 @@ import { homedir } from "node:os";
 import type { AntigravityConfig } from "./config";
 import {
   deriveDebugPolicy,
-  formatErrorForLog,
   isTruthyFlag,
-  truncateTextForLog,
 } from "./logging-utils";
 import { ensureGitignoreSync } from "./storage";
-
-const MAX_BODY_PREVIEW_CHARS = 12000;
-const MAX_BODY_LOG_CHARS = 50000;
-
-export const DEBUG_MESSAGE_PREFIX = "[opencode-antigravity-auth debug]";
 
 interface DebugState {
   debugEnabled: boolean;
@@ -168,106 +161,5 @@ export function isDebugEnabled(): boolean {
 
 export function isDebugTuiEnabled(): boolean {
   return getDebugState().debugTuiEnabled;
-}
-
-export interface AntigravityDebugContext {
-  id: string;
-  streaming: boolean;
-  startedAt: number;
-}
-
-interface AntigravityDebugRequestMeta {
-  originalUrl: string;
-  resolvedUrl: string;
-  method?: string;
-  headers?: HeadersInit;
-  body?: BodyInit | null;
-  streaming: boolean;
-  projectId?: string;
-}
-
-interface AntigravityDebugResponseMeta {
-  body?: string;
-  note?: string;
-  error?: unknown;
-  headersOverride?: HeadersInit;
-}
-
-let requestCounter = 0;
-
-export function logAntigravityDebugResponse(
-  context: AntigravityDebugContext | null | undefined,
-  response: Response,
-  meta: AntigravityDebugResponseMeta = {},
-): void {
-  const state = getDebugState();
-  if (!state.debugEnabled || !context) {
-    return;
-  }
-
-  const durationMs = Date.now() - context.startedAt;
-  logDebug(
-    `[Antigravity Debug ${context.id}] Response ${response.status} ${response.statusText} (${durationMs}ms)`,
-  );
-  logDebug(
-    `[Antigravity Debug ${context.id}] Response Headers: ${JSON.stringify(
-      maskHeaders(meta.headersOverride ?? response.headers),
-    )}`,
-  );
-
-  if (meta.note) {
-    logDebug(`[Antigravity Debug ${context.id}] Note: ${meta.note}`);
-  }
-
-  if (meta.error) {
-    logDebug(`[Antigravity Debug ${context.id}] Error: ${formatErrorForLog(meta.error)}`);
-  }
-
-  if (meta.body) {
-    logDebug(
-      `[Antigravity Debug ${context.id}] Response Body Preview: ${truncateTextForLog(meta.body, MAX_BODY_PREVIEW_CHARS)}`,
-    );
-  }
-}
-
-function maskHeaders(headers?: HeadersInit | Headers): Record<string, string> {
-  if (!headers) {
-    return {};
-  }
-
-  const result: Record<string, string> = {};
-  const parsed = headers instanceof Headers ? headers : new Headers(headers);
-  parsed.forEach((value, key) => {
-    if (key.toLowerCase() === "authorization") {
-      result[key] = "[redacted]";
-    } else {
-      result[key] = value;
-    }
-  });
-  return result;
-}
-
-function logDebug(line: string): void {
-  getDebugState().logWriter(line);
-}
-
-function runWithDebugEnabled(action: () => void): void {
-  if (!getDebugState().debugEnabled) return;
-  action();
-}
-
-export function logCacheStats(
-  model: string,
-  cacheReadTokens: number,
-  cacheWriteTokens: number,
-  totalInputTokens: number,
-): void {
-  runWithDebugEnabled(() => {
-    const cacheHitRate = totalInputTokens > 0 
-      ? Math.round((cacheReadTokens / totalInputTokens) * 100) 
-      : 0;
-    const status = cacheReadTokens > 0 ? "HIT" : (cacheWriteTokens > 0 ? "WRITE" : "MISS");
-    logDebug(`[Cache] ${status} model=${model} read=${cacheReadTokens} write=${cacheWriteTokens} total=${totalInputTokens} hitRate=${cacheHitRate}%`);
-  });
 }
 

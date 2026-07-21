@@ -3,7 +3,7 @@
  */
 import { getNewestVersion } from "./plugin/versions.js";
 
-// Antigravity's single public installed-app OAuth client — the same one for every
+// Antigravity's single public installed-app OAuth client, the same one for every
 // user (non-confidential per RFC 8252; already public via the opencode-antigravity-auth
 // npm package). Not customizable; there is only ever this one client.
 export const ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
@@ -70,11 +70,6 @@ export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
 
-/**
- * Hardcoded project id used when Antigravity does not return one (e.g., business/workspace accounts).
- */
-export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
-
 // The newest real released version (from the runtime-refreshed version pool), so
 // the quota/models headers don't advertise a stale hardcoded build. The per-account
 // serving User-Agent is picked separately (weighted) in fingerprint.ts.
@@ -94,97 +89,9 @@ export const GEMINI_CLI_HEADERS = {
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
 
-const ANTIGRAVITY_PLATFORMS = ["windows/amd64", "darwin/arm64", "darwin/amd64"] as const;
-
-const ANTIGRAVITY_API_CLIENTS = [
-  "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "google-cloud-sdk vscode/1.96.0",
-  "google-cloud-sdk vscode/1.95.0",
-] as const;
-
-function randomFrom<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
 export type HeaderSet = {
   "User-Agent": string;
   "X-Goog-Api-Client"?: string;
   "Client-Metadata"?: string;
 };
-
-export function getRandomizedHeaders(style: HeaderStyle, model?: string): HeaderSet {
-  if (style === "gemini-cli") {
-    return {
-      "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
-      "X-Goog-Api-Client": GEMINI_CLI_HEADERS["X-Goog-Api-Client"],
-      "Client-Metadata": GEMINI_CLI_HEADERS["Client-Metadata"],
-    };
-  }
-  const platform = randomFrom(ANTIGRAVITY_PLATFORMS);
-  const metadataPlatform = platform.startsWith("windows") ? "WINDOWS" : "MACOS";
-  return {
-    "User-Agent": `antigravity/${getAntigravityVersion()} ${platform}`,
-    "X-Goog-Api-Client": randomFrom(ANTIGRAVITY_API_CLIENTS),
-    "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${metadataPlatform}","pluginType":"GEMINI"}`,
-  };
-}
-
-export type HeaderStyle = "antigravity" | "gemini-cli";
-
-/**
- * System instruction for Claude tool usage hardening.
- * Prevents hallucinated parameters by explicitly stating the rules.
- * 
- * This is injected when tools are present to reduce cases where Claude
- * uses parameter names from its training data instead of the actual schema.
- */
-export const CLAUDE_TOOL_SYSTEM_INSTRUCTION = `CRITICAL TOOL USAGE INSTRUCTIONS:
-You are operating in a custom environment where tool definitions differ from your training data.
-You MUST follow these rules strictly:
-
-1. DO NOT use your internal training data to guess tool parameters
-2. ONLY use the exact parameter structure defined in the tool schema
-3. Parameter names in schemas are EXACT - do not substitute with similar names from your training
-4. Array parameters have specific item types - check the schema's 'items' field for the exact structure
-5. When you see "STRICT PARAMETERS" in a tool description, those type definitions override any assumptions
-6. Tool use in agentic workflows is REQUIRED - you must call tools with the exact parameters specified
-
-If you are unsure about a tool's parameters, YOU MUST read the schema definition carefully.`;
-
-/**
- * Template for parameter signature injection into tool descriptions.
- * {params} will be replaced with the actual parameter list.
- */
-export const CLAUDE_DESCRIPTION_PROMPT = "\n\n⚠️ STRICT PARAMETERS: {params}.";
-
-export const EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
-export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
-
-/**
- * Sentinel value to bypass thought signature validation.
- * 
- * When a thinking block has an invalid or missing signature (e.g., cache miss,
- * session mismatch, plugin restart), this sentinel can be injected to skip
- * validation instead of failing with "Invalid signature in thinking block".
- * 
- * This is an officially supported Google API feature, used by:
- * - gemini-cli: https://github.com/google-gemini/gemini-cli
- * - Google .NET SDK: PredictionServiceChatClient.cs
- * 
- * @see https://ai.google.dev/gemini-api/docs/thought-signatures
- */
-export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
-
-/**
- * System instruction for Antigravity requests.
- * This is injected into requests to match CLIProxyAPI v6.6.89 behavior.
- * The instruction provides identity and guidelines for the Antigravity agent.
- */
-export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
-You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
-**Absolute paths only**
-**Proactiveness**
-
-<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
-`;
 

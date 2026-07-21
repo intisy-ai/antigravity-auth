@@ -1,14 +1,12 @@
-// T7g1 PROOF — drives the TeaVM-compiled AntigravityProviderJs.handleAntigravityRequestAsync with
-// GENUINELY async JS fakes (real setTimeout delays before every resolve), so the (up to FOUR)
-// @Async bridges — JsAccountOpsBridge.acquire, JsProjectLoaderBridge.load,
-// JsProjectOnboarderBridge.onboard, JsAttemptExecutorBridge.execute — actually suspend/resume inside
-// ONE CPS-transformed orchestrator (handle -> attemptModel -> resolveProjectId) call graph, not
-// synchronously-resolved promises. This is a STRONGER composition than claude's T6c1 (two @Async).
+// Drives the TeaVM-compiled AntigravityProviderJs.handleAntigravityRequestAsync with GENUINELY async
+// JS fakes (real setTimeout delays before every resolve), so the (up to FOUR) @Async bridges
+// (JsAccountOpsBridge.acquire, JsProjectLoaderBridge.load, JsProjectOnboarderBridge.onboard,
+// JsAttemptExecutorBridge.execute) actually suspend/resume inside ONE CPS-transformed orchestrator
+// (handle -> attemptModel -> resolveProjectId) call graph, not synchronously-resolved promises.
 //
 // It asserts, per scenario, that (a) the ordered AccountOps call sequence and (b) the final
-// HandleDecision match the ground-truth snapshots from the T7f Java tests
-// (AntigravityHandleOrchestratorTest: happyPath, rateThenRotate, noAccountNoReset) which were
-// themselves transcribed from the Node harness fixtures. A fourth scenario drives the cold-account
+// HandleDecision match the expected values from the Java tests (AntigravityHandleOrchestratorTest:
+// happyPath, rateThenRotate, noAccountNoReset). A fourth scenario drives the cold-account
 // acquire->load->onboard->execute chain to prove all four @Async bridges interleave. Exits non-zero
 // on ANY mismatch.
 //
@@ -31,7 +29,7 @@ const { handleAntigravityRequestAsync } = await import(pathToFileUrl(MODULE_PATH
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const FIXED_NOW = 1700000000000; // T7f stub.ts FIXED_NOW (deterministic clock via config.nowMs)
+const FIXED_NOW = 1700000000000; // deterministic clock via config.nowMs
 const PROD = "https://cloudcode-pa.googleapis.com";
 const ANTI_URL = PROD + "/v1internal/models/antigravity-claude-sonnet-4-6:generateContent";
 const CONFIG = JSON.stringify({ nowMs: FIXED_NOW });
@@ -67,7 +65,7 @@ function modelFromUrl(url) {
   return m ? m[1] : "antigravity-auto";
 }
 
-// Faithful port of the T7f harness stubPrepare: derives transform params from url + endpoint.
+// Derives transform params from url + endpoint (stub preparer).
 function makePreparer() {
   return (url, bodyText, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
     const requestedModel = modelFromUrl(url);
@@ -84,8 +82,8 @@ function makePreparer() {
 // `loadResult`/`onboardResult` drive the project-context async bridges.
 function makeFakes(opts) {
   const { acquireScript, execScript, nextAvailable = null, accounts = [], loadResult = null, onboardResult = null } = opts;
-  const accountCalls = []; // ordered AccountOps calls (matches T7f RecordingAccountOps.seq format)
-  const timeline = []; // async markers — evidence of acquire/load/onboard/execute interleaving
+  const accountCalls = []; // ordered AccountOps calls (matches RecordingAccountOps.seq format)
+  const timeline = []; // async markers, evidence of acquire/load/onboard/execute interleaving
   const mutations = {}; // accountId -> persisted account (host-applied mutate instruction)
   const counts = { acquire: 0, exec: 0, load: 0, onboard: 0 };
   let acquireIdx = 0;
@@ -167,8 +165,8 @@ function rate(attemptRef) {
 }
 
 // Deterministic entropy stand-ins passed through the SAME jsRandom/jsUuid seams the production
-// javaHandle wires to Math.random / crypto.randomUUID (kept fixed here so the smoke stays byte-parity
-// with the T7f snapshots; the smoke's accounts already carry syntheticProjectId, so these don't fire).
+// javaHandle wires to Math.random / crypto.randomUUID (kept fixed for determinism; the smoke's
+// accounts already carry syntheticProjectId, so these don't fire).
 const FIXED_RANDOM = () => 0.5;
 const FIXED_UUID = () => "00000000-0000-4000-8000-000000000001";
 

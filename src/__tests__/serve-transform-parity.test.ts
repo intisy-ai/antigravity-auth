@@ -1,10 +1,8 @@
-// Task 3c parity gate (converted by Task 6a — the TS transformAntigravityResponse this test used to
-// compare against is deleted, superseded by Java): proves the Java-driven `transformServeViaJava`
-// (materializeDecision's SERVE path — transformServeBodyProd / newResponseSseTransformer, real-seamed:
-// real defaultSignatureStore, real processImageData, real cacheSignature/getCachedSignature) produces
-// the frozen output (serve-transform-scenarios.expected.json, captured from the TS function before its
-// deletion) for the scenarios the brief calls out: non-streaming JSON, streaming SSE, and the image
-// (inlineData -> processImageData) case, plus the Gemini-3 SSE-reconnect thought-dedup gate.
+// Verifies the Java-driven `transformServeViaJava` (materializeDecision's SERVE path:
+// transformServeBodyProd / newResponseSseTransformer, real-seamed with the real defaultSignatureStore,
+// processImageData, and cacheSignature/getCachedSignature) produces the frozen output
+// (serve-transform-scenarios.expected.json) for non-streaming JSON, streaming SSE, the image
+// (inlineData -> processImageData) case, and the Gemini-3 SSE-reconnect thought-dedup gate.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { transformServeViaJava, loadOrchestrator } from "../driver/javaHandle.js";
 import rawExpected from "./serve-transform-scenarios.expected.json";
@@ -22,11 +20,11 @@ const expected: any = Object.fromEntries(
   Object.entries(rawExpected as any).map(([k, v]) => [k, scrubImagePath(v)]),
 );
 
-// image-saver.ts's saveImageToDisk does a REAL `fs.writeFileSync` — stub the fs write so the test
+// image-saver.ts's saveImageToDisk does a REAL `fs.writeFileSync`, stub the fs write so the test
 // stays hermetic (no real file touches disk) while the CODE PATH stays the real processImageData +
 // saveImageToDisk (never a stub sink). vi.mock is hoisted above the imports above by vitest, so this
 // is active before javaHandle.js (which pulls in image-saver.js) is first imported. `existsSync`
-// staying real (not mocked) is fine — the generated-images dir either already exists or gets a real
+// staying real (not mocked) is fine, the generated-images dir either already exists or gets a real
 // (harmless) mkdirSync.
 vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal();
@@ -36,7 +34,7 @@ vi.mock("fs", async (importOriginal) => {
 const jsonHeaders = { "content-type": "application/json" };
 const sseHeaders = { "content-type": "text/event-stream" };
 
-// Freeze only `Date` (constructor + .now()) — NOT vi.useFakeTimers(), which would also fake
+// Freeze only `Date` (constructor + .now()), NOT vi.useFakeTimers(), which would also fake
 // setTimeout and could interfere with the streaming TransformStream's async pump / the 45s watchdog
 // timer in javaStream.ts's makeResponseTransformStream. generateImageFilename (image-saver.ts) uses
 // `new Date().toISOString()`; freezing it (+ Math.random) makes the two independent
@@ -68,7 +66,7 @@ async function snapshotResponse(r) {
 }
 
 describe("SERVE-transform parity: Java-driven transformServeViaJava vs the frozen TS fixture", () => {
-  it("non-streaming JSON — plain candidates (regression baseline)", async () => {
+  it("non-streaming JSON, plain candidates (regression baseline)", async () => {
     const makeResponse = () =>
       new Response(JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "hello there" }] }, finishReason: "STOP" }] } }), { status: 200, headers: jsonHeaders });
 
@@ -80,7 +78,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
     expect(jvSnap).toEqual(expected.plain);
   });
 
-  it("non-streaming JSON — thinking parts (transformThinkingParts real internal parser)", async () => {
+  it("non-streaming JSON, thinking parts (transformThinkingParts real internal parser)", async () => {
     const makeResponse = () =>
       new Response(JSON.stringify({
         response: {
@@ -99,7 +97,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
     expect(jvSnap).toEqual(expected.thinking);
   });
 
-  it("non-streaming JSON — usage metadata -> x-antigravity-* headers (2xx; the SERVE path only ever sees an ok upstream)", async () => {
+  it("non-streaming JSON, usage metadata -> x-antigravity-* headers (2xx; the SERVE path only ever sees an ok upstream)", async () => {
     const makeResponse = () =>
       new Response(JSON.stringify({
         response: {
@@ -121,7 +119,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
     beforeEach(() => freezeImageDeps(0.123456789));
     afterEach(() => unfreezeImageDeps());
 
-    it("non-streaming JSON — inlineData part routes through the REAL processImageData sink", async () => {
+    it("non-streaming JSON, inlineData part routes through the REAL processImageData sink", async () => {
       const makeResponse = () =>
         new Response(JSON.stringify({
           response: {
@@ -168,10 +166,10 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
     });
   });
 
-  describe("streaming SSE — Gemini-3 thought-dedup seam (Task 3d)", () => {
-    // Proves the Java-driven path honors the SSE-reconnect `displayedThinkingHashes` gate exactly like
-    // the deleted TS did (request.ts:1770, frozen into the fixture): a gemini-3 `effectiveModel` gets a
-    // REAL persistent dedup set (not a hard-coded `null`), so an exact-repeat of a thinking part across
+  describe("streaming SSE, Gemini-3 thought-dedup seam", () => {
+    // Proves the Java-driven path honors the SSE-reconnect `displayedThinkingHashes` gate (frozen into
+    // the fixture): a gemini-3 `effectiveModel` gets a REAL persistent dedup set (not a hard-coded
+    // `null`), so an exact-repeat of a thinking part across
     // two SEPARATE streams (simulating a reconnect, each with its own fresh per-stream sent/thought
     // buffers) is dropped entirely the second time. A non-gemini-3 model must NOT dedup across streams
     // at all (the seam stays gated off, matching isGemini3Model exactly).

@@ -9,27 +9,24 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of the PURE halves of antigravity-auth's
- * {@code src/plugin/core/streaming/transformer.ts} (T7d): {@code hashString} (:13-19),
- * {@code createThoughtBuffer} (:21-28), {@code transformStreamingPayload} (:30-56),
- * {@code deduplicateThinkingText} (:58-173), {@code transformSseLine} (:175-224) and
- * {@code cacheThinkingSignaturesFromResponse} (:226-288). The {@code createStreamingTransformer}
- * TransformStream + 45s {@code setTimeout} watchdog + encoder/decoder + synthetic-usage flush
- * (:290-396) STAYS in TS (Bucket C).
+ * The pure streaming-transform halves: {@code hashString}, {@code createThoughtBuffer},
+ * {@code transformStreamingPayload}, {@code deduplicateThinkingText}, {@code transformSseLine} and
+ * {@code cacheThinkingSignaturesFromResponse}. The {@code createStreamingTransformer} TransformStream +
+ * 45s {@code setTimeout} watchdog + encoder/decoder + synthetic-usage flush stays in TS.
  *
- * <h2>Injected seams (Bucket-C edges)</h2>
+ * <h2>Injected seams</h2>
  * <ul>
- *   <li>{@link ThinkingPartsTransform} -- the {@code transformThinkingParts} callback (real impl is
- *       {@link AntigravityThinkingBlocks#transformThinkingParts} from T7c-2).</li>
- *   <li>{@link AntigravityThinkingBlocks.ImageSink} -- REUSED (not redefined) for the
- *       {@code processImageData} branch in {@code deduplicateThinkingText}.</li>
- *   <li>{@link SignatureStore} + {@link CacheSignatureCallback} -- the {@code signatureStore.set} write
+ *   <li>{@link ThinkingPartsTransform}: the {@code transformThinkingParts} callback (real impl is
+ *       {@link AntigravityThinkingBlocks#transformThinkingParts}).</li>
+ *   <li>{@link AntigravityThinkingBlocks.ImageSink}: the {@code processImageData} branch in
+ *       {@code deduplicateThinkingText}.</li>
+ *   <li>{@link SignatureStore} + {@link CacheSignatureCallback}: the {@code signatureStore.set} write
  *       and the optional {@code onCacheSignature} callback in {@code cacheThinkingSignaturesFromResponse}.</li>
- *   <li>{@link InjectDebug} -- the {@code onInjectDebug} callback (once, gated by {@link DebugState}).</li>
- *   <li>{@link JsonCodec} -- all {@code JSON.parse}/{@code JSON.stringify}.</li>
+ *   <li>{@link InjectDebug}: the {@code onInjectDebug} callback (once, gated by {@link DebugState}).</li>
+ *   <li>{@link JsonCodec}: all {@code JSON.parse}/{@code JSON.stringify}.</li>
  * </ul>
  *
- * <h2>Gotchas honored</h2>
+ * <h2>Gotchas</h2>
  * <ul>
  *   <li><b>{@code >>> 0} unsigned hash</b>: {@link #hashString(String)} reproduces JS DJB2 where each
  *       {@code hash << 5} truncates its left operand via ECMAScript ToInt32 while the running {@code hash}
@@ -44,10 +41,8 @@ import java.util.Set;
  *       signatures + dedups + debug-injects.</li>
  * </ul>
  *
- * <p>Disclosed deviation (no valid-payload path; no fixture): where the TS casts a part via
- * {@code part as Record} and would throw on a {@code null}/primitive part, this port treats a non-{@link Map}
- * part as an empty object (no branch) and a literal {@code null} part is dropped by the {@code !== null}
- * filter. TeaVM-transpilable.
+ * <p>Deviation (no valid-payload path): a non-{@link Map} part is treated as an empty object (no branch)
+ * and a literal {@code null} part is dropped by the {@code !== null} filter. TeaVM-transpilable.
  */
 public final class AntigravityStreamTransform {
 
@@ -71,7 +66,7 @@ public final class AntigravityStreamTransform {
         Object inject(Object response, String debugText);
     }
 
-    /** {@code createThoughtBuffer()} -- a {@code Map<number,string>} wrapper (get/set/clear). */
+    /** {@code createThoughtBuffer()}: a {@code Map<number,string>} wrapper (get/set/clear). */
     public interface ThoughtBuffer {
         String get(int index);
 
@@ -94,7 +89,7 @@ public final class AntigravityStreamTransform {
     private AntigravityStreamTransform() {
     }
 
-    // ---- createThoughtBuffer (transformer.ts:21-28) ----------------------------------------------
+    // ---- createThoughtBuffer ----------------------------------------------
 
     public static ThoughtBuffer createThoughtBuffer() {
         return new MapThoughtBuffer();
@@ -119,9 +114,9 @@ public final class AntigravityStreamTransform {
         }
     }
 
-    // ---- hashString (transformer.ts:13-19) -------------------------------------------------------
+    // ---- hashString -------------------------------------------------------
 
-    /** DJB2, {@code (hash >>> 0).toString(16)} -- JS int32 truncation of the {@code << 5} operand only. */
+    /** DJB2, {@code (hash >>> 0).toString(16)}: JS int32 truncation of the {@code << 5} operand only. */
     public static String hashString(String str) {
         double hash = 5381;
         for (int i = 0; i < str.length(); i++) {
@@ -147,7 +142,7 @@ public final class AntigravityStreamTransform {
         return (int) u;
     }
 
-    // ---- transformStreamingPayload (transformer.ts:30-56) ----------------------------------------
+    // ---- transformStreamingPayload ----------------------------------------
 
     /** Split on {@code \n}, re-stringify {@code parsed.response} (if present) via {@code transform}. */
     public static String transformStreamingPayload(JsonCodec json, String payload, ThinkingPartsTransform transform) {
@@ -176,11 +171,11 @@ public final class AntigravityStreamTransform {
         return line;
     }
 
-    // ---- deduplicateThinkingText (transformer.ts:58-173) -----------------------------------------
+    // ---- deduplicateThinkingText -----------------------------------------
 
     /**
-     * Port of {@code deduplicateThinkingText}. {@code displayedThinkingHashes} may be {@code null};
-     * {@code imageSink} is the reused {@link AntigravityThinkingBlocks.ImageSink} for the inlineData branch.
+     * {@code displayedThinkingHashes} may be {@code null}; {@code imageSink} is the
+     * {@link AntigravityThinkingBlocks.ImageSink} for the inlineData branch.
      */
     public static Object deduplicateThinkingText(Object response, ThoughtBuffer sentBuffer,
                                                  Set<String> displayedThinkingHashes,
@@ -321,9 +316,9 @@ public final class AntigravityStreamTransform {
         return response;
     }
 
-    // ---- transformSseLine (transformer.ts:175-224) -----------------------------------------------
+    // ---- transformSseLine -----------------------------------------------
 
-    /** Port of {@code transformSseLine}: options/callbacks are the injected seams below. */
+    /** Options/callbacks are the injected seams below. */
     public static String transformSseLine(JsonCodec json, String line,
                                           SignatureStore signatureStore, ThoughtBuffer thoughtBuffer,
                                           ThoughtBuffer sentThinkingBuffer,
@@ -360,9 +355,9 @@ public final class AntigravityStreamTransform {
         return line;
     }
 
-    // ---- cacheThinkingSignaturesFromResponse (transformer.ts:226-288) ----------------------------
+    // ---- cacheThinkingSignaturesFromResponse ----------------------------
 
-    /** Port of {@code cacheThinkingSignaturesFromResponse}: candidates[] index keying + content[] CLAUDE_BUFFER_KEY=0. */
+    /** candidates[] index keying + content[] CLAUDE_BUFFER_KEY=0. */
     public static void cacheThinkingSignaturesFromResponse(Object response, String signatureSessionKey,
                                                            SignatureStore signatureStore, ThoughtBuffer thoughtBuffer,
                                                            CacheSignatureCallback onCacheSignature) {
@@ -426,12 +421,10 @@ public final class AntigravityStreamTransform {
 
     // ---- helpers ---------------------------------------------------------------------------------
 
-    // JS `buffer.get(i) ?? ''`.
     private static String orEmpty(String v) {
         return v != null ? v : "";
     }
 
-    // JS `.filter(x => x !== null)`.
     private static List<Object> filterNonNull(List<Object> items) {
         List<Object> out = new ArrayList<>();
         for (Object item : items) {
@@ -440,8 +433,7 @@ public final class AntigravityStreamTransform {
         return out;
     }
 
-    // `(x.text || x.thinking || '')` yields a string; a truthy non-string is invalid input (no
-    // fixture), but String(x) keeps the port total.
+    // A truthy non-string is invalid input, but String(x) keeps this total.
     private static String jsStr(Object v) {
         return v instanceof String ? (String) v : String.valueOf(v);
     }

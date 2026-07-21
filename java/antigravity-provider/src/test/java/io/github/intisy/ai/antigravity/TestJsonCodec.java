@@ -13,7 +13,7 @@ import java.util.Map;
  * ({@code io.github.intisy.ai.shared.store.TestJsonCodec}) and its {@code :teavm} production
  * counterpart ({@code SimpleJsonCodec}). Kept LOCAL to this module's test sources (rather than
  * depending on {@code :teavm}, whose own build.gradle pins Java 17) so {@code :antigravity-provider}'s
- * test classpath never has to cross a JVM-version boundary -- {@code :antigravity-provider} itself
+ * test classpath never has to cross a JVM-version boundary, {@code :antigravity-provider} itself
  * stays pinned at Java 8 (see ../build.gradle's {@code subprojects{}} block).
  */
 final class TestJsonCodec implements JsonCodec {

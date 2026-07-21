@@ -12,38 +12,36 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/transform/gemini.ts} (T7b, Bucket A): schema
- * conversion ({@code toGeminiSchema}), model predicates, thinking-config builders, tool
- * normalization ({@code normalizeGeminiTools} / {@code wrapToolsAsFunctionDeclarations}), the
- * conversation tree walks ({@code separateParts} / {@code expandMultiFunctionCallModelTurns} /
- * {@code sanitizeGeminiContents} / {@code fixGeminiToolPairing}) and {@code applyGeminiTransforms}.
+ * Gemini request transforms: schema conversion ({@code toGeminiSchema}), model predicates,
+ * thinking-config builders, tool normalization ({@code normalizeGeminiTools} /
+ * {@code wrapToolsAsFunctionDeclarations}), the conversation tree walks ({@code separateParts} /
+ * {@code expandMultiFunctionCallModelTurns} / {@code sanitizeGeminiContents} /
+ * {@code fixGeminiToolPairing}) and {@code applyGeminiTransforms}.
  *
- * <p>Edges honored: the TS {@code console.warn} calls become an injected core-proxy
- * {@link Logger} SPI parameter (matching T7a's Random/Clock injection style); {@code
- * process.env.OPENCODE_IMAGE_ASPECT_RATIO} in {@code buildImageGenerationConfig} becomes a plain
+ * <p>Warnings go through an injected {@link Logger} SPI rather than a console; the
+ * {@code OPENCODE_IMAGE_ASPECT_RATIO} env value reaches {@code buildImageGenerationConfig} as a plain
  * nullable {@code String} parameter. Data model = JSON tree {@code Map<String,Object>} /
- * {@code List<Object>}; the tool-normalization transforms MUTATE {@code payload.tools} in place
- * exactly as the TS assigns {@code payload.tools = ...}. TeaVM-transpilable.
+ * {@code List<Object>}; the tool-normalization transforms MUTATE {@code payload.tools} in place.
+ * TeaVM-transpilable.
  */
 public final class GeminiTransforms {
 
-    // gemini.ts:27-50 -- fields Gemini's strict protobuf-backed JSON validation rejects.
+    // Fields Gemini's strict protobuf-backed JSON validation rejects.
     private static final Set<String> UNSUPPORTED_SCHEMA_FIELDS = new LinkedHashSet<>(Arrays.asList(
             "additionalProperties", "$schema", "$id", "$comment", "$ref", "$defs", "definitions",
             "const", "contentMediaType", "contentEncoding", "if", "then", "else", "not",
             "patternProperties", "unevaluatedProperties", "unevaluatedItems", "dependentRequired",
             "dependentSchemas", "propertyNames", "minContains", "maxContains"));
 
-    // gemini.ts:196
     private static final List<String> VALID_ASPECT_RATIOS = Collections.unmodifiableList(Arrays.asList(
             "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"));
 
     private GeminiTransforms() {
     }
 
-    // ---- toGeminiSchema (gemini.ts:52-122) ---------------------------------------------------------
+    // ---- toGeminiSchema --------------------------------------------------------------------------
 
-    /** Port of {@code toGeminiSchema}: JSON Schema -> Gemini Schema (uppercased types, stripped fields). */
+    /** JSON Schema -> Gemini Schema (uppercased types, stripped fields). */
     @SuppressWarnings("unchecked")
     public static Object toGeminiSchema(Object schema) {
         if (!JsCoercion.isTruthy(schema) || !(schema instanceof Map)) {
@@ -114,7 +112,7 @@ public final class GeminiTransforms {
         return result;
     }
 
-    // ---- model predicates (gemini.ts:127-156) ------------------------------------------------------
+    // ---- model predicates ------------------------------------------------------------------------
 
     public static boolean isGeminiModel(String model) {
         String lower = model.toLowerCase();
@@ -134,9 +132,9 @@ public final class GeminiTransforms {
         return lower.contains("image") || lower.contains("imagen");
     }
 
-    // ---- thinking config builders (gemini.ts:161-182) ----------------------------------------------
+    // ---- thinking config builders ----------------------------------------------------------------
 
-    /** Port of {@code buildGemini3ThinkingConfig}: camelCase {@code thinkingLevel} string. */
+    /** camelCase {@code thinkingLevel} string. */
     public static Map<String, Object> buildGemini3ThinkingConfig(boolean includeThoughts, String thinkingLevel) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("includeThoughts", includeThoughts);
@@ -144,10 +142,7 @@ public final class GeminiTransforms {
         return config;
     }
 
-    /**
-     * Port of {@code buildGemini25ThinkingConfig}: camelCase numeric {@code thinkingBudget} (only
-     * emitted when it is a positive number, matching {@code typeof === "number" && > 0}).
-     */
+    /** camelCase numeric {@code thinkingBudget}, only emitted when it is a positive number. */
     public static Map<String, Object> buildGemini25ThinkingConfig(boolean includeThoughts, Object thinkingBudget) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("includeThoughts", includeThoughts);
@@ -158,10 +153,9 @@ public final class GeminiTransforms {
     }
 
     /**
-     * Port of {@code buildImageGenerationConfig} (gemini.ts:208-220). {@code aspectRatioEnv} is the
-     * value of {@code process.env.OPENCODE_IMAGE_ASPECT_RATIO} ({@code null} when unset); the TS
-     * {@code || "1:1"} default and the invalid-value {@code console.warn} are honored via the
-     * injected {@link Logger}.
+     * {@code aspectRatioEnv} is the value of {@code OPENCODE_IMAGE_ASPECT_RATIO} ({@code null} when
+     * unset); it defaults to {@code "1:1"}, and an invalid value is logged via the injected
+     * {@link Logger}.
      */
     public static Map<String, Object> buildImageGenerationConfig(String aspectRatioEnv, Logger logger) {
         String aspectRatio = JsCoercion.isTruthy(aspectRatioEnv) ? aspectRatioEnv : "1:1";
@@ -181,11 +175,11 @@ public final class GeminiTransforms {
         return config;
     }
 
-    // ---- normalizeGeminiTools (gemini.ts:228-340) --------------------------------------------------
+    // ---- normalizeGeminiTools --------------------------------------------------------------------
 
     /**
-     * Port of {@code normalizeGeminiTools}. MUTATES {@code payload.tools} in place; returns a map with
-     * {@code toolDebugMissing} (Integer) and {@code toolDebugSummaries} (List&lt;String&gt;).
+     * MUTATES {@code payload.tools} in place; returns a map with {@code toolDebugMissing} (Integer)
+     * and {@code toolDebugSummaries} (List&lt;String&gt;).
      */
     public static Map<String, Object> normalizeGeminiTools(Map<String, Object> payload) {
         int[] toolDebugMissing = {0};
@@ -305,9 +299,8 @@ public final class GeminiTransforms {
         return r;
     }
 
-    // ---- wrapToolsAsFunctionDeclarations (gemini.ts:451-572) --------------------------------------
+    // ---- wrapToolsAsFunctionDeclarations ---------------------------------------------------------
 
-    // gemini.ts:451-469
     private static boolean isWebSearchTool(Map<String, Object> tool) {
         if (JsCoercion.isTruthy(tool.get("googleSearch")) || JsCoercion.isTruthy(tool.get("googleSearchRetrieval"))) {
             return true;
@@ -320,9 +313,9 @@ public final class GeminiTransforms {
     }
 
     /**
-     * Port of {@code wrapToolsAsFunctionDeclarations}. MUTATES {@code payload.tools}; returns a map
-     * with {@code wrappedFunctionCount}/{@code passthroughToolCount} (Integers). The
-     * "web_search + functionDeclarations can't combine" warning goes through the injected {@link Logger}.
+     * MUTATES {@code payload.tools}; returns a map with {@code wrappedFunctionCount}/{@code
+     * passthroughToolCount} (Integers). The "web_search + functionDeclarations can't combine" warning
+     * goes through the injected {@link Logger}.
      */
     public static Map<String, Object> wrapToolsAsFunctionDeclarations(Map<String, Object> payload, Logger logger) {
         if (!(payload.get("tools") instanceof List) || JsCoercion.asList(payload.get("tools")).isEmpty()) {
@@ -421,12 +414,12 @@ public final class GeminiTransforms {
         return r;
     }
 
-    // ---- applyGeminiTransforms (gemini.ts:370-427) -----------------------------------------------
+    // ---- applyGeminiTransforms -------------------------------------------------------------------
 
     /**
-     * Port of {@code applyGeminiTransforms}. {@code options} is a JSON-tree map with {@code model},
-     * {@code tierThinkingBudget}, {@code tierThinkingLevel}, {@code normalizedThinking},
-     * {@code googleSearch}. MUTATES {@code payload}; returns the combined debug/wrap result map.
+     * {@code options} is a JSON-tree map with {@code model}, {@code tierThinkingBudget},
+     * {@code tierThinkingLevel}, {@code normalizedThinking}, {@code googleSearch}. MUTATES
+     * {@code payload}; returns the combined debug/wrap result map.
      */
     public static Map<String, Object> applyGeminiTransforms(Map<String, Object> payload, Map<String, Object> options, Logger logger) {
         String model = String.valueOf(options.get("model"));
@@ -472,7 +465,7 @@ public final class GeminiTransforms {
         return combined;
     }
 
-    // ---- separateParts (gemini.ts:583-607) -------------------------------------------------------
+    // ---- separateParts ---------------------------------------------------------------------------
 
     private static final class SeparatedParts {
         final List<Object> functionCallParts = new ArrayList<>();
@@ -505,9 +498,9 @@ public final class GeminiTransforms {
         return JsCoercion.isTruthy(p.get("functionCall")) || JsCoercion.isTruthy(p.get("function_call"));
     }
 
-    // ---- expandMultiFunctionCallModelTurns (gemini.ts:614-664) -----------------------------------
+    // ---- expandMultiFunctionCallModelTurns -------------------------------------------------------
 
-    /** Port of {@code expandMultiFunctionCallModelTurns}: strict call -> response -> call -> response. */
+    /** Strict call -> response -> call -> response. */
     public static List<Object> expandMultiFunctionCallModelTurns(List<Object> contents) {
         if (contents == null || contents.isEmpty()) {
             return contents;
@@ -585,11 +578,11 @@ public final class GeminiTransforms {
         return JsCoercion.isTruthy(p.get("functionResponse")) || JsCoercion.isTruthy(p.get("function_response"));
     }
 
-    // ---- sanitizeGeminiContents (gemini.ts:684-802) ----------------------------------------------
+    // ---- sanitizeGeminiContents ------------------------------------------------------------------
 
-    // gemini.ts:692-713 -- both the separator decision (`currentText ? "\n\n" : ""`, :698) and the
-    // flushes (:700, :708) key on the ACCUMULATED string's truthiness (non-empty), NOT on having
-    // seen a text part: empty-string text parts accumulate silently and are never flushed alone.
+    // Both the separator decision (`currentText ? "\n\n" : ""`) and the flushes key on the
+    // ACCUMULATED string's truthiness (non-empty), NOT on having seen a text part: empty-string text
+    // parts accumulate silently and are never flushed alone.
     private static List<Object> mergeTextParts(List<Object> parts) {
         List<Object> merged = new ArrayList<>();
         StringBuilder currentText = new StringBuilder();
@@ -621,7 +614,7 @@ public final class GeminiTransforms {
         return m;
     }
 
-    /** Port of {@code sanitizeGeminiContents}: enforces strict user/model alternation + roles. */
+    /** Enforces strict user/model alternation + roles. */
     public static List<Object> sanitizeGeminiContents(List<Object> contentsIn) {
         if (contentsIn == null || contentsIn.isEmpty()) {
             return contentsIn;
@@ -747,9 +740,9 @@ public final class GeminiTransforms {
         return a == null ? b == null : a.equals(b);
     }
 
-    // ---- fixGeminiToolPairing (gemini.ts:811-884) ------------------------------------------------
+    // ---- fixGeminiToolPairing --------------------------------------------------------------------
 
-    /** Port of {@code fixGeminiToolPairing}: injects placeholder responses for unmatched calls. */
+    /** Injects placeholder responses for unmatched calls. */
     public static List<Object> fixGeminiToolPairing(List<Object> contents) {
         if (contents == null || contents.isEmpty()) {
             return contents;
@@ -852,7 +845,7 @@ public final class GeminiTransforms {
         return mapMaybe instanceof Map ? JsCoercion.asMap(mapMaybe).get(key) : null;
     }
 
-    // JS `[a, b, ...].filter(Boolean)[0]` -- first truthy operand or null.
+    // JS `[a, b, ...].filter(Boolean)[0]`: first truthy operand or null.
     private static Object firstTruthyOrNull(Object... values) {
         for (Object v : values) {
             if (JsCoercion.isTruthy(v)) return v;
@@ -860,7 +853,7 @@ public final class GeminiTransforms {
         return null;
     }
 
-    // JS String(x) for the string/number/boolean values this port encounters.
+    // JS String(x) for the string/number/boolean values encountered here.
     private static String jsString(Object v) {
         if (v == null) return "null";
         if (v instanceof String) return (String) v;

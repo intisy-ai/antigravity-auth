@@ -14,11 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for {@link AntigravityProjectContext}. The {@code ensureProjectContext} decision sequences
- * (short-circuit / load-hit / onboard / fallback) are transcribed from the Node harness fixtures
- * ({@code .superpowers/sdd/t7f-harness/fixtures.json} "ensureProjectContext"), which drive the REAL
- * exported {@code ensureProjectContext} with a scripted global fetch; the pure helpers are ported
- * verbatim from {@code src/plugin/project.ts} and asserted directly.
+ * Tests for {@link AntigravityProjectContext}. Exercises the {@code ensureProjectContext} decision
+ * sequences (short-circuit / load-hit / onboard / fallback) with a scripted global fetch, plus the
+ * pure helpers asserted directly.
  */
 class AntigravityProjectContextTest {
 

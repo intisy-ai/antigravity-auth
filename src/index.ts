@@ -5,7 +5,7 @@ import { deployCommands, defineConfig, defineReadme, maybeRunReadmeCli } from ".
 import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
 import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
 
-// Register the FULL config schema (the driver's own DEFAULT_CONFIG — the same defaults
+// Register the FULL config schema (the driver's own DEFAULT_CONFIG, the same defaults
 // its loader applies) BEFORE the CLI guard, so `config schema`/`config list`, the
 // `/config` command, and the loader Configure editor expose every option (not just a
 // couple). Writes no file on load. `logging` is core's logger toggle (kept).
@@ -13,7 +13,7 @@ defineConfig("antigravity", { ...DEFAULT_CONFIG, logging: true });
 
 defineReadme({
   description:
-    "Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work — multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state — while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.",
+    "Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work (multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state) while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.",
   architecture: `flowchart TD
     subgraph Apps
         OC[OpenCode] -->|auth hook loader.fetch| HANDLE
@@ -37,14 +37,14 @@ defineReadme({
     LOGIN -->|addAccount| MGR`,
   structure: {
     src: [
-      "`index.ts` — OpenCode entry (the core-auth provider plugin)",
-      "`handler.ts` — Claude Code entry (`handleIr()` for the claude-code-loader proxy front-door)",
-      "`cli.ts` — `antigravity login | list | remove`",
-      "`driver/` — `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)",
-      "`antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts` — the host I/O this driver still owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform + decision logic itself lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)",
-      "`commands.ts` — cross-app slash-command definitions + their CLI actions",
-      "`core-auth/` — the core-auth library (git submodule, bundled into the output)",
-      "`core/` — shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in",
+      "`index.ts`: OpenCode entry (the core-auth provider plugin)",
+      "`handler.ts`: Claude Code entry (`handleIr()` for the claude-code-loader proxy front-door)",
+      "`cli.ts`: `antigravity login | list | remove`",
+      "`driver/`: `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)",
+      "`antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts`: the host I/O this driver owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform and decision logic lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)",
+      "`commands.ts`: cross-app slash-command definitions and their CLI actions",
+      "`core-auth/`: the core-auth library (git submodule, bundled into the output)",
+      "`core/`: shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in",
     ],
     dist: [
       "bundled `index.js`, `handler.js`, `cli.js` (generated; not committed)",

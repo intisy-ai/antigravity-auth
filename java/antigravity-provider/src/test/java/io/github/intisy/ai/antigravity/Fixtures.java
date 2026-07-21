@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 
-/** Tiny map/list literal helpers so the parity tests read close to the JS object literals they mirror. */
+/** Tiny map/list literal helpers for concise nested test data. */
 final class Fixtures {
     private Fixtures() {
     }

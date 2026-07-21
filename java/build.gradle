@@ -1,10 +1,8 @@
-// antigravity-auth's Java module -- self-contained Gradle build living alongside antigravity-auth's
-// TS (../src, ../package.json), mirroring claude-code-auth's java/build.gradle (itself mirroring
-// stub-auth's java/build.gradle and core-proxy's own java/build.gradle). Deliberately does NOT
-// reuse ai-java's root build.gradle wholesale (its io.github.intisy.online-gradle preset is
-// ai-java-repo-specific, out of scope here) -- but DOES apply the same github-gradle publishing
-// recipe stub-auth's own java/build.gradle uses (Phase 1 of the JVM antigravity provider plan),
-// scoped to :antigravity-provider only (the one publishable artifact in this multi-module build).
+// antigravity-auth's Java module: a self-contained Gradle build living alongside antigravity-auth's
+// TS (../src, ../package.json). Does NOT reuse ai-java's root build.gradle wholesale (its
+// io.github.intisy.online-gradle preset is ai-java-repo-specific), but applies the github-gradle
+// publishing recipe scoped to :antigravity-provider only (the one publishable artifact in this
+// multi-module build).
 plugins {
     id "io.github.intisy.github-gradle" version "1.8.2.1" apply false
 }
@@ -15,8 +13,7 @@ subprojects {
 
     group = "io.github.intisy"
     // publishGithub requires a concrete version. Derive it from -Partifact_version=<tag> passed by
-    // CI (stripping a leading "v"), falling back to a local dev version -- same derivation
-    // stub-auth's/ai-java's own root build.gradle uses.
+    // CI (stripping a leading "v"), falling back to a local dev version.
     version = (project.findProperty("artifact_version") ?: "0.0.0-dev").toString().replaceFirst(/^v/, "")
 
     repositories {
@@ -58,7 +55,7 @@ subprojects {
     }
 
     // Only :antigravity-provider is a published artifact (:routing/:teavm are aliased from
-    // core-proxy, :antigravity-teavm is a TeaVM js-export module) -- scope publishGithub so an
+    // core-proxy, :antigravity-teavm is a TeaVM js-export module), so scope publishGithub so an
     // aggregate `publish` doesn't fail on the non-library modules.
     tasks.matching { it.name == "publishGithub" }.configureEach {
         onlyIf { project.path == ":antigravity-provider" }

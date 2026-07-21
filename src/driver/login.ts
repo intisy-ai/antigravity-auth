@@ -13,7 +13,7 @@ import { generateFingerprint } from "../plugin/fingerprint.js";
 import { ANTIGRAVITY_REDIRECT_URI, ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 
 // Google OAuth succeeds for ANY Google account, but Antigravity only accepts
-// enabled accounts — so we must actually call the Antigravity API before saving,
+// enabled accounts, so we must actually call the Antigravity API before saving,
 // or ineligible accounts (e.g. non-enabled domains) get added and then fail on use.
 // Mirrors accounts-controller verify(): 200/400 = accepted. 401/403 = rejected.
 // Anything else (5xx, network, timeout) is INCONCLUSIVE → fail-open (don't block a
@@ -43,7 +43,7 @@ async function checkAntigravityAccess(access, projectId, proxy) {
 const PROVIDER_ID = "antigravity";
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
-// Unconditional trace to a fixed file — the account-menu TUI clears the screen on
+// Unconditional trace to a fixed file, the account-menu TUI clears the screen on
 // every redraw, so stderr/errors from login() never stay visible. Read it with:
 //   cat ~/.config/opencode/antigravity-login.log
 function dbg(message) {
@@ -55,7 +55,7 @@ function dbg(message) {
 
 // A connection-level failure means the request never reached Google, so the auth
 // code is untouched and a proxy-less retry is safe. (Grant/auth errors are NOT
-// matched — those mean the code was consumed and must not be retried.)
+// matched, those mean the code was consumed and must not be retried.)
 function isConnectError(message) {
   return /unable to connect|failed to connect|could not connect|fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|EAI_AGAIN|socket|proxy|tunnel|network/i.test(String(message || ""));
 }
@@ -122,17 +122,17 @@ export async function loginFlow() {
       let boundProxy = proxy;
       let result = await exchangeAntigravity(cb.code, state, { proxy });
       // A dead/unreachable login proxy bricks the token exchange (the request never
-      // reaches Google, so the auth code is NOT consumed). Retry directly — a
-      // non-working proxy provides no isolation anyway — and then DON'T bind it.
+      // reaches Google, so the auth code is NOT consumed). Retry directly, a
+      // non-working proxy provides no isolation anyway, and then DON'T bind it.
       if (result.type !== "success" && proxy && isConnectError(result.error)) {
-        dbg("finish: proxied exchange could not connect via " + proxy + " — retrying directly");
-        process.stderr.write("antigravity: login proxy " + proxy + " unreachable — retrying token exchange without a proxy.\n");
+        dbg("finish: proxied exchange could not connect via " + proxy + ", retrying directly");
+        process.stderr.write("antigravity: login proxy " + proxy + " unreachable, retrying token exchange without a proxy.\n");
         boundProxy = null;
         result = await exchangeAntigravity(cb.code, state, {});
       }
       dbg("finish: token exchange -> " + result.type + (result.type !== "success" ? " | error: " + (result.error || "unknown") : " | email: " + (result.email || "?")) + " | proxy=" + (boundProxy || "direct"));
       if (result.type !== "success") {
-        process.stderr.write("antigravity login failed — token exchange error: " + (result.error || "unknown") + "\n");
+        process.stderr.write("antigravity login failed, token exchange error: " + (result.error || "unknown") + "\n");
         return null;
       }
       const account = await toCoreAccount(result);
@@ -140,11 +140,11 @@ export async function loginFlow() {
       const projectId = account.meta.managedProjectId || account.meta.projectId || result.projectId || "";
       const check = await checkAntigravityAccess(result.access, projectId, boundProxy);
       if (!check.ok) {
-        dbg("finish: Antigravity REJECTED " + (result.email || "?") + " (status " + check.status + ") — not adding");
-        process.stderr.write("antigravity: this account isn't enabled for Antigravity (HTTP " + check.status + ") — not added.\nUse a Google account that has Antigravity/Gemini access.\n");
+        dbg("finish: Antigravity REJECTED " + (result.email || "?") + " (status " + check.status + "), not adding");
+        process.stderr.write("antigravity: this account isn't enabled for Antigravity (HTTP " + check.status + "), not added.\nUse a Google account that has Antigravity/Gemini access.\n");
         return null;
       }
-      if (check.inconclusive) dbg("finish: access check inconclusive (" + check.inconclusive + ") — adding anyway");
+      if (check.inconclusive) dbg("finish: access check inconclusive (" + check.inconclusive + "), adding anyway");
       addAccount(PROVIDER_ID, account);
       dbg("finish: addAccount done id=" + account.id);
       if (boundProxy) proxyManager.bindAccountProxy(account.id, boundProxy);
@@ -159,7 +159,7 @@ export async function loginFlow() {
 
   return {
     url: authorization.url,
-    instructions: "Sign in with Google — approve in your browser and we'll detect it automatically. In a container the localhost redirect won't load, so copy the full URL from your address bar (or just the code) and paste it here instead.",
+    instructions: "Sign in with Google, approve in your browser and we'll detect it automatically. In a container the localhost redirect won't load, so copy the full URL from your address bar (or just the code) and paste it here instead.",
     // paste fallback: opencode's "code" method + the in-tab paste both pass text
     complete: (input) => finish(parsePastedCallback(input)),
     // primary: the loopback listener fires when the browser reaches our localhost
@@ -173,7 +173,7 @@ export async function loginFlow() {
 export async function login(opts) {
   const log = (opts && opts.log) || ((message) => process.stderr.write(message + "\n"));
   const flow = await loginFlow();
-  log("Open this URL in your browser to sign in with Google:\n\n  " + flow.url + "\n\nApprove in your browser — we'll detect it automatically. In a container the localhost page won't load; copy the full URL from your address bar and paste it below.\n");
+  log("Open this URL in your browser to sign in with Google:\n\n  " + flow.url + "\n\nApprove in your browser, we'll detect it automatically. In a container the localhost page won't load; copy the full URL from your address bar and paste it below.\n");
   tryOpenBrowser(flow.url);
   // race the loopback auto-capture against a terminal paste; close the readline as
   // soon as either settles so a loopback win doesn't leave it dangling

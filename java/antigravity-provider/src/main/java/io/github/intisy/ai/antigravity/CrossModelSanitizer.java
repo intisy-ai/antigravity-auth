@@ -6,36 +6,32 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/transform/cross-model-sanitizer.ts} (T7b,
- * Bucket A): the signature-stripping tree walk that fixes the "Invalid {@code signature} in
- * {@code thinking} block" error when switching models mid-session. Gemini stores
- * {@code thoughtSignature} in {@code metadata.google}; Claude stores {@code signature} on top-level
- * thinking blocks -- foreign signatures fail validation on the target model and must be stripped.
+ * Signature-stripping tree walk that fixes the "Invalid {@code signature} in {@code thinking} block"
+ * error when switching models mid-session. Gemini stores {@code thoughtSignature} in
+ * {@code metadata.google}; Claude stores {@code signature} on top-level thinking blocks. Foreign
+ * signatures fail validation on the target model and must be stripped.
  *
- * <p>Faithful copy-vs-mutate semantics: {@link #deepSanitizeCrossModelMetadata} /
- * {@link #sanitizeCrossModelPayload} return a NEW tree (the TS spreads {@code {...obj}} at every
- * level, never touching the input); {@link #sanitizeCrossModelPayloadInPlace} mutates the payload;
- * {@link #stripGeminiThinkingMetadata} / {@link #stripClaudeThinkingFields} mutate the {@code part}
- * they are handed (returning the strip count, the TS returns {@code {part, stripped}} where
- * {@code part} is the same reference). Data model = JSON tree {@code Map<String,Object>} /
- * {@code List<Object>}.
+ * <p>Copy-vs-mutate semantics: {@link #deepSanitizeCrossModelMetadata} /
+ * {@link #sanitizeCrossModelPayload} return a NEW tree (the input is never touched);
+ * {@link #sanitizeCrossModelPayloadInPlace} mutates the payload; {@link #stripGeminiThinkingMetadata}
+ * / {@link #stripClaudeThinkingFields} mutate the {@code part} they are handed and return the strip
+ * count. Data model = JSON tree {@code Map<String,Object>} / {@code List<Object>}.
  */
 public final class CrossModelSanitizer {
 
     private static final String[] GEMINI_SIGNATURE_FIELDS = {"thoughtSignature", "thinkingMetadata"};
     private static final String[] CLAUDE_SIGNATURE_FIELDS = {"signature"};
 
-    // cross-model-sanitizer.ts:97 -- the ">= 50" gate on a "real" Claude signature (short
-    // signature-like fields on NON-thinking parts are left alone). Named here for clarity; the TS
-    // inlines the literal 50.
+    // The ">= 50" gate on a "real" Claude signature: short signature-like fields on NON-thinking
+    // parts are left alone.
     public static final int MIN_SIGNATURE_LENGTH = 50;
 
     private CrossModelSanitizer() {
     }
 
     /**
-     * Port of {@code getModelFamily} (cross-model-sanitizer.ts:30-34) -- {@code "claude"},
-     * {@code "gemini"}, or {@code "unknown"} (distinct from {@link AntigravityModelResolver#getModelFamily}).
+     * {@code "claude"}, {@code "gemini"}, or {@code "unknown"} (distinct from
+     * {@link AntigravityModelResolver#getModelFamily}).
      */
     public static String getModelFamily(String model) {
         if (ClaudeTransforms.isClaudeModel(model)) return "claude";
@@ -43,10 +39,7 @@ public final class CrossModelSanitizer {
         return "unknown";
     }
 
-    /**
-     * Port of {@code stripGeminiThinkingMetadata} (cross-model-sanitizer.ts:40-79). Mutates
-     * {@code part}, returns the strip count.
-     */
+    /** Mutates {@code part}, returns the strip count. */
     public static int stripGeminiThinkingMetadata(Map<String, Object> part, boolean preserveNonSignature) {
         int stripped = 0;
 
@@ -85,10 +78,7 @@ public final class CrossModelSanitizer {
         return stripped;
     }
 
-    /**
-     * Port of {@code stripClaudeThinkingFields} (cross-model-sanitizer.ts:81-103). Mutates
-     * {@code part}, returns the strip count.
-     */
+    /** Mutates {@code part}, returns the strip count. */
     public static int stripClaudeThinkingFields(Map<String, Object> part) {
         int stripped = 0;
 
@@ -113,8 +103,8 @@ public final class CrossModelSanitizer {
         return stripped;
     }
 
-    // sanitizePart (cross-model-sanitizer.ts:105-126) -- returns a COPY of the part with signatures
-    // stripped, plus the strip count via the single-element int[] accumulator.
+    // Returns a COPY of the part with signatures stripped, plus the strip count via the
+    // single-element int[] accumulator.
     private static Object sanitizePart(Object part, String targetFamily, boolean preserveNonSignature, int[] total) {
         if (!JsCoercion.isPlainObject(part)) {
             return part;
@@ -136,8 +126,7 @@ public final class CrossModelSanitizer {
         return out;
     }
 
-    // sanitizeContents (cross-model-sanitizer.ts:144-170) -- copies each content, sanitizing its
-    // `parts` array.
+    // Copies each content, sanitizing its `parts` array.
     private static List<Object> sanitizeContents(List<Object> contents, String targetFamily, boolean preserveNonSignature, int[] total) {
         List<Object> out = new ArrayList<>();
         for (Object content : contents) {
@@ -154,8 +143,7 @@ public final class CrossModelSanitizer {
         return out;
     }
 
-    // sanitizeMessages (cross-model-sanitizer.ts:172-198) -- copies each message, sanitizing its
-    // `content` array (Anthropic format).
+    // Copies each message, sanitizing its `content` array (Anthropic format).
     private static List<Object> sanitizeMessages(List<Object> messages, String targetFamily, boolean preserveNonSignature, int[] total) {
         List<Object> out = new ArrayList<>();
         for (Object message : messages) {
@@ -183,7 +171,6 @@ public final class CrossModelSanitizer {
         }
     }
 
-    /** Port of {@code deepSanitizeCrossModelMetadata} (cross-model-sanitizer.ts:200-260). */
     public static DeepResult deepSanitizeCrossModelMetadata(Object obj, String targetFamily, boolean preserveNonSignature) {
         if (!JsCoercion.isPlainObject(obj)) {
             return new DeepResult(obj, 0);
@@ -235,9 +222,8 @@ public final class CrossModelSanitizer {
     }
 
     /**
-     * Port of {@code sanitizeCrossModelPayload} (cross-model-sanitizer.ts:262-288). {@code options}
-     * is a JSON-tree map with {@code targetModel} (required), {@code sourceModel} (unused here) and
-     * {@code preserveNonSignatureMetadata} (defaults to {@code true}).
+     * {@code options} is a JSON-tree map with {@code targetModel} (required), {@code sourceModel}
+     * (unused here) and {@code preserveNonSignatureMetadata} (defaults to {@code true}).
      */
     public static SanitizationResult sanitizeCrossModelPayload(Object payload, Map<String, Object> options) {
         String targetFamily = getModelFamily(String.valueOf(options.get("targetModel")));
@@ -258,10 +244,7 @@ public final class CrossModelSanitizer {
         return resolved instanceof Boolean ? (Boolean) resolved : JsCoercion.isTruthy(resolved);
     }
 
-    /**
-     * Port of {@code sanitizeCrossModelPayloadInPlace} (cross-model-sanitizer.ts:290-350). Mutates
-     * {@code payload} directly, returns the strip count.
-     */
+    /** Mutates {@code payload} directly, returns the strip count. */
     public static int sanitizeCrossModelPayloadInPlace(Map<String, Object> payload, Map<String, Object> options) {
         String targetFamily = getModelFamily(String.valueOf(options.get("targetModel")));
 

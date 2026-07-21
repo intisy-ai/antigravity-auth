@@ -1,8 +1,6 @@
 // @ts-nocheck
-// Task 3 parity gate (converted by Task 6a — the TS prepareAntigravityRequest this test used to
-// compare against is deleted, superseded by Java): proves jsPreparer's Java-driven prepare
-// (prepareAntigravityRequestProd, via javaHandle.ts's exported prepareViaJava) produces the frozen
-// output (prepare-scenarios.expected.json, captured from the TS function before its deletion) for a
+// Verifies jsPreparer's Java-driven prepare (prepareAntigravityRequestProd, via javaHandle.ts's
+// exported prepareViaJava) produces the frozen output (prepare-scenarios.expected.json) for a
 // representative Gemini body and a representative Claude (thinking) body.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
@@ -57,7 +55,7 @@ function comparable(prepared) {
   };
 }
 
-// PLUGIN_SESSION_ID (request.ts:77) is fixed once at module load, before any per-test mock exists —
+// PLUGIN_SESSION_ID (request.ts:77) is fixed once at module load, before any per-test mock exists
 // a real per-process random value. Normalize it to the SAME placeholder the fixture was frozen with
 // (see prepare-scenarios.expected.json's generation) so the comparison isn't process-dependent.
 function normalize(obj) {

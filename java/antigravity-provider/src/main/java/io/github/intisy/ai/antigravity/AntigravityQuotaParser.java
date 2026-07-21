@@ -8,34 +8,29 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Java port of antigravity-auth's {@code src/driver/accounts-controller.ts} (Bucket A, T7a):
- * {@code allPoolsExhausted}, {@code antigravityStatus}, {@code antigravityAvailableAt}, {@code
- * antigravityQuota}, {@code familyLabel}, {@code accountHasQuota}, and the pure per-family quota
- * aggregation loop lifted out of {@code fetchQuotaFamilies} (lines 113-127, here {@link
- * #aggregateQuotaFamilies}) -- the ONLY part of that function that is not network I/O.
- * Deliberately does NOT port the fetch/verify/refresh I/O (Bucket B/C: {@code fetchQuotaFamilies}'s
- * own {@code fetch} call, {@code refreshQuotaOne}/{@code refreshAllQuota}/{@code verify}/{@code
- * verifyAll}/{@code refreshToken}) or {@code createAntigravityAccounts} (TUI wiring).
+ * Pure quota/status helpers over a stored account tree: {@code allPoolsExhausted}, {@code
+ * antigravityStatus}, {@code antigravityAvailableAt}, {@code antigravityQuota}, {@code familyLabel},
+ * {@code accountHasQuota}, and the per-family quota aggregation loop {@link #aggregateQuotaFamilies}.
+ * Does NOT fetch/verify/refresh over the network: callers pass the already-parsed payload.
  *
  * <p>{@code antigravityStatus}/{@code antigravityAvailableAt} take {@code now} as an explicit
- * {@code long} parameter, mirroring the TS functions' OWN signatures exactly -- both already take
- * {@code now} as a caller-supplied argument in the original source (no implicit {@code Date.now()}
- * inside either function), so no {@code Clock} SPI indirection is needed here.
+ * {@code long} parameter (neither reads an implicit clock), so no {@code Clock} SPI indirection is
+ * needed here.
  *
  * <p>Operates over plain {@code Map}/{@code List} JSON trees (the shape both gson and this
- * ecosystem's {@code JsonCodec} SPI produce). No java.net/nio/reflection/threads -- TeaVM-safe.
+ * ecosystem's {@code JsonCodec} SPI produce). No java.net/nio/reflection/threads, so it stays
+ * TeaVM-safe.
  */
 public final class AntigravityQuotaParser {
 
     private AntigravityQuotaParser() {
     }
 
-    // ---- allPoolsExhausted (accounts-controller.ts:15-19) -----------------------------------------
+    // ---- allPoolsExhausted -----------------------------------------------------------------------
 
     /**
      * True only when EVERY known quota pool reports zero (or no numeric) remaining capacity.
-     * Returns {@code false} for an empty/absent pool map (matches the TS {@code if (!pools.length)
-     * return false} special case -- "no pools yet" is NOT "all exhausted").
+     * Returns {@code false} for an empty/absent pool map: "no pools yet" is NOT "all exhausted".
      */
     public static boolean allPoolsExhausted(Map<String, Object> cachedQuota) {
         if (cachedQuota == null || cachedQuota.isEmpty()) return false;
@@ -48,7 +43,7 @@ public final class AntigravityQuotaParser {
         return true;
     }
 
-    // ---- antigravityStatus (accounts-controller.ts:27-38) -----------------------------------------
+    // ---- antigravityStatus -----------------------------------------------------------------------
 
     /**
      * Status reflects the account's real serving capacity via its quota POOLS, not the per-lane
@@ -77,16 +72,16 @@ public final class AntigravityQuotaParser {
         return "active";
     }
 
-    // ---- antigravityAvailableAt (accounts-controller.ts:44-57) ------------------------------------
+    // ---- antigravityAvailableAt ------------------------------------------------------------------
 
     /**
      * Usability time for the account, pool-based to match {@link #antigravityStatus}: usable NOW
      * when any pool has capacity (or before the first quota fetch); the soonest pool reset when
      * every pool is exhausted; disabled/cooldown handled as usual.
      *
-     * @return an epoch-ms timestamp, {@code now}, or {@link Double#POSITIVE_INFINITY} (mirroring
-     *         the TS's {@code Infinity} return for a disabled account) -- a {@code double} return
-     *         type since Java has no numeric "Infinity" sentinel compatible with {@code long}.
+     * @return an epoch-ms timestamp, {@code now}, or {@link Double#POSITIVE_INFINITY} for a disabled
+     *         account. The return type is {@code double} since Java has no numeric "Infinity"
+     *         sentinel compatible with {@code long}.
      */
     @SuppressWarnings("unchecked")
     public static double antigravityAvailableAt(Map<String, Object> account, long now) {
@@ -116,12 +111,12 @@ public final class AntigravityQuotaParser {
         return now;
     }
 
-    // ---- antigravityQuota (accounts-controller.ts:59-67) ------------------------------------------
+    // ---- antigravityQuota ------------------------------------------------------------------------
 
     /**
      * Maps a stored account's cached per-family quota to the display shape
-     * {@code [{label, remainingFraction, resetTime}]}. Returns {@code null} (TS: {@code
-     * undefined}) when there is no cached quota at all.
+     * {@code [{label, remainingFraction, resetTime}]}. Returns {@code null} when there is no cached
+     * quota at all.
      */
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> antigravityQuota(Map<String, Object> account) {
@@ -141,7 +136,7 @@ public final class AntigravityQuotaParser {
         return result;
     }
 
-    // ---- familyLabel (accounts-controller.ts:70-76) --------------------------------------------------
+    // ---- familyLabel -----------------------------------------------------------------------------
 
     /** Friendly family name for a model. Returns {@code null} for internal/unknown models. */
     public static String familyLabel(Object modelName) {
@@ -152,7 +147,7 @@ public final class AntigravityQuotaParser {
         return null;
     }
 
-    // ---- accountHasQuota (accounts-controller.ts:195-199) --------------------------------------------
+    // ---- accountHasQuota -------------------------------------------------------------------------
 
     /**
      * Quota still remaining? Used to decide a rate-limit is an IP limit (proxy signal), not real
@@ -172,20 +167,20 @@ public final class AntigravityQuotaParser {
         return false;
     }
 
-    // ---- aggregateQuotaFamilies (accounts-controller.ts:113-127, the PURE slice of fetchQuotaFamilies) --
+    // ---- aggregateQuotaFamilies ------------------------------------------------------------------
 
     /**
      * Aggregates per-model quota info into one entry per FAMILY (Claude/GPT-OSS/Gemini): worst
      * (minimum) remaining fraction + earliest reset time across that family's models. When a pool
      * is exhausted, cloudcode-pa drops {@code remainingFraction} and returns only {@code
-     * resetTime} -- that is treated as 0 remaining (not skipped) so the pool still shows "100%
+     * resetTime}, which is treated as 0 remaining (not skipped) so the pool still shows "100%
      * used, resets at X" instead of silently vanishing.
      *
-     * <p>Does NOT port the surrounding {@code fetch}/response-parsing (Bucket C) -- this is only
-     * the aggregation loop, taking the already-parsed {@code payload.models} map as input.
+     * <p>Takes the already-parsed {@code models} map as input (the aggregation loop only, no
+     * fetch/parse).
      *
      * @return a map of family label -&gt; {@code {remainingFraction: Double, resetTime: String}},
-     *         or {@code null} (TS: {@code null}) when no model contributed to any family.
+     *         or {@code null} when no model contributed to any family.
      */
     public static Map<String, Object> aggregateQuotaFamilies(Map<String, Object> models) {
         Map<String, Map<String, Object>> perFamily = new LinkedHashMap<>();
@@ -207,7 +202,7 @@ public final class AntigravityQuotaParser {
                 } else if (JsCoercion.isTruthy(resetTimeObj)) {
                     remaining = 0.0;
                 } else {
-                    remaining = null; // TS: undefined -> skipped below
+                    remaining = null; // skipped below
                 }
                 if (remaining == null) continue;
 
@@ -234,10 +229,10 @@ public final class AntigravityQuotaParser {
 
     // ---- minimal RFC3339/ISO-8601 -> epoch-ms parser (stands in for `Date.parse`) ----------------
 
-    // Matches the "Z" (UTC) or "+HH:mm"/"-HH:mm" offset forms Google API timestamps and this
-    // port's own reset-time strings always use; a purely-local (no zone) date-time string -- a
-    // real JS `Date.parse` ambiguity the ECMA-262 date-time grammar itself resolves inconsistently
-    // across engines -- is intentionally NOT supported (never produced by any real caller here).
+    // Matches the "Z" (UTC) or "+HH:mm"/"-HH:mm" offset forms Google API timestamps and the
+    // reset-time strings here always use. A purely-local (no zone) date-time string is intentionally
+    // NOT supported (never produced by any real caller here); JS `Date.parse` itself resolves that
+    // case inconsistently across engines.
     private static final Pattern ISO_DATE = Pattern.compile(
             "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d+))?(Z|[+-]\\d{2}:\\d{2})?$");
 
@@ -271,7 +266,7 @@ public final class AntigravityQuotaParser {
         return (double) millis;
     }
 
-    // Howard Hinnant's constexpr "days from civil" algorithm -- pure integer arithmetic (no
+    // Howard Hinnant's constexpr "days from civil" algorithm: pure integer arithmetic (no
     // Calendar/java.time), so it stays TeaVM-safe. Returns days since the Unix epoch for a
     // proleptic-Gregorian (y, m, d) with m in [1, 12].
     private static long daysFromCivil(int y, int m, int d) {

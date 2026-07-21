@@ -12,15 +12,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Shared recording test doubles for the T7f handle-orchestrator parity tests. The recorded
- * {@link RecordingAccountOps#seq} uses the SAME ordered {@code [op, ...args]} shape the Node harness
- * ({@code .superpowers/sdd/t7f-harness/}) emits, so a scenario's Java sequence is asserted verbatim
- * against the harness fixture. Determinism knobs (a fixed {@link Clock}=={@link #FIXED_NOW}, a fixed
- * {@link Random}==0.5, a counter {@link AntigravityRequestPrep.IdGenerator}) match the harness stub.
+ * Shared recording test doubles for the handle-orchestrator tests. {@link RecordingAccountOps#seq}
+ * records an ordered {@code [op, ...args]} sequence so a scenario's calls can be asserted verbatim.
+ * Determinism knobs: a fixed {@link Clock}=={@link #FIXED_NOW}, a fixed {@link Random}==0.5, and a
+ * counter {@link AntigravityRequestPrep.IdGenerator}.
  */
 final class HandleTestDoubles {
 
-    // stub.ts FIXED_NOW.
     static final long FIXED_NOW = 1_700_000_000_000L;
     static final Clock CLOCK = () -> FIXED_NOW;
     static final Random RANDOM = () -> 0.5;
@@ -57,7 +55,7 @@ final class HandleTestDoubles {
         return account;
     }
 
-    /** Recording {@link AntigravityHandleOrchestrator.AccountOps} -- scripted acquires, recorded calls. */
+    /** Recording {@link AntigravityHandleOrchestrator.AccountOps}: scripted acquires, recorded calls. */
     static final class RecordingAccountOps implements AntigravityHandleOrchestrator.AccountOps {
         final List<List<Object>> seq = new ArrayList<>();
         private final Deque<AntigravityHandleOrchestrator.Acquired> acquireQueue = new ArrayDeque<>();
@@ -169,9 +167,9 @@ final class HandleTestDoubles {
     }
 
     /**
-     * Faithful port of the harness {@code stubPrepare}: derives the transform params from the url +
-     * endpoint deterministically. Throws when {@code failOnce}/{@code failAlways} is set (the
-     * prepare-failure DECISION). prepareAntigravityRequest's real byte-parity is T7e's domain.
+     * Stub {@link AntigravityHandleOrchestrator.RequestPreparer}: derives the transform params from
+     * the url and endpoint deterministically. Throws when {@code failAlways} is set, to exercise the
+     * prepare-failure decision.
      */
     static final class StubPreparer implements AntigravityHandleOrchestrator.RequestPreparer {
         boolean failAlways;

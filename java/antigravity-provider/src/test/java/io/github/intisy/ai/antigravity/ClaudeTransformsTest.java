@@ -10,16 +10,12 @@ import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Offline parity tests for {@link ClaudeTransforms}, expected values snapshotted from the real
- * {@code src/plugin/transform/claude.ts} via the Node harness ({@code .superpowers/sdd/t7b-harness/})
- * -- see t7b-report.md. The injected {@link ClaudeTransforms.SchemaCleaner} double below is the
- * IDENTITY cleaner (shallow-copy an object, {@code {}} otherwise) mirroring the harness's
- * {@code identityClean}; T7c's real {@code cleanJSONSchemaForAntigravity} is out of scope, so the
- * fixtures were captured against this same identity double.
+ * Offline tests for {@link ClaudeTransforms}. The injected {@link ClaudeTransforms.SchemaCleaner}
+ * double below is an IDENTITY cleaner (shallow-copy an object, {@code {}} otherwise) so these tests
+ * isolate {@code ClaudeTransforms} from schema cleaning.
  */
 class ClaudeTransformsTest {
 
-    // Mirrors harness identityClean: `schema && typeof === object && !array ? {...schema} : {}`.
     private static final ClaudeTransforms.SchemaCleaner IDENTITY =
             schema -> schema instanceof Map ? new LinkedHashMap<>((Map<?, ?>) schema) : new LinkedHashMap<>();
 
@@ -254,10 +250,9 @@ class ClaudeTransformsTest {
                 "generationConfig", map("thinkingConfig", map("include_thoughts", true, "thinking_budget", 32768), "maxOutputTokens", 64000)), payload);
     }
 
-    // ---- closed loop: applyClaudeTransforms with the REAL cleaner (T7c-1) -------------------------
-    // T7b tested this seam only with the IDENTITY double; these pin the byte-identical output of the
-    // real AntigravitySchemaCleaner::clean routed through applyClaudeTransforms, snapshotted from the
-    // real TS (harness key applyClaudeTransforms_realCleaner -> .superpowers/sdd/t7c1-harness).
+    // ---- closed loop: applyClaudeTransforms with the REAL cleaner --------------------------------
+    // These pin the output of the real AntigravitySchemaCleaner::clean routed through
+    // applyClaudeTransforms (the tests above use the IDENTITY double instead).
 
     private static final ClaudeTransforms.SchemaCleaner REAL = AntigravitySchemaCleaner::clean;
 

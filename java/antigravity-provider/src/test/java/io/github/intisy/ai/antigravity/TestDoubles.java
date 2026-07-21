@@ -7,7 +7,7 @@ import io.github.intisy.ai.shared.spi.Random;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Deterministic {@link Clock}/{@link Random}/{@link Logger} test doubles for the parity tests. */
+/** Deterministic {@link Clock}/{@link Random}/{@link Logger} test doubles. */
 final class TestDoubles {
     private TestDoubles() {
     }
@@ -16,12 +16,12 @@ final class TestDoubles {
         return () -> now;
     }
 
-    /** Always returns the same {@code [0, 1)} value, mirroring the harness's {@code Math.random} stub. */
+    /** Always returns the same {@code [0, 1)} value, standing in for {@code Math.random}. */
     static Random fixedRandom(double value) {
         return () -> value;
     }
 
-    /** A {@link Logger} that records every message (stands in for the TS {@code console.warn} calls). */
+    /** A {@link Logger} that records every message (stands in for {@code console.warn}). */
     static final class CapturingLogger implements Logger {
         final List<String> messages = new ArrayList<>();
 

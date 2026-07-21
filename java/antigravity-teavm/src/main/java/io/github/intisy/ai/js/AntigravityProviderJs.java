@@ -52,29 +52,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * TeaVM JS export surface over antigravity-auth's Java port (T7a) -- proves all five ported
- * classes ({@code AntigravityAuth}, {@code AntigravityLanes}, {@code AntigravityVersions},
- * {@code AntigravityCatalog}, {@code AntigravityQuotaParser}) are TeaVM-transpilable ({@code
- * generateJavaScript} green), mirroring claude-code-auth's {@code ClaudeProviderJs} pattern. Lives
- * in the SAME package ({@code io.github.intisy.ai.js}) as core-proxy's {@code :teavm} module (a
- * Gradle project dependency, see {@code antigravity-teavm/build.gradle}), so {@code
- * SimpleJsonCodec} is referenced unqualified exactly like {@code CoreProxyJs}/{@code
- * ClaudeProviderJs} do -- NOT duplicated here.
+ * TeaVM JS export surface over antigravity-auth's Java. Lives in the SAME package ({@code
+ * io.github.intisy.ai.js}) as core-proxy's {@code :teavm} module (a Gradle project dependency, see
+ * {@code antigravity-teavm/build.gradle}), so {@code SimpleJsonCodec} is referenced unqualified
+ * exactly like {@code CoreProxyJs}/{@code ClaudeProviderJs} do, NOT duplicated here.
  *
- * <p>Every export below calls straight into the JVM-side ported classes -- ONE Java method,
- * compiled twice (javac for {@code :antigravity-provider}'s jar, TeaVM for this module) -- so this
- * is a thin touch-surface, not a reimplementation. T7a does NOT wire this JS into antigravity-
- * auth's TS runtime (that's a later task); this module only proves transpilability.
+ * <p>Every export below calls straight into the JVM-side classes: one Java method, compiled twice
+ * (javac for {@code :antigravity-provider}'s jar, TeaVM for this module), so this is a thin
+ * touch-surface, not a reimplementation.
  */
 public final class AntigravityProviderJs {
 
     private static final Clock SYSTEM_CLOCK = () -> System.currentTimeMillis();
-    // Fixed 0.5 stand-in for Math.random -- this surface only proves transpilability, not
-    // randomness; a deterministic value keeps the exported methods pure/reproducible.
+    // Fixed 0.5 stand-in for Math.random used by the smoke exports; a deterministic value keeps them
+    // pure and reproducible.
     private static final Random FIXED_RANDOM = () -> 0.5;
-    // No-op Logger stand-in for the TS `console.warn` sites (T7b transform layer). T7c-1 ported the
-    // real SchemaCleaner (cleanJSONSchemaForAntigravity), so the Claude transform surface below now
-    // injects it instead of the former identity double.
+    // No-op Logger stand-in for the TS `console.warn` sites in the transform layer.
     private static final Logger NOOP_LOGGER = msg -> { };
     private static final ClaudeTransforms.SchemaCleaner REAL_CLEANER = AntigravitySchemaCleaner::clean;
 
@@ -116,10 +109,10 @@ public final class AntigravityProviderJs {
         return String.valueOf(AntigravityLanes.calculateBackoffMs(classified, consecutiveFailures, null, FIXED_RANDOM));
     }
 
-    // ---- AntigravityVersions (Task 7b-1: production exports, real jsRandom) ------------------------
+    // ---- AntigravityVersions (production exports, real jsRandom) -----------------------------------
 
-    /** JS {@code (versionListJson, min, jsRandom) => string} -- {@link AntigravityVersions#pickVersion}
-     *  (fingerprint.ts's new-account version pick; {@code min} empty/{@code null} = no floor). */
+    /** JS {@code (versionListJson, min, jsRandom) => string}: {@link AntigravityVersions#pickVersion}
+     *  (new-account version pick; {@code min} empty/{@code null} = no floor). */
     @JSExport
     public static String pickVersionProd(String versionListJson, String min, JsRandomFn jsRandom) {
         JsonCodec json = new SimpleJsonCodec();
@@ -130,10 +123,10 @@ public final class AntigravityProviderJs {
 
     /**
      * JS {@code (accountsJson, now, versionListJson, jsRandom) => string} (JSON array of {@code
-     * {accountId,scheduleOnly,nextVersionDriftAt,userAgent,version,versionPickedAt}}) -- {@link
-     * AntigravityHandleRouting#driftAccountVersions}, the per-account UA version-drift scheduler
-     * (index.ts's {@code driftAccountVersions}). Returns the ordered mutations only; the host applies
-     * each via {@code manager.mutate} (Option-B: Java decides, host applies).
+     * {accountId,scheduleOnly,nextVersionDriftAt,userAgent,version,versionPickedAt}}): {@link
+     * AntigravityHandleRouting#driftAccountVersions}, the per-account UA version-drift scheduler.
+     * Returns the ordered mutations only; the host applies each via {@code manager.mutate} (Java
+     * decides, host applies).
      */
     @JSExport
     public static String driftAccountVersionsProd(String accountsJson, double now, String versionListJson, JsRandomFn jsRandom) {
@@ -199,7 +192,7 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityQuotaParser.aggregateQuotaFamilies(models));
     }
 
-    // ---- AntigravityQuotaParser: accounts-controller.ts's account-view (Task 7a) ------------------
+    // ---- AntigravityQuotaParser: account-view -----------------------------------------------------
     // familyLabel and allPoolsExhausted have no direct TS caller: familyLabel is used internally by
     // aggregateQuotaFamilies (above, wired to fetchQuotaFamilies); allPoolsExhausted is used
     // internally by antigravityStatus/antigravityAvailableAt below. Neither needs its own JS export.
@@ -214,7 +207,7 @@ public final class AntigravityProviderJs {
     /**
      * Exercises {@link AntigravityQuotaParser#antigravityAvailableAt} (account JSON + now epoch-ms).
      * Returns the raw {@code double} (not JSON) so a disabled account's {@code Double.POSITIVE_INFINITY}
-     * compiles straight to JS {@code Infinity} -- {@code SimpleJsonCodec} has no JSON encoding for it.
+     * compiles straight to JS {@code Infinity}, which {@code SimpleJsonCodec} has no JSON encoding for.
      */
     @JSExport
     public static double antigravityAvailableAt(String accountJson, double now) {
@@ -230,7 +223,7 @@ public final class AntigravityProviderJs {
         return result == null ? null : json.stringify(result);
     }
 
-    // ---- AntigravityModelResolver (T7b) -----------------------------------------------------------
+    // ---- AntigravityModelResolver -----------------------------------------------------------------
 
     /** Exercises {@link AntigravityModelResolver#resolveModelWithTier} (JSON out). */
     @JSExport
@@ -244,7 +237,7 @@ public final class AntigravityProviderJs {
         return new SimpleJsonCodec().stringify(AntigravityModelResolver.resolveModelForHeaderStyle(model, headerStyle));
     }
 
-    // ---- CrossModelSanitizer (T7b) ----------------------------------------------------------------
+    // ---- CrossModelSanitizer ----------------------------------------------------------------------
 
     /** Exercises {@link CrossModelSanitizer#sanitizeCrossModelPayload} via the JsonCodec SPI. */
     @JSExport
@@ -261,7 +254,7 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- GeminiTransforms (T7b) -------------------------------------------------------------------
+    // ---- GeminiTransforms -------------------------------------------------------------------------
 
     /** Exercises {@link GeminiTransforms#toGeminiSchema} via the JsonCodec SPI. */
     @JSExport
@@ -284,7 +277,7 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- ClaudeTransforms (T7b) -------------------------------------------------------------------
+    // ---- ClaudeTransforms -------------------------------------------------------------------------
 
     /** Exercises {@link ClaudeTransforms#applyClaudeTransforms} (mutates payload, identity cleaner). */
     @JSExport
@@ -299,7 +292,7 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- AntigravitySchemaCleaner (T7c-1) ---------------------------------------------------------
+    // ---- AntigravitySchemaCleaner -----------------------------------------------------------------
 
     /** Exercises {@link AntigravitySchemaCleaner#clean} via the JsonCodec SPI (JSON in -> JSON out). */
     @JSExport
@@ -308,7 +301,7 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravitySchemaCleaner.clean(schemaJson != null ? json.parse(schemaJson) : null));
     }
 
-    // ---- AntigravityThinkingConfig (T7c-2) --------------------------------------------------------
+    // ---- AntigravityThinkingConfig ----------------------------------------------------------------
 
     /** Exercises {@link AntigravityThinkingConfig#normalizeThinkingConfig} via the JsonCodec SPI. */
     @JSExport
@@ -327,13 +320,13 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityThinkingConfig.extractVariantThinkingConfig(po, gc));
     }
 
-    // ---- AntigravityThinkingBlocks (T7c-2) --------------------------------------------------------
+    // ---- AntigravityThinkingBlocks ----------------------------------------------------------------
 
-    // No-op signature-cache getter -- this surface only proves transpilability, not caching.
+    // No-op signature-cache getter for the smoke exports.
     private static final AntigravityThinkingBlocks.CachedSignatureLookup NO_CACHE = (sessionId, text) -> null;
-    // Identity JsonStringParser stand-in for recursivelyParseJsonStrings (T7c-3, injected seam).
+    // Identity JsonStringParser stand-in for recursivelyParseJsonStrings.
     private static final AntigravityThinkingBlocks.JsonStringParser IDENTITY_PARSER = value -> value;
-    // Deterministic ImageSink stand-in for processImageData's Bucket-C fs write (data-URL fallback).
+    // Deterministic ImageSink stand-in for processImageData's fs write (data-URL fallback).
     private static final AntigravityThinkingBlocks.ImageSink DATA_URL_SINK =
             (mimeType, data) -> data == null ? null : "data:" + mimeType + ";base64," + data;
 
@@ -353,7 +346,7 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityThinkingBlocks.transformThinkingParts(response, IDENTITY_PARSER, DATA_URL_SINK));
     }
 
-    // ---- AntigravityResponseParse (T7c-3) ---------------------------------------------------------
+    // ---- AntigravityResponseParse -----------------------------------------------------------------
 
     /** Exercises {@link AntigravityResponseParse#parseAntigravityApiBody} (cloudcode-pa array shape) via JsonCodec. */
     @JSExport
@@ -410,7 +403,7 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- AntigravityToolPairing (T7c-3) -----------------------------------------------------------
+    // ---- AntigravityToolPairing -------------------------------------------------------------------
 
     /** Exercises {@link AntigravityToolPairing#fixToolResponseGrouping} via JsonCodec. */
     @JSExport
@@ -455,7 +448,7 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    // ---- AntigravityIrBridge (SP-2: core-ir) ------------------------------------------------------
+    // ---- AntigravityIrBridge (core-ir) ------------------------------------------------------------
 
     /** Exercises {@link AntigravityIrBridge#supportsThinking}. */
     @JSExport
@@ -464,11 +457,11 @@ public final class AntigravityProviderJs {
     }
 
     /**
-     * SP-3 T2: the request-encode half of the TS {@code handleIr} boundary -- {@code irJson} is
-     * ALREADY a decoded IR (the TS driver's caller ran {@code AnthropicTranslator.decodeRequest}
-     * itself), so this applies only antigravity's own thinking-budget resolution + the neutral
-     * IR-&gt;Gemini encode, without a second Anthropic decode. Mirrors {@link AntigravityHostSeams}'s
-     * {@code HostIrRequestPreparer} on the JVM side.
+     * The request-encode half of the TS {@code handleIr} boundary: {@code irJson} is ALREADY a decoded
+     * IR (the caller ran {@code AnthropicTranslator.decodeRequest} itself), so this applies only
+     * antigravity's own thinking-budget resolution and the neutral IR-&gt;Gemini encode, without a
+     * second Anthropic decode. Mirrors {@link AntigravityHostSeams}'s {@code HostIrRequestPreparer} on
+     * the JVM side.
      */
     @JSExport
     public static String resolveThinkingBudgetAndEncodeGemini(String irJson, String model) {
@@ -478,7 +471,7 @@ public final class AntigravityProviderJs {
         return AntigravityIrBridge.encodeIrToGemini(json, ir);
     }
 
-    // ---- AntigravityStreamTransform (T7d) ---------------------------------------------------------
+    // ---- AntigravityStreamTransform ---------------------------------------------------------------
 
     /** Exercises {@link AntigravityStreamTransform#hashString} (DJB2, {@code >>> 0}, base16). */
     @JSExport
@@ -515,7 +508,7 @@ public final class AntigravityProviderJs {
                 sessionKey, null, true, null, debugState);
     }
 
-    // ---- AntigravityFingerprint / AntigravityRequestKeys / AntigravityRequestSignatures (T7e) -----
+    // ---- AntigravityFingerprint / AntigravityRequestKeys / AntigravityRequestSignatures -----------
 
     /** Exercises {@link AntigravityFingerprint#platformToDisplayName}. */
     @JSExport
@@ -561,7 +554,7 @@ public final class AntigravityProviderJs {
         return json.stringify(payload);
     }
 
-    // ---- AntigravityRequestPrep (T7e) -------------------------------------------------------------
+    // ---- AntigravityRequestPrep -------------------------------------------------------------------
 
     private static final AntigravityRequestKeys.Hasher STUB_HASHER =
             input -> "00000000000000000000000000000000000000000000000000000000000000ff";
@@ -664,7 +657,7 @@ public final class AntigravityProviderJs {
         return parsed instanceof Map ? (Map<String, Object>) parsed : new java.util.LinkedHashMap<>();
     }
 
-    // ---- AntigravityHandleRouting / AntigravityProjectContext / Orchestrator (T7f) ----------------
+    // ---- AntigravityHandleRouting / AntigravityProjectContext / Orchestrator ----------------------
 
     /** Exercises {@link AntigravityHandleRouting#isAutoModel}. */
     @JSExport
@@ -728,8 +721,8 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    /** JS {@code (jsRandom, jsUuid) => string} -- {@link AntigravityRequestPrep#generateSyntheticProjectId}
-     *  (real seams; login.ts/accounts-controller.ts's ad-hoc verify-ping ids + fetchModels' fallback). */
+    /** JS {@code (jsRandom, jsUuid) => string}: {@link AntigravityRequestPrep#generateSyntheticProjectId}
+     *  (real seams; the ad-hoc verify-ping ids + fetchModels' fallback). */
     @JSExport
     public static String generateSyntheticProjectIdProd(JsRandomFn jsRandom, JsUuidFn jsUuid) {
         Random random = () -> jsRandom.next();
@@ -741,14 +734,14 @@ public final class AntigravityProviderJs {
     }
 
     /**
-     * Task 7b-2: standalone project-id resolution for ONE account -- {@code fetchModels}' host entry
-     * point. Calls the SAME {@link AntigravityHandleOrchestrator#resolveProjectId} the live SERVE path
-     * (via {@link #handleAntigravityRequestAsync}) already uses, so this shares that Java decision
-     * verbatim instead of re-implementing it. {@code accounts.mutate} is implemented by mutating the
-     * SAME account {@code Map} parsed from {@code accountJson} in place (there is only ever the one
-     * account in scope here) -- the returned {@code meta} reflects the post-mutation state; the host
-     * persists {@code syntheticProjectId}/{@code managedProjectId} into its own account store.
-     * Preparer/executor/modelCache are never invoked by {@code resolveProjectId} -- unreachable stubs.
+     * Standalone project-id resolution for ONE account: {@code fetchModels}' host entry point. Calls
+     * the same {@link AntigravityHandleOrchestrator#resolveProjectId} the SERVE path (via {@link
+     * #handleAntigravityRequestAsync}) uses, so it shares that Java decision verbatim instead of
+     * re-implementing it. {@code accounts.mutate} is implemented by mutating the SAME account {@code
+     * Map} parsed from {@code accountJson} in place (there is only ever the one account in scope here);
+     * the returned {@code meta} reflects the post-mutation state, and the host persists {@code
+     * syntheticProjectId}/{@code managedProjectId} into its own account store. Preparer/executor/modelCache
+     * are never invoked by {@code resolveProjectId}, so they are unreachable stubs.
      *
      * @return {@code Promise<string>} resolving to JSON {@code {projectId, meta}}
      */
@@ -902,27 +895,20 @@ public final class AntigravityProviderJs {
         return d.body;
     }
 
-    // ---- T7g1: the async entry (multi-@Async composition proof) ---------------------------------
+    // ---- The async entry (multi-@Async composition) ---------------------------------------------
 
     /**
-     * THE T7g1 export the live-rewire task (T7g2) will build on: runs the FULL {@link
-     * AntigravityHandleOrchestrator#handle} decision loop with host transport, account rotation and
-     * project-context discovery supplied as JS async/sync callbacks, and surfaces the whole
-     * (repeatedly-suspending) call graph to JS as ONE {@code Promise}. Inside the loop a single
-     * {@code attemptModel} iteration can suspend on {@link JsAccountOpsBridge#acquire} (async) then,
-     * inside {@code resolveProjectId}, on {@link JsProjectLoaderBridge#load} and {@link
-     * JsProjectOnboarderBridge#onboard} (async), then on {@link JsAttemptExecutorBridge#execute}
-     * (async) -- up to FOUR DISTINCT {@code @Async} bridges composing in one TeaVM CPS-transformed
-     * call graph (a stronger composition than claude's two). Built by hand as a {@code JSPromise} over
-     * a thread reaching the {@code @Async} boundaries (identical to {@code
-     * ClaudeProviderJs.handleClaudeRequestAsync}) -- not {@code JSPromise.callAsync}, whose generic
-     * {@code resolve.accept} would leak a raw {@code jl_String} instead of a real JS string.
-     *
-     * <p>ZERO live impact: this is not yet wired to antigravity-auth's TS runtime (that is T7g2);
-     * the {@code RequestPreparer}/{@code ThinkingRecovery} live-wiring decision is deferred there too.
-     * The {@code clock}/{@code random} are deterministic (config {@code nowMs}, else a fixed epoch;
-     * fixed {@code random}=0.5) so the smoke can assert byte-parity with the T7f snapshots; T7g2
-     * supplies real ones.
+     * The async entry: runs the FULL {@link AntigravityHandleOrchestrator#handle} decision loop with
+     * host transport, account rotation and project-context discovery supplied as JS async/sync
+     * callbacks, and surfaces the whole (repeatedly-suspending) call graph to JS as ONE {@code
+     * Promise}. Inside the loop a single {@code attemptModel} iteration can suspend on {@link
+     * JsAccountOpsBridge#acquire} (async) then, inside {@code resolveProjectId}, on {@link
+     * JsProjectLoaderBridge#load} and {@link JsProjectOnboarderBridge#onboard} (async), then on {@link
+     * JsAttemptExecutorBridge#execute} (async): up to FOUR DISTINCT {@code @Async} bridges composing in
+     * one TeaVM CPS-transformed call graph. Built by hand as a {@code JSPromise} over a thread reaching
+     * the {@code @Async} boundaries (identical to {@code ClaudeProviderJs.handleClaudeRequestAsync}),
+     * not {@code JSPromise.callAsync}, whose generic {@code resolve.accept} would leak a raw {@code
+     * jl_String} instead of a real JS string.
      *
      * @param inputsJson        {@code {url, method, headers:{}, bodyText, ctxModel?}}
      * @param configJson        {@code {nowMs?, platform?, arch?}} (deterministic clock + platform seam)
@@ -968,11 +954,11 @@ public final class AntigravityProviderJs {
                 Clock clock = parseClock(json, configJson);
                 AntigravityProjectContext.Platform platform = parsePlatform(json, configJson);
 
-                // Real entropy injected from JS (CRITICAL-1 fix): without these the baked FIXED_RANDOM
-                // (0.5) + counter ids made generateSyntheticProjectId a CONSTANT ("swift-spark-00000"),
-                // so every account lacking a discovered managed project minted + persisted the SAME
-                // x-goog-user-project-equivalent and got correlated (index.ts:108-109). The node smoke /
-                // parity harness pass deterministic stand-ins through these SAME seams.
+                // Real entropy injected from JS: with a fixed random (0.5) + counter ids,
+                // generateSyntheticProjectId would be a CONSTANT ("swift-spark-00000"), so every account
+                // lacking a discovered managed project would mint + persist the SAME
+                // x-goog-user-project-equivalent and get correlated. The node smoke / parity harness pass
+                // deterministic stand-ins through these SAME seams.
                 Random random = () -> jsRandom.next();
                 AntigravityRequestPrep.IdGenerator ids = () -> {
                     JSString u = jsUuid.uuid();
@@ -1120,7 +1106,7 @@ public final class AntigravityProviderJs {
         return o instanceof String ? (String) o : null;
     }
 
-    // ---- Production seam exports (Task 2: TeaVM de-dup) --------------------------------------------
+    // ---- Production seam exports ------------------------------------------------------------------
 
     /** JS {@code (input) => string} (production: sha256 hex) -> the {@link AntigravityRequestKeys.Hasher} SPI. */
     @JSFunctor
@@ -1135,8 +1121,8 @@ public final class AntigravityProviderJs {
     }
 
     /**
-     * {@code defaultSignatureStore}'s get/set/has/delete, grouped in ONE JS object -- multi-method, so
-     * NOT a {@code @JSFunctor} (mirrors {@link JsAccountOpsBridge.JsAccountFns}). {@code get} returns a
+     * {@code defaultSignatureStore}'s get/set/has/delete, grouped in ONE JS object (multi-method, so
+     * NOT a {@code @JSFunctor}; mirrors {@link JsAccountOpsBridge.JsAccountFns}). {@code get} returns a
      * JSON {@code {text,signature}} string (or {@code null}/{@code "null"}/empty for a miss).
      */
     public interface JsSignatureStoreFns extends JSObject {
@@ -1159,11 +1145,11 @@ public final class AntigravityProviderJs {
     /**
      * Production variant of {@link #prepareAntigravityRequest}: same pipeline, but every {@link
      * AntigravityRequestPrep.Deps} seam is bridged to a real JS host implementation instead of a
-     * deterministic stub. {@code thinkingRecovery} is the internal {@link AntigravityThinkingRecovery}
-     * (Task 1 port) -- not a JS seam. {@code endpointOverride} (empty/{@code null} for "use default"),
-     * {@code claudeToolHardening} and {@code claudePromptAutoCaching} close the Task 3 report's gaps
-     * #1/#2 -- the host resolves the config-driven booleans (defaults true/false) and the per-attempt
-     * endpoint override exactly as {@code prepareAntigravityRequest}'s callers do.
+     * deterministic stub. {@code thinkingRecovery} is the internal {@link AntigravityThinkingRecovery},
+     * not a JS seam. The host resolves the config-driven {@code claudeToolHardening} and {@code
+     * claudePromptAutoCaching} booleans (defaults true/false) and the per-attempt {@code
+     * endpointOverride} (empty/{@code null} for "use default") exactly as {@code
+     * prepareAntigravityRequest}'s callers do.
      */
     @JSExport
     public static String prepareAntigravityRequestProd(
@@ -1245,20 +1231,17 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance -- {@link #newStreamMapper}'s return. */
+    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance; {@link #newStreamMapper}'s return. */
     public interface JsStreamMapperHandle extends JSObject {
-        /** SP-2: takes a raw SSE text CHUNK (not a pre-parsed object) -- the bridge does its own line-buffering now. */
+        /** Takes a raw SSE text CHUNK (not a pre-parsed object); the bridge does its own line-buffering. */
         JSArray<JSString> handle(JSString chunk);
 
         JSArray<JSString> finish();
     }
 
     /**
-     * Factory for a stateful stream mapper: ONE captured {@link AntigravityGeminiSseBridge}, driven
-     * by the TS {@code TransformStream} (Task 3; SP-2 replaced the underlying {@code
-     * AntigravityStreamMapper} with core-ir's {@code GeminiTranslator}/{@code AnthropicTranslator}
-     * stream decoder/encoder -- the bridge itself now owns the SSE line-buffering, so {@code
-     * javaStream.ts} no longer needs its own {@code data:} line-parsing loop).
+     * Factory for a stateful stream mapper: ONE captured {@link AntigravityGeminiSseBridge}, driven by
+     * the TS {@code TransformStream}. The bridge owns the SSE line-buffering.
      */
     @JSExport
     public static JsStreamMapperHandle newStreamMapper(String model, JsIdsFns jsIds) {
@@ -1299,7 +1282,7 @@ public final class AntigravityProviderJs {
         return arr;
     }
 
-    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance -- {@link #newIrStreamMapper}'s return. */
+    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance; {@link #newIrStreamMapper}'s return. */
     public interface JsIrStreamMapperHandle extends JSObject {
         /** Raw Gemini SSE text chunk in, a JSON array of enriched {@code IrStreamEvent}s out. */
         JSString handle(JSString chunk);
@@ -1308,12 +1291,11 @@ public final class AntigravityProviderJs {
     }
 
     /**
-     * SP-3 T2: the response-decode half of the TS {@code handleIr} boundary -- {@link
-     * #newStreamMapper}'s sibling, but returns the SAME id-minted/model-overwritten {@code
-     * IrStreamEvent}s {@link AntigravityGeminiSseBridge#handle}/{@code #finish} would encode to
-     * Anthropic SSE text, serialized as a neutral JSON array instead (no Anthropic wire knowledge),
-     * for {@code javaStream.ts}'s {@code makeIrStream} to enqueue directly onto an
-     * {@code IrEventStream}.
+     * The response-decode half of the TS {@code handleIr} boundary: {@link #newStreamMapper}'s sibling,
+     * but returns the SAME id-minted/model-overwritten {@code IrStreamEvent}s {@link
+     * AntigravityGeminiSseBridge#handle}/{@code #finish} would encode to Anthropic SSE text, serialized
+     * as a neutral JSON array instead (no Anthropic wire knowledge), for {@code javaStream.ts}'s {@code
+     * makeIrStream} to enqueue directly onto an {@code IrEventStream}.
      */
     @JSExport
     public static JsIrStreamMapperHandle newIrStreamMapper(String model, JsIdsFns jsIds) {
@@ -1356,7 +1338,7 @@ public final class AntigravityProviderJs {
     /**
      * Exports {@link AntigravityStreamTransform#cacheThinkingSignaturesFromResponse} (a fresh per-call
      * {@link AntigravityStreamTransform.ThoughtBuffer}; the JVM signature also requires a
-     * {@code signatureSessionKey}, so this export takes one beyond the plan's 2-arg sketch).
+     * {@code signatureSessionKey}, so this export takes one too).
      */
     @JSExport
     public static void cacheSignaturesFromResponse(String responseJson, String signatureSessionKey, JsSignatureStoreFns jsSignatureStore) {
@@ -1368,31 +1350,29 @@ public final class AntigravityProviderJs {
         AntigravityStreamTransform.cacheThinkingSignaturesFromResponse(response, signatureSessionKey, store, thoughtBuffer, null);
     }
 
-    // ---- Real-seamed response-transform exports (Task 3c: route SERVE through Java) ----------------
+    // ---- Real-seamed response-transform exports (route SERVE through Java) -------------------------
 
     /**
-     * JS {@code (mimeType, base64Data) => string|null} -- production: the real {@code processImageData}
+     * JS {@code (mimeType, base64Data) => string|null}; production: the real {@code processImageData}
      * (image-saver.ts), which SAVES the decoded image to {@code ~/.opencode|.claude/generated-images/}
-     * and returns a markdown link (or a data-URL fallback on a write failure). Replaces the
-     * transpilability-only {@code DATA_URL_SINK} stand-in for every production response-transform export
-     * below.
+     * and returns a markdown link (or a data-URL fallback on a write failure).
      */
     @JSFunctor
     public interface JsImageSinkFn extends JSObject {
         JSString save(JSString mimeType, JSString base64Data);
     }
 
-    /** JS {@code (sessionKey, text, signature) => void} -- production: {@code cacheSignature} (cache.ts), the on-disk signature cache write. */
+    /** JS {@code (sessionKey, text, signature) => void}; production: {@code cacheSignature} (cache.ts), the on-disk signature cache write. */
     @JSFunctor
     public interface JsCacheSignatureFn extends JSObject {
         void onCacheSignature(JSString sessionKey, JSString text, JSString signature);
     }
 
     /**
-     * Host-owned Gemini-3 SSE-reconnect thought-dedup set (request.ts:79's {@code
-     * sessionDisplayedThinkingHashes}) -- has/add over hash strings, grouped like {@link
-     * JsSignatureStoreFns} (multi-method, so not a {@code @JSFunctor}). The host passes {@code null}
-     * for every non-Gemini-3 {@code effectiveModel} (request.ts:1770's exact gate), matching TS.
+     * Host-owned Gemini-3 SSE-reconnect thought-dedup set ({@code sessionDisplayedThinkingHashes}):
+     * has/add over hash strings, grouped like {@link JsSignatureStoreFns} (multi-method, so not a
+     * {@code @JSFunctor}). The host passes {@code null} for every non-Gemini-3 {@code effectiveModel},
+     * matching TS.
      */
     public interface JsThoughtDedupFns extends JSObject {
         boolean has(JSString hash);
@@ -1402,7 +1382,7 @@ public final class AntigravityProviderJs {
 
     // Bridges a nullable JsThoughtDedupFns to the java.util.Set<String> that
     // AntigravityStreamTransform#transformSseLine/deduplicateThinkingText expect. Only contains()/add()
-    // are ever invoked by that pure logic (never iterated/sized) -- those are the only AbstractSet
+    // are ever invoked by that pure logic (never iterated/sized), so those are the only AbstractSet
     // methods overridden.
     private static Set<String> bridgeThoughtDedup(JsThoughtDedupFns fns) {
         if (fns == null) return null;
@@ -1443,10 +1423,10 @@ public final class AntigravityProviderJs {
 
     /**
      * Production non-streaming SERVE-transform export: the "OK JSON body" half of
-     * {@code transformAntigravityResponse} (request.ts:1782-1926, real-seamed via {@link
+     * {@code transformAntigravityResponse} (real-seamed via {@link
      * AntigravityResponseTransform#transformServe}). {@code debugText} is the host-resolved
      * {@code isDebugTuiEnabled()}/{@code getKeepThinking()} placeholder (empty/{@code null} for
-     * "none" -- request.ts:1735-1740); {@code jsImageSink} bridges the real {@code processImageData}.
+     * "none"); {@code jsImageSink} bridges the real {@code processImageData}.
      * Returns {@code {status, headers, body}} JSON for the host to build the final {@code Response}.
      */
     @JSExport
@@ -1489,26 +1469,25 @@ public final class AntigravityProviderJs {
     /**
      * Stateful JS handle over ONE streaming SERVE-transform "session" (thought/sent buffers +
      * debug-injected flag persist across lines, mirroring {@code createStreamingTransformer}'s
-     * per-stream closures) -- {@link #newResponseSseTransformer}'s return.
+     * per-stream closures); {@link #newResponseSseTransformer}'s return.
      */
     public interface JsResponseSseHandle extends JSObject {
         JSString handle(JSString line);
     }
 
     /**
-     * Factory for the streaming half of {@code transformAntigravityResponse}
-     * (request.ts:1758-1774's {@code createStreamingTransformer} options, real-seamed via {@link
+     * Factory for the streaming half of {@code transformAntigravityResponse} ({@code
+     * createStreamingTransformer} options, real-seamed via {@link
      * AntigravityStreamTransform#transformSseLine}). The host {@code TransformStream} shell (line
-     * buffering + the 45s watchdog + the synthetic-usage flush) stays TS (Task 3c's
-     * {@code javaStream.ts}); every line's dedup/signature-cache/debug-inject/thinking-transform
-     * decision runs here. {@code jsSignatureStore} is the SAME adapter {@link
-     * #prepareAntigravityRequestProd} uses (bridges the real {@code defaultSignatureStore});
-     * {@code jsCacheSignature} bridges the real on-disk {@code cacheSignature}; {@code jsImageSink}
-     * bridges the real {@code processImageData}; {@code jsThoughtDedup} bridges the real Gemini-3
-     * SSE-reconnect {@code sessionDisplayedThinkingHashes} dedup set (request.ts:79) -- the host passes
-     * {@code null} here for every non-Gemini-3 {@code effectiveModel}, exactly mirroring TS's own
-     * {@code effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes :
-     * undefined} gate (request.ts:1770); this method never re-derives that gate itself.
+     * buffering + the 45s watchdog + the synthetic-usage flush) stays TS ({@code javaStream.ts}); every
+     * line's dedup/signature-cache/debug-inject/thinking-transform decision runs here. {@code
+     * jsSignatureStore} is the SAME adapter {@link #prepareAntigravityRequestProd} uses (bridges the
+     * real {@code defaultSignatureStore}); {@code jsCacheSignature} bridges the real on-disk {@code
+     * cacheSignature}; {@code jsImageSink} bridges the real {@code processImageData}; {@code
+     * jsThoughtDedup} bridges the real Gemini-3 SSE-reconnect {@code sessionDisplayedThinkingHashes}
+     * dedup set. The host passes {@code null} here for every non-Gemini-3 {@code effectiveModel},
+     * exactly mirroring TS's own {@code effectiveModel && isGemini3Model(effectiveModel) ?
+     * sessionDisplayedThinkingHashes : undefined} gate; this method never re-derives that gate itself.
      */
     @JSExport
     public static JsResponseSseHandle newResponseSseTransformer(

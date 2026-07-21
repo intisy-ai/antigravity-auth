@@ -1,10 +1,8 @@
 // @ts-nocheck
-// Task 7a parity gate (models-fetch.ts's TS buildAntigravityCatalog is deleted, superseded by Java):
-// proves buildCatalogViaJava (javaHandle.ts, calling AntigravityProviderJs's buildCatalog export ->
+// Verifies buildCatalogViaJava (javaHandle.ts, calling AntigravityProviderJs's buildCatalog export ->
 // AntigravityCatalog.buildAntigravityCatalog) produces the frozen output
-// (catalog-scenarios.expected.json, captured from the TS function before its deletion) for a
-// representative fetchAvailableModels payload — exercising effort-variant grouping, deprecated/
-// image-generation exclusion, the Gemini CLI pool, and default-model group-remapping.
+// (catalog-scenarios.expected.json) for a representative fetchAvailableModels payload: effort-variant
+// grouping, deprecated/image-generation exclusion, the Gemini CLI pool, and default-model group-remapping.
 import { describe, it, expect } from "vitest";
 import { buildCatalogViaJava } from "../driver/javaHandle.js";
 import scenarios from "./catalog-scenarios.expected.json";

@@ -4,7 +4,7 @@
  * Config now lives entirely in core's per-plugin store (config/antigravity.json),
  * read/written via core's loadConfig/getConfigValue/setConfigValue. This file only
  * declares the shape (AntigravityConfig) and the DEFAULT_CONFIG registered with
- * defineConfig("antigravity", ...) — no validation, no file access.
+ * defineConfig("antigravity", ...), no validation, no file access.
  *
  * Only keys with a real runtime consumer are declared here: the 9 pre-existing
  * functional keys plus the 3 wired-up features (request_jitter_max_ms, cli_first,
@@ -14,7 +14,7 @@
  * auto_mode*, pid_offset_enabled, switch_on_first_rate_limit, scheduling_mode,
  * max_cache_first_wait_seconds, failure_ttl_seconds, soft_quota_*,
  * quota_refresh_interval_minutes, health_score, token_bucket) had no consumer in
- * either the TS driver or the JVM provider — deleted, not just hidden.
+ * either the TS driver or the JVM provider, deleted, not just hidden.
  */
 
 /**

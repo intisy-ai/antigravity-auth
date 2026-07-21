@@ -36,8 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * retry/rotation/terminal-error materialization is exercised end-to-end without any real network
  * call. A SERVE decision returns an {@link IrResponse} (decoded from the buffered upstream Gemini
  * SSE via {@link AntigravityGeminiSseBridge#bufferedGeminiSseToIr}); every error decision throws a
- * {@link HandleIrException}. The legacy Anthropic-wire {@code handle()} path these scenarios used to
- * drive was removed in T4 (canonical-IR migration); app-wire re-encoding is now the front-door's job.
+ * {@link HandleIrException}.
  *
  * <p>Test models are deliberately split by lane/headerStyle: {@code gemini-*} ids are the
  * "gemini-cli" lane (a single endpoint per account attempt, {@link AntigravityHandleRouting
@@ -80,7 +79,7 @@ class AntigravityServePathTest {
 
         // A non-"gemini-cli" lane model: with an EMPTY pool, `acquire` returns null regardless of
         // strategy (Selection.selectIndex short-circuits on a zero-size pool even under HYBRID's
-        // "soonest free" last resort), so this reaches the true SYNTHETIC 503 -- a gemini-* model
+        // "soonest free" last resort), so this reaches the true SYNTHETIC 503. A gemini-* model
         // would instead get reclassified into the GEMINI_CLI_EXHAUSTED terminal by the orchestrator's
         // own lane check, which is a different (also-valid) decision covered by no test here.
         HandleIrException thrown = assertThrows(HandleIrException.class,
@@ -99,7 +98,7 @@ class AntigravityServePathTest {
     @Test
     void allAccountsRateLimited_materializesQuotaResetTerminal(@TempDir Path configDir) {
         // core-auth's default Strategy.HYBRID never reports "no account available" while the pool
-        // is non-empty -- once nobody is CURRENTLY free it falls back to "whoever frees up
+        // is non-empty. Once nobody is CURRENTLY free it falls back to "whoever frees up
         // soonest" (Selection#soonestFree) and keeps retrying, so attemptModel only gives up after
         // MAX_ATTEMPTS account-cycles, each running every "antigravity" headerStyle endpoint
         // fallback. Every one of those calls must 429 for the exhaustion to be genuine.
@@ -240,7 +239,7 @@ class AntigravityServePathTest {
             r.status = status;
             r.headers = new LinkedHashMap<>();
             // Real cloudcode-pa responses are JSON; setting this lets AntigravityResponseTransform
-            // (Phase 3b) actually run on the SERVE path instead of taking its non-JSON passthrough.
+            // actually run on the SERVE path instead of taking its non-JSON passthrough.
             r.headers.put("content-type", "application/json");
             r.body = body;
             queue.add(r);

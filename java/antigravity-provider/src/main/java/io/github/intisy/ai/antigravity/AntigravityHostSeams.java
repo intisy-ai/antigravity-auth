@@ -17,14 +17,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * JVM host implementations of the seven seams {@link AntigravityHandleOrchestrator} needs (Phase
- * 3a, see {@code .superpowers/sdd/phase-3a-brief.md}): adapts {@link AntigravityBackend}'s
- * core-auth {@code AccountManager}/{@code AccountStore} to {@code AccountOps}; moves the Phase 2
- * inline Anthropic-&gt;Gemini request build (SP-2: {@code AntigravityIrBridge} +
- * {@code AntigravityRequestPrep}) into {@code RequestPreparer}; runs one attempt via {@code
- * HttpClient} as {@code AttemptExecutor}; and wires the model-cache/project-context seams. Every
- * class here is small and holds only what it needs (an {@link AntigravityBackend}, sometimes a
- * fixed {@link Logger}) -- no decision logic lives here, only host I/O + shape adaptation.
+ * JVM host implementations of the seven seams {@link AntigravityHandleOrchestrator} needs: adapts
+ * {@link AntigravityBackend}'s core-auth {@code AccountManager}/{@code AccountStore} to {@code
+ * AccountOps}; builds the Anthropic-&gt;Gemini request ({@link AntigravityIrBridge} + {@link
+ * AntigravityRequestPrep}) in {@code RequestPreparer}; runs one attempt via {@code HttpClient} as
+ * {@code AttemptExecutor}; and wires the model-cache/project-context seams. Every class here is
+ * small and holds only what it needs (an {@link AntigravityBackend}, sometimes a fixed {@link
+ * Logger}); no decision logic lives here, only host I/O + shape adaptation.
  */
 final class AntigravityHostSeams {
 
@@ -47,7 +46,7 @@ final class AntigravityHostSeams {
                 acquired = backend.accounts.acquire(lane);
             } catch (RuntimeException e) {
                 // A refresh failure (e.g. a revoked refresh token) already disabled the account
-                // inside AccountManager -- fold it into the orchestrator's own "no account
+                // inside AccountManager, so fold it into the orchestrator's own "no account
                 // available" contract (null) rather than throwing out of the DECISION loop.
                 return null;
             }
@@ -80,7 +79,7 @@ final class AntigravityHostSeams {
 
         @Override
         public void reportProxyRateLimit(String accountId, boolean ipSuspected) {
-            // No JVM IP-proxy pool exists yet (brief seam 1) -- no-op.
+            // No JVM IP-proxy pool exists yet, so this is a no-op.
         }
 
         @Override
@@ -98,7 +97,7 @@ final class AntigravityHostSeams {
                 Map<String, Object> map = accountToMap(account);
                 mutator.apply(map);
                 // The orchestrator only ever writes meta.* keys (managedProjectId/
-                // syntheticProjectId) -- copy just `meta` back onto the stored Account.
+                // syntheticProjectId), so copy just `meta` back onto the stored Account.
                 Object meta = map.get("meta");
                 if (meta instanceof Map) {
                     account.meta = castMap(meta);
@@ -112,7 +111,7 @@ final class AntigravityHostSeams {
         return (Map<String, Object>) o;
     }
 
-    /** Account -&gt; plain Map, including every scalar field (brief seam 1: "for completeness"). */
+    /** Account -&gt; plain Map, including every scalar field. */
     static Map<String, Object> accountToMap(Account a) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", a.id);
@@ -162,9 +161,8 @@ final class AntigravityHostSeams {
                 String headerStyle, Map<String, Object> account) {
             String model = modelFromUrl(url);
             // Auto-candidate walking is not yet wired for this Provider SPI path (AntigravityProvider
-            // #handle's own in.autoCandidates is likewise always empty -- a pre-existing TODO, not a
-            // regression here), so `model` is fixed across attempts and re-resolving the budget/body
-            // per attempt is safe and matches the legacy path's per-attempt re-derivation exactly.
+            // #handle's own in.autoCandidates is likewise always empty, a pre-existing TODO), so
+            // `model` is fixed across attempts and re-resolving the budget/body per attempt is safe.
             AntigravityIrBridge.resolveThinkingBudget(ir, model);
             String geminiBodyJson = AntigravityIrBridge.encodeIrToGemini(backend.json, ir);
             return prepareFromGeminiBody(backend, logger, geminiBodyJson, model, url, method, headers,
@@ -198,8 +196,8 @@ final class AntigravityHostSeams {
             input.endpointOverride = endpoint;
             input.headerStyle = headerStyle;
             input.forceThinkingRecovery = false;
-            input.claudeToolHardening = null; // Input javadoc: null -> defaults to true, matches TS ?? true
-            input.claudePromptAutoCaching = false; // config default (schema.ts claude_prompt_auto_caching)
+            input.claudeToolHardening = null; // Input javadoc: null -> defaults to true
+            input.claudePromptAutoCaching = false; // config default (claude_prompt_auto_caching)
             input.fingerprint = AntigravityProvider.fingerprintFromMeta(metaOf(account));
             input.imageAspectRatio = null;
 
@@ -212,7 +210,7 @@ final class AntigravityHostSeams {
             deps.signatureStore = AntigravityProvider.NOOP_SIGNATURE_STORE;
             deps.thinkingRecovery = new AntigravityThinkingRecovery(backend.json);
             deps.logger = logger;
-            deps.keepThinking = false; // config default (schema.ts keep_thinking: false)
+            deps.keepThinking = false; // config default (keep_thinking: false)
             deps.pluginSessionId = AntigravityProvider.PLUGIN_SESSION_ID;
             deps.selectedHeaders = AntigravityProvider.defaultSelectedHeaders();
 
@@ -254,7 +252,7 @@ final class AntigravityHostSeams {
      * Runs ONE prepared request via {@link AntigravityBackend#http}. On a non-2xx status, unwraps
      * the cloudcode-pa error body ({@link AntigravityResponseParse#parseAntigravityApiBody}) to
      * surface {@code error.message}/{@code error.status||error.reason} for the orchestrator's
-     * rate-limit classification; no response BYTES are inspected beyond that -- the retained
+     * rate-limit classification; no response BYTES are inspected beyond that, and the retained
      * {@link HttpResponse} itself becomes the opaque {@code attemptRef} so a {@code SERVE}/{@code
      * SERVE_RAW} decision can return it verbatim.
      */
@@ -299,10 +297,10 @@ final class AntigravityHostSeams {
     // ---- Seam 4: ModelCacheLookup -----------------------------------------------------------------
 
     /**
-     * MVP (brief seam 4): reads the shared {@code models.json} cache ({@link ModelsCache}) if the
-     * antigravity catalog has been seeded there and returns the requested model's {@code variants}
-     * map; otherwise (no cache entry, no such model, no variants key) returns an empty map --
-     * NEVER {@code null}. Effort-variant resolution is a no-op until something populates that cache.
+     * Reads the shared {@code models.json} cache ({@link ModelsCache}) if the antigravity catalog
+     * has been seeded there and returns the requested model's {@code variants} map; otherwise (no
+     * cache entry, no such model, no variants key) returns an empty map, NEVER {@code null}.
+     * Effort-variant resolution is a no-op until something populates that cache.
      */
     static final class HostModelCacheLookup implements AntigravityHandleRouting.ModelCacheLookup {
         private final AntigravityBackend backend;
@@ -348,11 +346,11 @@ final class AntigravityHostSeams {
     }
 
     /**
-     * {@code loadManagedProject} (project.ts:121-170): POSTs {@code metadata} to {@code
+     * {@code loadManagedProject}: POSTs {@code metadata} to {@code
      * <endpoint>/v1internal:loadCodeAssist} with a Bearer access token, trying each ANTIGRAVITY
      * fallback endpoint in turn on a non-ok status or transport error. Only reached when an
-     * account has no {@code meta.projectId} (brief note); seeded/test accounts short-circuit
-     * before this seam is ever called.
+     * account has no {@code meta.projectId}; seeded/test accounts short-circuit before this seam
+     * is ever called.
      */
     static final class HostProjectLoader implements AntigravityProjectContext.ProjectLoader {
         private final AntigravityBackend backend;
@@ -385,7 +383,7 @@ final class AntigravityHostSeams {
                         return (Map<String, Object>) parsed;
                     }
                 } catch (RuntimeException e) {
-                    // try the next endpoint (project.ts:163-166's catch-and-continue)
+                    // try the next endpoint
                 }
             }
             return null;
@@ -405,10 +403,10 @@ final class AntigravityHostSeams {
     }
 
     /**
-     * {@code onboardManagedProject} (project.ts:176-233): POSTs {@code tierId}+{@code metadata} to
-     * {@code <endpoint>/v1internal:onboardUser}, polling up to 10 times per endpoint (5s apart,
-     * matching the TS defaults) until {@code done} is set, then returns the provisioned managed
-     * project id (or the caller's own {@code projectId} if {@code done} but no id came back).
+     * {@code onboardManagedProject}: POSTs {@code tierId}+{@code metadata} to
+     * {@code <endpoint>/v1internal:onboardUser}, polling up to 10 times per endpoint (5s apart)
+     * until {@code done} is set, then returns the provisioned managed project id (or the caller's
+     * own {@code projectId} if {@code done} but no id came back).
      */
     static final class HostProjectOnboarder implements AntigravityProjectContext.ProjectOnboarder {
         private static final int ATTEMPTS = 10;
@@ -439,7 +437,7 @@ final class AntigravityHostSeams {
                         req.body = body;
                         HttpResponse resp = backend.http.send(req);
                         if (resp.status / 100 != 2) {
-                            break; // next endpoint (project.ts:211-213)
+                            break; // next endpoint
                         }
                         Object parsed = AntigravityResponseParse.parseAntigravityApiBody(backend.json, resp.body);
                         if (parsed instanceof Map) {
@@ -454,7 +452,7 @@ final class AntigravityHostSeams {
                             }
                         }
                     } catch (RuntimeException e) {
-                        break; // next endpoint (project.ts:223-225)
+                        break; // next endpoint
                     }
                     sleep(DELAY_MS);
                 }

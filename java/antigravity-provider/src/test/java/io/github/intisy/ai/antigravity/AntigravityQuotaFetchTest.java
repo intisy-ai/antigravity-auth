@@ -22,10 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-E/E-D: quota discovery is served by the typed {@link AntigravityProvider#quota} capability
- * (backed by {@link AntigravityQuotaFetch#quota}, returning one {@link AccountQuota} per account so
- * an errored account is still represented rather than vanishing), not by a URL branch. The legacy
- * Anthropic-wire {@code handle()} override was removed in T4 (canonical-IR migration).
+ * Quota discovery is served by the typed {@link AntigravityProvider#quota} capability (backed by
+ * {@link AntigravityQuotaFetch#quota}, returning one {@link AccountQuota} per account so an errored
+ * account is still represented rather than vanishing).
  */
 class AntigravityQuotaFetchTest {
 
@@ -108,7 +107,7 @@ class AntigravityQuotaFetchTest {
 
         List<AccountQuota> accounts = callQuota(configDir);
 
-        // The errored account is still represented (not dropped) -- exactly what AccountQuota's
+        // The errored account is still represented (not dropped), exactly what AccountQuota's
         // per-account (not flattened) shape is designed to preserve.
         assertEquals(1, accounts.size());
         AccountQuota entry = accounts.get(0);
@@ -117,11 +116,6 @@ class AntigravityQuotaFetchTest {
         assertTrue(entry.bars.isEmpty());
         assertEquals(endpointCount, http.requests.size(), "every endpoint fallback must have been tried");
     }
-
-    // T4 (canonical-IR migration): the two former handle()-driven regression tests (GET /v1/quota
-    // no longer intercepted, POST /v1/messages still routed) are gone with the legacy Anthropic-wire
-    // handle() override itself. The typed quota(ctx) capability tests above are the live coverage;
-    // the serve path is covered by AntigravityServePathTest via handleIr.
 
     // ---- shared fixtures (mirrors AntigravityModelsFetchTest) -------------------------------------
 

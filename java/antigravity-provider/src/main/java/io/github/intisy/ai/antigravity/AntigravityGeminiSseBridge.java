@@ -32,38 +32,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * SP-2 successor to the deleted {@code AntigravityStreamMapper} (the Java port of {@code
- * geminiToAnthropicStream}'s SSE state machine, {@code src/plugin/anthropic-bridge.ts:102-200}):
- * a stateful per-connection bridge from upstream Gemini {@code streamGenerateContent} SSE to
- * outbound Anthropic Messages SSE, now built on core-ir's translators instead of a bespoke state
- * machine -- {@link GeminiTranslator#newStreamDecoder()} owns the line-buffering + per-part event
- * state machine (ported FROM {@code AntigravityStreamMapper} into core-ir, see its javadoc), and
+ * A stateful per-connection bridge from upstream Gemini {@code streamGenerateContent} SSE to
+ * outbound Anthropic Messages SSE, built on core-ir's translators: {@link
+ * GeminiTranslator#newStreamDecoder()} owns the line-buffering + per-part event state machine, and
  * {@link AnthropicTranslator#newStreamEncoder()} owns the outbound SSE framing.
  *
- * <h2>Id minting (kept, provider policy)</h2>
+ * <h2>Id minting (provider policy)</h2>
  * A real Gemini {@code functionCall} rarely carries an {@code id} (core-ir falls back to the tool
  * NAME, matching Gemini's own name-based pairing) and cloudcode-pa's {@code responseId} is not
- * guaranteed either -- the old bridge never trusted the wire for either id, always minting a fresh
+ * guaranteed either, so this bridge never trusts the wire for either id: it always mints a fresh
  * {@code msg_.../toolu_...} via the injected {@link IdGenerator} (real {@code Date.now}/{@code
- * Math.random} host-side). This bridge preserves that exact policy by overwriting the decoded
- * {@link MessageStartEvent#id}/{@link ContentBlockStartEvent#toolUseId} before encoding, rather
- * than trusting whatever core-ir's decoder derived from the wire -- necessary so two parallel
- * {@code functionCall}s to the SAME tool name in one turn still get distinct {@code tool_use} ids
- * (a real regression risk if the wire-derived name were used verbatim).
+ * Math.random} host-side), overwriting the decoded {@link MessageStartEvent#id}/{@link
+ * ContentBlockStartEvent#toolUseId} before encoding rather than trusting whatever core-ir's decoder
+ * derived from the wire. This is necessary so two parallel {@code functionCall}s to the SAME tool
+ * name in one turn still get distinct {@code tool_use} ids (a real regression risk if the
+ * wire-derived name were used verbatim).
  *
  * <p>{@link MessageStartEvent#model} is likewise overwritten with the CLIENT-facing model name
- * (the model Claude Code requested), never Gemini's own {@code modelVersion} string, matching the
- * old bridge's {@code model} closure parameter.
+ * (the model Claude Code requested), never Gemini's own {@code modelVersion} string.
  *
  * <h2>Abnormal termination</h2>
  * By Gemini API contract only the terminal chunk of a candidate carries {@code finishReason},
  * which is what closes any open content block + emits {@code message_delta}/{@code message_stop}
- * (inside {@code GeminiTranslator}'s stream decoder itself -- no separate flush hook needed for a
- * well-formed stream). {@link #finish()} covers the abnormal case (connection ends before a
+ * (inside {@code GeminiTranslator}'s stream decoder itself, so no separate flush hook is needed for
+ * a well-formed stream). {@link #finish()} covers the abnormal case (connection ends before a
  * {@code finishReason} ever arrives): this class tracks the last unmatched {@link
  * ContentBlockStartEvent} itself (core-ir's decoder does not expose that state), so it can still
  * force-close a dangling open block before emitting the closing {@code message_delta}/{@code
- * message_stop} -- and mints the empty-stream scaffolding if zero valid frames ever arrived at all
+ * message_stop}, and mints the empty-stream scaffolding if zero valid frames ever arrived at all
  * (message_start never fired).
  */
 public final class AntigravityGeminiSseBridge {
@@ -114,17 +110,16 @@ public final class AntigravityGeminiSseBridge {
     }
 
     /**
-     * SP-3 T2: the enrichment half of {@link #encodeAll} without the Anthropic encode step -- feeds
-     * one raw Gemini SSE text chunk through the decoder and returns the SAME id-minted/model-
-     * overwritten {@link IrStreamEvent}s {@link #handle} would encode, for a caller that wants the
-     * neutral IR event stream itself (the IR-native {@code handleIr} boundary) instead of Anthropic
-     * wire text.
+     * The enrichment half of {@link #encodeAll} without the Anthropic encode step: feeds one raw
+     * Gemini SSE text chunk through the decoder and returns the SAME id-minted/model-overwritten
+     * {@link IrStreamEvent}s {@link #handle} would encode, for a caller that wants the neutral IR
+     * event stream itself (the IR-native {@code handleIr} boundary) instead of Anthropic wire text.
      */
     public List<IrStreamEvent> handleIrEvents(String chunk) {
         return enrichAll(decoder.decode(chunk));
     }
 
-    /** {@link #finish()} without the Anthropic encode step -- see {@link #handleIrEvents}. */
+    /** {@link #finish()} without the Anthropic encode step; see {@link #handleIrEvents}. */
     public List<IrStreamEvent> finishIrEvents() {
         List<IrStreamEvent> out = new ArrayList<>();
         if (!sawMessageStart) {
@@ -183,20 +178,18 @@ public final class AntigravityGeminiSseBridge {
         return out;
     }
 
-    // ---- buffered variant (the ai-java ServiceLoader Provider path only, SP-3 scope) --------------
+    // ---- buffered variant (the ai-java ServiceLoader Provider path only) --------------------------
 
     /**
      * Buffered equivalent for {@link AntigravityProvider}'s raw {@code Provider} SPI path (no live
-     * streaming transport there -- the JVM {@code HttpResponse.body} is already a fully buffered
-     * {@link String}), replacing the deleted {@code AntigravityAnthropicBridge.geminiSseToAnthropic}.
-     * Also undoes cloudcode-pa's one-level {@code response} SSE wrapping ({@code data:
-     * {"response": {candidates,...}}}) before handing lines to the decoder, since core-ir's Gemini
-     * stream decoder models the NATIVE (unwrapped) {@code streamGenerateContent} shape -- mirroring
-     * the deleted class's own {@code unwrapResponse} step.
+     * streaming transport there, so the JVM {@code HttpResponse.body} is already a fully buffered
+     * {@link String}). Also undoes cloudcode-pa's one-level {@code response} SSE wrapping ({@code
+     * data: {"response": {candidates,...}}}) before handing lines to the decoder, since core-ir's
+     * Gemini stream decoder models the NATIVE (unwrapped) {@code streamGenerateContent} shape.
      */
-    // javaHandle.ts:112,159 mint msg_.../toolu_... ids from Date.now()/Math.random() -- not
-    // reproducible in Java (and not required to be: no caller asserts on these bytes, only the
-    // msg_.../toolu_... prefix shape matters). A random UUID keeps every response's ids unique.
+    // The host mints msg_.../toolu_... ids from Date.now()/Math.random(), not reproducible in Java
+    // (and not required to be: no caller asserts on these bytes, only the msg_.../toolu_... prefix
+    // shape matters). A random UUID keeps every response's ids unique.
     private static final IdGenerator RANDOM_IDS = new IdGenerator() {
         @Override
         public String newMessageId() {
@@ -231,9 +224,9 @@ public final class AntigravityGeminiSseBridge {
             boolean upstreamHadContent = upstreamGeminiSse.body != null && !upstreamGeminiSse.body.trim().isEmpty();
             boolean producedContent = body.contains("content_block_start");
             if (upstreamHadContent && !producedContent) {
-                // Same empty-content safety net as the deleted bridge: the upstream had bytes but
-                // the decoder never opened a single content block -- almost always means the
-                // envelope shape did not match what was expected, not a genuinely empty turn.
+                // Empty-content safety net: the upstream had bytes but the decoder never opened a
+                // single content block, which almost always means the envelope shape did not match
+                // what was expected, not a genuinely empty turn.
                 return upstreamGeminiSse;
             }
             return buildSseResponse(body);
@@ -243,14 +236,13 @@ public final class AntigravityGeminiSseBridge {
     }
 
     /**
-     * SP-3 T2: {@code handleIr}'s response-side counterpart to {@link #bufferedGeminiSseToAnthropic}
-     * -- decodes the buffered upstream Gemini SSE body into a single, aggregated {@link IrResponse}
+     * {@code handleIr}'s response-side counterpart to {@link #bufferedGeminiSseToAnthropic}:
+     * decodes the buffered upstream Gemini SSE body into a single, aggregated {@link IrResponse}
      * (no Anthropic re-encoding), for a caller working at the neutral IR boundary. Reuses the SAME
-     * unwrap + id-minting policy as the Anthropic path so {@code handle()}'s thin wrapper around
-     * {@code handleIr} stays byte-identical to the pre-extraction behavior. Unlike the Anthropic
-     * variant (which falls back to the raw upstream response on any decode trouble, since a caller
-     * there always has a wire-shaped fallback to serve), this throws -- {@code handleIr} has no wire
-     * response to fall back to, so a decode failure must surface as a thrown error.
+     * unwrap + id-minting policy as the Anthropic path. Unlike the Anthropic variant (which falls
+     * back to the raw upstream response on any decode trouble, since a caller there always has a
+     * wire-shaped fallback to serve), this throws: {@code handleIr} has no wire response to fall
+     * back to, so a decode failure must surface as a thrown error.
      */
     public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
                                                     HttpResponse upstreamGeminiSse) {
@@ -278,7 +270,7 @@ public final class AntigravityGeminiSseBridge {
         }
         if (upstreamHadContent && !producedContent) {
             // Same empty-content safety net as the Anthropic variant: the upstream had bytes but the
-            // decoder never opened a single content block -- almost always an envelope-shape
+            // decoder never opened a single content block, almost always an envelope-shape
             // mismatch, not a genuinely empty turn.
             throw new IllegalStateException("antigravity upstream response did not decode to any content");
         }
@@ -287,7 +279,7 @@ public final class AntigravityGeminiSseBridge {
 
     /**
      * Folds a flat, already-enriched {@link IrStreamEvent} sequence (as produced by {@link
-     * #handleIrEvents}/{@link #finishIrEvents}) into one buffered {@link IrResponse} -- content
+     * #handleIrEvents}/{@link #finishIrEvents}) into one buffered {@link IrResponse}: content
      * blocks assembled by index from their start/delta/stop events, final {@code stopReason}/
      * {@code usage} from the last {@link MessageDeltaEvent}.
      */
@@ -384,7 +376,7 @@ public final class AntigravityGeminiSseBridge {
                             line = "data: " + routingJson.stringify(((Map<?, ?>) parsed).get("response"));
                         }
                     } catch (RuntimeException ignored) {
-                        // leave the line untouched -- the stream decoder will skip an unparsable line too
+                        // leave the line untouched; the stream decoder will skip an unparsable line too
                     }
                 }
             }

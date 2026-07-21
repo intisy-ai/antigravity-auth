@@ -17,8 +17,8 @@ describe("request.ts", () => {
     });
   });
 
-  // Task 7b-2: generateSyntheticProjectId is deleted from TS; the same shape/uniqueness
-  // properties now assert against the Java prod export (AntigravityRequestPrep.generateSyntheticProjectId).
+  // The shape/uniqueness properties assert against the Java prod export
+  // (AntigravityRequestPrep.generateSyntheticProjectId).
   describe("generateSyntheticProjectIdProd (Java, via generateSyntheticProjectIdViaJava)", () => {
     it("generates a string in expected format", async () => {
       const orchestrator = await loadOrchestrator();

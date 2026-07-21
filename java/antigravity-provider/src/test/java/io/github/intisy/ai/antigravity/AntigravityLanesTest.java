@@ -6,14 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Offline deterministic parity tests for {@link AntigravityLanes}, checked against antigravity-
- * auth's actual {@code src/driver/lanes.ts} behavior: the TS's exported functions were extracted
- * verbatim into a throwaway Node harness and executed with {@code node} (v26.3.1), stubbing
- * {@code Math.random}/{@code Date.now} to fixed values for the jitter/backoff cases, to snapshot
- * the exact expected values used below -- not hand-derived from reading the source alone. See
- * task-7a-report.md for the harness.
- */
 class AntigravityLanesTest {
 
     // ---- isGeminiCliModel -------------------------------------------------------------------------

@@ -15,11 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for the pure §4 helpers of {@link AntigravityHandleRouting} + {@code driftAccountVersions}.
- * The drift + {@code soonestQuotaReset} expectations are transcribed from the Node harness fixtures
- * ({@code .superpowers/sdd/t7f-harness/fixtures.json}); the remaining pure predicates are ported
- * verbatim from {@code src/driver/index.ts} and asserted directly (they are also exercised
- * end-to-end by {@link AntigravityHandleOrchestratorTest} via the real handle/attemptModel path).
+ * Tests for the pure helpers of {@link AntigravityHandleRouting} and {@code driftAccountVersions},
+ * asserted directly (they are also exercised end-to-end by {@link AntigravityHandleOrchestratorTest}
+ * via the real handle/attemptModel path).
  */
 class AntigravityHandleRoutingTest {
 
@@ -131,7 +129,7 @@ class AntigravityHandleRoutingTest {
 
     @Test
     void soonestQuotaReset_snapshot() {
-        // harness terminalQuotaReset: one exhausted pool, resetTime 2023-11-14T23:00:00Z -> 1700002800000.
+        // one exhausted pool, resetTime 2023-11-14T23:00:00Z -> 1700002800000.
         List<Map<String, Object>> accounts = new ArrayList<>();
         accounts.add(accountWithQuota("2023-11-14T23:00:00Z", 0));
         assertEquals(1700002800000L, AntigravityHandleRouting.soonestQuotaReset(accounts));

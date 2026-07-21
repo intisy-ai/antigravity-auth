@@ -9,16 +9,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Deterministic seams for the T7e parity tests. The {@link ThinkingRecovery} double is a faithful
- * port of {@code src/plugin/thinking-recovery.ts} (analyze/needs/close) -- that file is a SEPARATE
- * source deferred to its own slice; reproducing it here (test-only) lets the {@code prepare} spine's
- * recovery wiring be parity-checked end-to-end against the harness fixture, self-validating the port.
+ * Deterministic seams for the request-prep tests. The {@link Recovery} double implements the
+ * {@link AntigravityRequestPrep.ThinkingRecovery} seam (analyze/needs/close) so the {@code prepare}
+ * spine's recovery wiring can be exercised end-to-end.
  */
 final class RequestTestDoubles {
     private RequestTestDoubles() {
     }
 
-    // Real sha256 hex (MessageDigest is JVM-only test code -- never transpiled).
+    // Real sha256 hex (MessageDigest is JVM-only test code, never transpiled).
     static AntigravityRequestKeys.Hasher sha256() {
         return input -> {
             try {
@@ -37,7 +36,7 @@ final class RequestTestDoubles {
         return "00000000-0000-4000-8000-" + String.format("%012x", n);
     }
 
-    /** Monotonic UUID counter mirroring the harness's stubbed crypto.randomUUID (reset per case). */
+    /** Monotonic UUID counter standing in for {@code crypto.randomUUID}, deterministic per case. */
     static AntigravityRequestPrep.IdGenerator counterIds() {
         return new AntigravityRequestPrep.IdGenerator() {
             private long n = 0;
@@ -97,7 +96,7 @@ final class RequestTestDoubles {
         }
     }
 
-    // ---- ThinkingRecovery: faithful port of thinking-recovery.ts (test-only) --------------------
+    // ---- ThinkingRecovery seam implementation (test-only) --------------------
 
     static final class Recovery implements AntigravityRequestPrep.ThinkingRecovery {
         @Override

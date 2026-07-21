@@ -1,13 +1,6 @@
-// Task 6a/6b: this file used to hold the whole TS request/response transform pipeline
-// (prepareAntigravityRequest / transformAntigravityResponse + their internal helpers). That logic is
-// now owned by the Java orchestrator (prepareAntigravityRequestProd / transformServeBodyProd /
-// newResponseSseTransformer, called via driver/javaHandle.ts + driver/javaStream.ts). Both functions
-// depended on the now-deleted src/plugin/transform/* barrel (isGemini3Model et al.), so they could not
-// survive Task 6a's transform deletion; only the host I/O this file was ALSO responsible for remains:
-// the stable plugin session id and the fetch-interception helpers that detect and materialize
-// Generative Language API requests. Task 7b-2 closed the last residual noted here: the synthetic
-// project id minter is now AntigravityRequestPrep.generateSyntheticProjectId (Java), reached via
-// driver/javaHandle.ts's generateSyntheticProjectIdViaJava/resolveProjectIdViaJava (real jsRandom/jsUuid).
+// Host I/O for the Generative Language / Cloud Code PA fetch path: the stable plugin session id and
+// the fetch-interception helpers that detect and materialize those requests. The request/response
+// transform itself is owned by the Java orchestrator (driver/javaHandle.ts + driver/javaStream.ts).
 import crypto from "node:crypto";
 
 const PLUGIN_SESSION_ID = `-${crypto.randomUUID()}`;

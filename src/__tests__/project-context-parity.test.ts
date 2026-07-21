@@ -1,9 +1,7 @@
-// Task 7b-2 parity gate: fetchModels' project-id resolution (index.ts's deleted resolveProjectId/
-// syntheticProjectFor/buildAuth) is now routed through the SAME Java AntigravityHandleOrchestrator.
-// resolveProjectId the live SERVE path uses (driver/javaHandle.ts's resolveProjectIdViaJava). Proves
-// (a) the packed-managedProjectId short-circuit never touches the network loader, and (b) a fresh
-// discovery persists the discovered managedProjectId into the host account store exactly like the
-// deleted TS did.
+// Verifies fetchModels' project-id resolution, routed through the same AntigravityHandleOrchestrator.
+// resolveProjectId the serve path uses (driver/javaHandle.ts's resolveProjectIdViaJava): (a) the
+// packed-managedProjectId short-circuit never touches the network loader, and (b) a fresh discovery
+// persists the discovered managedProjectId into the host account store.
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../plugin/project.js", () => ({
@@ -40,6 +38,6 @@ describe("resolveProjectIdViaJava", () => {
     expect(projectId).toBe("discovered-proj-1");
     expect(loadManagedProject).toHaveBeenCalled();
     expect(account.meta.managedProjectId).toBe("discovered-proj-1");
-    expect(account.meta.syntheticProjectId).toBeTruthy(); // always minted on first use, matching the deleted TS
+    expect(account.meta.syntheticProjectId).toBeTruthy(); // always minted on first use
   });
 });

@@ -5,25 +5,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's PURE key/seed helpers from {@code src/plugin/request.ts} (T7e,
- * :83-222): {@code buildSignatureSessionKey} (:83), {@code hashConversationSeed} (:112),
- * {@code extractTextFromContent} (:116), {@code extractConversationSeedFromMessages} (:138),
- * {@code extractConversationSeedFromContents} (:149), {@code resolveConversationKey} (:163),
- * {@code resolveConversationKeyFromRequests} (:204) and {@code resolveProjectKey} (:214).
+ * The pure key/seed helpers: {@code buildSignatureSessionKey}, {@code hashConversationSeed},
+ * {@code extractTextFromContent}, {@code extractConversationSeedFromMessages},
+ * {@code extractConversationSeedFromContents}, {@code resolveConversationKey},
+ * {@code resolveConversationKeyFromRequests} and {@code resolveProjectKey}.
  *
- * <h2>Injected edge -- Hasher</h2>
- * {@code hashConversationSeed} is a real <b>sha256</b> (not the DJB2 {@code hashString} from T7d):
+ * <h2>Injected edge: Hasher</h2>
+ * {@code hashConversationSeed} is a real <b>sha256</b>, not the DJB2 {@code hashString}:
  * {@code crypto.createHash("sha256").update(seed,"utf8").digest("hex").slice(0,16)}. The sha256 is a
- * genuine crypto edge, so it is injected as the {@link Hasher} SPI (full hex out); this class only
- * owns the {@code .slice(0,16)} truncation DECISION. Deterministic in tests (a real
- * {@code MessageDigest}-backed double); the TS runtime injects a {@code crypto.createHash} impl.
+ * genuine crypto edge, so it is injected as the {@link Hasher} SPI (full hex out); this class only owns
+ * the {@code .slice(0,16)} truncation DECISION.
  *
  * <p>JS-semantics honored: {@code buildSignatureSessionKey}'s {@code modelKey} lowercases the model
  * WITHOUT trimming (only the empty/blank check trims); {@code projectPart}/{@code conversationPart}
  * ARE trimmed. {@code resolveConversationKey}'s systemInstruction seed source is
  * {@code si?.parts ?? si ?? system ?? system_instruction} (optional-chain: a non-object {@code si}
- * yields {@code undefined} {@code parts}). {@code [...].filter(Boolean).join("|")} drops empty
- * strings. TeaVM-transpilable.
+ * yields {@code undefined} {@code parts}). {@code [...].filter(Boolean).join("|")} drops empty strings.
+ * TeaVM-transpilable.
  */
 public final class AntigravityRequestKeys {
 
@@ -35,7 +33,7 @@ public final class AntigravityRequestKeys {
     private AntigravityRequestKeys() {
     }
 
-    // ---- buildSignatureSessionKey (request.ts:83-97) ---------------------------------------------
+    // ---- buildSignatureSessionKey ---------------------------------------------
 
     public static String buildSignatureSessionKey(String sessionId, String model, String conversationKey, String projectKey) {
         String modelKey = (model != null && !model.trim().isEmpty()) ? model.toLowerCase() : "unknown";
@@ -44,7 +42,7 @@ public final class AntigravityRequestKeys {
         return sessionId + ":" + modelKey + ":" + projectPart + ":" + conversationPart;
     }
 
-    // ---- hashConversationSeed (request.ts:112-114) ----------------------------------------------
+    // ---- hashConversationSeed ----------------------------------------------
 
     /** sha256 hex of {@code seed}, truncated to 16 chars (the {@code .slice(0,16)}). */
     public static String hashConversationSeed(Hasher hasher, String seed) {
@@ -52,7 +50,7 @@ public final class AntigravityRequestKeys {
         return hex.length() > 16 ? hex.substring(0, 16) : hex;
     }
 
-    // ---- extractTextFromContent (request.ts:116-136) --------------------------------------------
+    // ---- extractTextFromContent --------------------------------------------
 
     public static String extractTextFromContent(Object content) {
         if (content instanceof String) {
@@ -80,7 +78,7 @@ public final class AntigravityRequestKeys {
         return "";
     }
 
-    // ---- extractConversationSeedFromMessages (request.ts:138-147) -------------------------------
+    // ---- extractConversationSeedFromMessages -------------------------------
 
     static String extractConversationSeedFromMessages(List<Object> messages) {
         Map<String, Object> system = findByRole(messages, "system");
@@ -93,7 +91,7 @@ public final class AntigravityRequestKeys {
         return joinTruthy(systemText, userText.isEmpty() ? fallbackUserText : userText);
     }
 
-    // ---- extractConversationSeedFromContents (request.ts:149-161) -------------------------------
+    // ---- extractConversationSeedFromContents -------------------------------
 
     static String extractConversationSeedFromContents(List<Object> contents) {
         List<Map<String, Object>> users = filterByRole(contents, "user");
@@ -110,7 +108,7 @@ public final class AntigravityRequestKeys {
         return "";
     }
 
-    // ---- resolveConversationKey (request.ts:163-202) -------------------------------------------
+    // ---- resolveConversationKey -------------------------------------------
 
     public static String resolveConversationKey(Hasher hasher, Map<String, Object> payload) {
         Object[] candidates = {
@@ -155,7 +153,7 @@ public final class AntigravityRequestKeys {
         return "seed-" + hashConversationSeed(hasher, seed);
     }
 
-    // ---- resolveConversationKeyFromRequests (request.ts:204-212) --------------------------------
+    // ---- resolveConversationKeyFromRequests --------------------------------
 
     public static String resolveConversationKeyFromRequests(Hasher hasher, List<Map<String, Object>> requestObjects) {
         for (Map<String, Object> req : requestObjects) {
@@ -167,7 +165,7 @@ public final class AntigravityRequestKeys {
         return null;
     }
 
-    // ---- resolveProjectKey (request.ts:214-222) ------------------------------------------------
+    // ---- resolveProjectKey ------------------------------------------------
 
     public static String resolveProjectKey(Object candidate, Object fallback) {
         if (candidate instanceof String && !((String) candidate).trim().isEmpty()) {
@@ -181,7 +179,7 @@ public final class AntigravityRequestKeys {
 
     // ---- helpers --------------------------------------------------------------------------------
 
-    // `anyPayload.metadata?.conversation_id` -- optional chain: metadata must be an object.
+    // `metadata?.conversation_id` optional chain: metadata must be an object.
     private static Object metaField(Map<String, Object> payload, String key) {
         Object metadata = payload.get("metadata");
         return metadata instanceof Map ? JsCoercion.asMap(metadata).get(key) : null;
@@ -206,7 +204,7 @@ public final class AntigravityRequestKeys {
         return out;
     }
 
-    // JS `[a, b].filter(Boolean).join("|")` -- drops empty strings.
+    // `[a, b].filter(Boolean).join("|")`: drops empty strings.
     private static String joinTruthy(String a, String b) {
         StringBuilder sb = new StringBuilder();
         if (!a.isEmpty()) sb.append(a);

@@ -9,15 +9,13 @@ import { login } from "./login.js";
 
 function out(message) { process.stdout.write(message + "\n"); }
 
-// Task 7a — the status/quota-view logic (allPoolsExhausted/antigravityStatus/antigravityAvailableAt/
-// antigravityQuota/familyLabel + the per-family quota aggregation) now lives in Java
+// The status/quota-view helpers (allPoolsExhausted/antigravityStatus/antigravityAvailableAt/
+// antigravityQuota/familyLabel plus the per-family quota aggregation) run in Java
 // (AntigravityQuotaParser), reached via AntigravityProviderJs's exports. core-auth's `list()` callback
-// contract (antigravityStatus/antigravityAvailableAt/antigravityQuota) is synchronous, so the Java
-// module — still a dynamic import, javaHandle.ts's own heavier imports stay off this module's load
-// path — is warmed on the FIRST call rather than at module load (module-load-time would race
-// javaHandle.ts's own circular import back into driver/index.ts, which is still mid-evaluation at that
-// point); a call landing before the warm-up resolves falls back to a benign default and self-corrects
-// on the next render.
+// contract is synchronous, so the Java module (a dynamic import, kept off this module's load path) is
+// warmed on the first call rather than at module load. Warming at module load would race javaHandle.ts's
+// circular import back into driver/index.ts while that is still mid-evaluation; a call landing before
+// the warm-up resolves falls back to a benign default and self-corrects on the next render.
 let orchestrator = null;
 let warming = false;
 function warmOrchestrator() {
@@ -47,7 +45,7 @@ function antigravityQuota(account) {
 
 // ---- Pool display (no merging, no hardcoded pool map) ------------------------
 // Every detected family (Claude / GPT-OSS / Gemini) is ALWAYS its own quota bar.
-// Even when two families share a backend pool their bars simply move together —
+// Even when two families share a backend pool their bars simply move together;
 // per explicit user direction, a merged "Claude + GPT-OSS" label never appears.
 
 // Fetch live quota for one account via cloudcode-pa fetchAvailableModels; returns
@@ -59,7 +57,7 @@ async function fetchQuotaFamilies(manager, id) {
   const account = manager.list().find((a) => a.id === id);
   const meta = (account && account.meta) || {};
   const projectId = meta.managedProjectId || meta.projectId || meta.syntheticProjectId;
-  // NOTE: do NOT send x-goog-user-project here — fetchAvailableModels 403s ("API not
+  // NOTE: do NOT send x-goog-user-project here, fetchAvailableModels 403s ("API not
   // enabled in project …") when it's present; the project belongs in the body only.
   const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
   const proxy = proxyManager.selectForAccount(id, "antigravity");
@@ -77,7 +75,7 @@ async function fetchQuotaFamilies(manager, id) {
   const models = (data && data.models) || {};
 
   // Per-FAMILY aggregation (worst remaining + earliest reset across that family's models; an
-  // exhausted pool's dropped remainingFraction counts as 0, per Java's aggregateQuotaFamilies) —
+  // exhausted pool's dropped remainingFraction counts as 0, per Java's aggregateQuotaFamilies),
   // routed through the Java export (safe to await here: unlike the account-view quintet above,
   // this call site is already async).
   const { loadOrchestrator } = await import("./javaHandle.js");
@@ -85,7 +83,7 @@ async function fetchQuotaFamilies(manager, id) {
   return JSON.parse(o.aggregateQuota(JSON.stringify(models)));
 }
 
-// Fetch + persist one account's quota — one bar per family, never merged.
+// Fetch + persist one account's quota, one bar per family, never merged.
 async function refreshQuotaOne(manager, id) {
   const perFamily = await fetchQuotaFamilies(manager, id);
   if (!perFamily) return false;

@@ -1,12 +1,11 @@
 // @ts-nocheck
-// E-wiring focused tests for two of the three newly-wired config features (the third,
-// signature_cache, is covered in plugin/cache.test.ts):
+// Tests for two of the wired config features (the third, signature_cache, is covered in
+// plugin/cache.test.ts):
 //
-//   - cli_first: previously every live call to prepareAntigravityRequestProd hardcoded `false` for
-//     the Java resolver's cliFirst param; prepareViaJava now threads the real value through as its
-//     14th positional argument (after claudeToolHardening/claudePromptAutoCaching, before the
-//     jsRandom/jsUuid/... host seams). These tests prove the configured value actually reaches that
-//     call, without needing the full TeaVM orchestrator (a fake orchestrator captures the args).
+//   - cli_first: prepareViaJava threads the configured value through to the Java resolver's cliFirst
+//     param as its 14th positional argument (after claudeToolHardening/claudePromptAutoCaching, before
+//     the jsRandom/jsUuid/... host seams). These tests prove the configured value reaches that call,
+//     without needing the full TeaVM orchestrator (a fake orchestrator captures the args).
 //
 //   - request_jitter_max_ms: a pre-fetch random delay in jsExec's transport. applyRequestJitter is
 //     exported so it can be exercised directly against a mocked config, without standing up the
@@ -33,7 +32,7 @@ function fakeOrchestrator() {
 // keepThinking,pluginSessionId,endpointOverride,claudeToolHardening,claudePromptAutoCaching,cliFirst,...
 const CLI_FIRST_ARG_INDEX = 13;
 
-describe("cli_first (E-wiring): threaded into prepareAntigravityRequestProd", () => {
+describe("cli_first: threaded into prepareAntigravityRequestProd", () => {
   it("passes an explicit true cliFirst through to the Java call", () => {
     const orchestrator = fakeOrchestrator();
     prepareViaJava(
@@ -55,7 +54,7 @@ describe("cli_first (E-wiring): threaded into prepareAntigravityRequestProd", ()
     expect(orchestrator.calls[0][CLI_FIRST_ARG_INDEX]).toBe(false);
   });
 
-  it("defaults to DEFAULT_CONFIG.cli_first (false) when the caller omits it — the pre-wiring behavior", () => {
+  it("defaults to DEFAULT_CONFIG.cli_first (false) when the caller omits it, the pre-wiring behavior", () => {
     const orchestrator = fakeOrchestrator();
     prepareViaJava(
       orchestrator, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -65,14 +64,14 @@ describe("cli_first (E-wiring): threaded into prepareAntigravityRequestProd", ()
   });
 });
 
-describe("request_jitter_max_ms (E-wiring): applyRequestJitter", () => {
+describe("request_jitter_max_ms: applyRequestJitter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
     vi.doUnmock("../plugin/config/index.js");
   });
 
-  it("is a no-op at the default (request_jitter_max_ms = 0) — no behavior change out of the box", async () => {
+  it("is a no-op at the default (request_jitter_max_ms = 0), no behavior change out of the box", async () => {
     vi.resetModules();
     const { applyRequestJitter } = await import("./javaHandle.js");
     const started = Date.now();

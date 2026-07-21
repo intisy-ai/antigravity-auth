@@ -9,22 +9,18 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Java port of the OK, non-streaming JSON branch of {@code transformAntigravityResponse}
- * (src/plugin/request.ts:1711-1938) -- see {@code .superpowers/sdd/phase-3b-brief.md}. The
- * orchestrator only ever emits a {@code SERVE} decision on a 2xx attempt, so this class ports ONLY
- * the {@code response.ok} branch (request.ts:1863-1926); the {@code !response.ok} error branch
- * (L1788-1861, non-ok attempts never reach SERVE) and the streaming SSE branch (L1751-1780, Phase 4)
- * are out of scope.
+ * Handles the OK, non-streaming JSON branch of {@code transformAntigravityResponse}. The
+ * orchestrator only emits a {@code SERVE} decision on a 2xx attempt, so this class handles ONLY
+ * the {@code response.ok} branch; the {@code !response.ok} error branch (non-ok attempts never reach
+ * SERVE) and the streaming SSE branch are out of scope.
  *
- * <p>Disclosed deviations: (1) {@code logCacheStats}/{@code logAntigravityDebugResponse} are
- * logging-only TS calls with no bearing on the returned response and are omitted. (2) the
- * {@code sessionDisplayedThinkingHashes} Gemini-3 SSE-reconnect thought-dedup set (streaming-only,
- * request.ts:1770) is out of scope for this (non-streaming) class. (3) {@code debugText} (the
- * {@code isDebugTuiEnabled}/{@code getKeepThinking} placeholder) is now an injected parameter (TeaVM
- * de-dup Task 3c) -- the caller resolves it exactly like request.ts:1735-1740; the
- * {@code processImageData} fs write is now an injectable {@link AntigravityThinkingBlocks.ImageSink}
- * too (Task 3c) -- a caller that needs neither uses the 3-arg overload below ({@code null}/
- * {@link #NO_OP_IMAGE_SINK}).
+ * <p>Deviations: (1) {@code logCacheStats}/{@code logAntigravityDebugResponse} are logging-only with
+ * no bearing on the returned response and are omitted. (2) the {@code sessionDisplayedThinkingHashes}
+ * Gemini-3 SSE-reconnect thought-dedup set is streaming-only, so out of scope for this non-streaming
+ * class. (3) {@code debugText} (the {@code isDebugTuiEnabled}/{@code getKeepThinking} placeholder) is
+ * an injected parameter and the {@code processImageData} fs write is an injectable
+ * {@link AntigravityThinkingBlocks.ImageSink}; a caller that needs neither uses the 3-arg overload
+ * below ({@code null}/{@link #NO_OP_IMAGE_SINK}).
  */
 public final class AntigravityResponseTransform {
 
@@ -33,7 +29,7 @@ public final class AntigravityResponseTransform {
     private AntigravityResponseTransform() {
     }
 
-    /** 3-arg convenience overload: no debug-text injection, no image persistence (transpilability/legacy callers). */
+    /** 3-arg convenience overload: no debug-text injection, no image persistence. */
     public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
                                                AntigravityHandleOrchestrator.TransformParams params) {
         return transformServe(json, upstream, params, null, NO_OP_IMAGE_SINK);
@@ -41,9 +37,8 @@ public final class AntigravityResponseTransform {
 
     /**
      * Transforms one {@code SERVE}-decision upstream response. A non-JSON/event-stream content type
-     * is returned verbatim (request.ts:1743-1748); any exception during the transform falls back to
-     * returning {@code upstream} verbatim, mirroring request.ts:1927-1937's {@code responseFallback}.
-     * {@code debugText} (nullable/empty for "none") and {@code imageSink} are the Task 3c seams.
+     * is returned verbatim; any exception during the transform falls back to returning {@code upstream}
+     * verbatim. {@code debugText} (nullable/empty for "none") and {@code imageSink} are injected seams.
      */
     public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
                                                AntigravityHandleOrchestrator.TransformParams params,
@@ -74,9 +69,9 @@ public final class AntigravityResponseTransform {
         Object parsed = AntigravityResponseParse.parseAntigravityApiBody(json, text);
         if (!(parsed instanceof Map)) {
             // parseAntigravityApiBody returned null (unparseable text, or a cloudcode-pa array with no
-            // object element) -- request.ts:1907-1909 returns `text` verbatim, which is `upstream` as-is.
-            // A bare-array unwrap result is unreachable for real cloudcode-pa payloads and is treated
-            // the same way (never crashes, matches AntigravityResponseParse's own disclosed fidelity).
+            // object element): return `text` verbatim, which is `upstream` as-is. A bare-array unwrap
+            // result is unreachable for real cloudcode-pa payloads and is treated the same way (never
+            // crashes).
             return upstream;
         }
 
@@ -92,10 +87,9 @@ public final class AntigravityResponseTransform {
         applyUsageHeaders(headers, AntigravityResponseParse.extractUsageMetadata(effectiveBody));
 
         // containsKey (not get()!=null): a present-but-null "response" key still counts as
-        // `!== undefined` in the TS and must take this branch, per request.ts:1911.
+        // `!== undefined` and must take this branch.
         if (effectiveBody.containsKey("response")) {
             Object responseBody = effectiveBody.get("response");
-            // request.ts:1914-1916: `if (debugText) responseBody = injectDebugThinking(responseBody, debugText);`
             if (debugText != null && !debugText.isEmpty()) {
                 responseBody = AntigravityRequestSignatures.injectDebugThinking(responseBody, debugText);
             }
@@ -113,7 +107,6 @@ public final class AntigravityResponseTransform {
         return buildResponse(upstream.status, headers, text);
     }
 
-    // request.ts:1886-1897.
     private static void applyUsageHeaders(Map<String, String> headers, Map<String, Object> usage) {
         if (usage == null || usage.get("cachedContentTokenCount") == null) {
             return;

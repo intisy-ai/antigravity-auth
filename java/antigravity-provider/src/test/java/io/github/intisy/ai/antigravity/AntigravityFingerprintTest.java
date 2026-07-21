@@ -8,7 +8,6 @@ import java.util.Map;
 import static io.github.intisy.ai.antigravity.Fixtures.map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** T7e parity: {@link AntigravityFingerprint} vs the real fingerprint.ts formatters (fixtures.json). */
 final class AntigravityFingerprintTest {
 
     private final JsonCodec json = new TestJsonCodec();

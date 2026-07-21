@@ -1,53 +1,42 @@
 rootProject.name = "antigravity-auth-java"
 
-// antigravity-auth's Java side: T7a ports the SAFEST, smallest pure-logic pieces of the TS driver
-// (AntigravityAuth <- src/plugin/auth.ts, AntigravityLanes <- src/driver/lanes.ts,
-// AntigravityVersions <- src/plugin/versions.ts [drift math only], AntigravityCatalog <-
-// src/plugin/models-fetch.ts, AntigravityQuotaParser <- src/driver/accounts-controller.ts) to
-// transpilable Java, needing only the JsonCodec/Clock/Random SPIs. Mirrors claude-code-auth's
-// java/settings.gradle exactly (see F:/Documents/GitHub/javascript/providers/claude-code-auth/
-// java/settings.gradle) -- same aliasing technique for :routing/:teavm.
+// antigravity-auth's Java side holds the pure-logic pieces of the driver (AntigravityAuth,
+// AntigravityLanes, AntigravityVersions [drift math only], AntigravityCatalog,
+// AntigravityQuotaParser) as transpilable Java, needing only the JsonCodec/Clock/Random SPIs.
 //
-// core-proxy is a DIRECT submodule of antigravity-auth (../core-proxy from here, i.e.
-// antigravity-auth/core-proxy) -- not core-auth's own nested copy. :routing is aliased in exactly
-// the way every other provider's java/ module aliases it (project path preserved, just a
+// core-proxy is a DIRECT submodule of antigravity-auth (../core-proxy from here). :routing is
+// aliased the way every other provider's java/ module aliases it (project path preserved, just a
 // different projectDir) so the SAME coordinates line up across the ecosystem.
 include ":routing"
 project(":routing").projectDir = file("../core-proxy/java/routing")
 
-// :teavm - core-proxy's own TeaVM js-base (SimpleJsonCodec/etc), aliased in exactly like :routing
+// :teavm - core-proxy's own TeaVM js-base (SimpleJsonCodec/etc), aliased like :routing
 // above so :antigravity-teavm can depend on it with a plain project(":teavm") reference and reuse
 // SimpleJsonCodec rather than duplicate it.
 include ":teavm"
 project(":teavm").projectDir = file("../core-proxy/java/teavm")
 
 // :ir - core-ir's canonical IR types + vendor translators (AnthropicTranslator/GeminiTranslator),
-// aliased in exactly like :routing/:teavm above (SP-2). core-ir is a DIRECT submodule of
-// antigravity-auth (../core-ir from here, i.e. antigravity-auth/core-ir), not nested inside another
-// submodule. Replaces antigravity-provider's own bespoke Anthropic<->Gemini bridge (see
-// AntigravityIrBridge).
+// aliased like :routing/:teavm above. core-ir is a DIRECT submodule of antigravity-auth
+// (../core-ir from here), not nested inside another submodule.
 include ":ir"
 project(":ir").projectDir = file("../core-ir/java/ir")
 
 // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/AntigravityCatalog/
-// AntigravityQuotaParser (T7a). Bucket B (handle/fetch/quota-refresh/project-context via
-// HttpClient/Store) and Bucket C (login/TUI/opencode-merge/streaming) stay TS -- out of scope for
-// this module, see ../.superpowers/port-grounding-map.md.
+// AntigravityQuotaParser.
 include ":antigravity-provider"
 
-// :antigravity-teavm - trivial TeaVM JS export surface proving all five T7a classes are
-// TeaVM-transpilable (generateJavaScript). Reuses :teavm's js-base instead of duplicating it.
+// :antigravity-teavm - TeaVM JS export surface over the provider classes. Reuses :teavm's js-base
+// instead of duplicating it.
 include ":antigravity-teavm"
 
 // ---- test-only composite build -------------------------------------------------------------
-// Pulls ai-java's own Gradle build in (Phase 2 of the JVM antigravity provider plan) so
-// :antigravity-provider can `compileOnly`/`testImplementation "io.github.intisy:jvm:0.1.0"` --
-// AccountManager/AccountStore/OAuthConfig (:accounts) and the JVM backends (FileStore/
-// UrlConnectionHttpClient/GsonJsonCodec/SystemClock/SecureRandomAdapter) that Phase 2's
-// self-assembled AntigravityBackend depends on. Mirrors stub-auth's identical recipe exactly
-// (stub-auth/java/settings.gradle) -- LOCAL DEV-ONLY: only resolves when ai-java is checked out
-// side by side on the same machine. Override with -PaiJavaDir=<path> if your checkout isn't at
-// the default (the unified ai/ tree's java/ai-java, per the 2026-07-15 ecosystem move).
+// Pulls ai-java's own Gradle build in so :antigravity-provider can
+// `compileOnly`/`testImplementation "io.github.intisy:jvm:0.1.0"`: AccountManager/AccountStore/
+// OAuthConfig (:accounts) and the JVM backends (FileStore/UrlConnectionHttpClient/GsonJsonCodec/
+// SystemClock/SecureRandomAdapter) that AntigravityBackend's self-assembled backend depends on.
+// LOCAL DEV-ONLY: only resolves when ai-java is checked out side by side on the same machine.
+// Override with -PaiJavaDir=<path> if your checkout isn't at the default.
 def aiJavaDir = file(providers.gradleProperty("aiJavaDir").getOrElse("../../../java/ai-java"))
 if (aiJavaDir.isDirectory()) {
     includeBuild(aiJavaDir)

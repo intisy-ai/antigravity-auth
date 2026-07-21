@@ -5,37 +5,35 @@ import io.github.intisy.ai.shared.spi.Clock;
 import java.util.Map;
 
 /**
- * Java port of antigravity-auth's {@code src/plugin/auth.ts} (Bucket A, "Small self-contained
- * units (T7a)" of {@code .superpowers/port-grounding-map.md}): {@code isOAuthAuth},
+ * OAuth auth-detail helpers over antigravity's stored auth: {@code isOAuthAuth},
  * {@code parseRefreshParts}, {@code formatRefreshParts}, {@code accessTokenExpired} (Clock
  * injected in place of {@code Date.now()}), and {@code calculateTokenExpiry}.
  *
  * <p>Operates over a plain {@code Map<String, Object>} JSON tree (the shape both gson and this
  * ecosystem's {@code JsonCodec} SPI produce) rather than a typed {@code AuthDetails} class, so it
  * stays TeaVM-transpilable without needing a dedicated DTO. No java.net/nio/reflection/threads/
- * System.getenv -- see {@code :antigravity-teavm}.
+ * System.getenv, see {@code :antigravity-teavm}.
  */
 public final class AntigravityAuth {
 
-    // auth.ts:3
     private static final long ACCESS_TOKEN_EXPIRY_BUFFER_MS = 60 * 1000;
 
     private AntigravityAuth() {
     }
 
-    // ---- isOAuthAuth (auth.ts:5-7) --------------------------------------------------------------
+    // ---- isOAuthAuth ----------------------------------------------------------------------------
 
-    /** True when {@code auth.type === "oauth"} (a TS type guard here reduced to a plain check). */
+    /** True when {@code auth.type === "oauth"}. */
     public static boolean isOAuthAuth(Map<String, Object> auth) {
         return auth != null && "oauth".equals(auth.get("type"));
     }
 
-    // ---- parseRefreshParts (auth.ts:9-19) ---------------------------------------------------------
+    // ---- parseRefreshParts ------------------------------------------------------------------------
 
-    /** Mirrors the TS {@code RefreshParts} shape: {@code {refreshToken, projectId?, managedProjectId?}}. */
+    /** Shape {@code {refreshToken, projectId?, managedProjectId?}}. */
     public static final class RefreshParts {
         public String refreshToken;
-        /** {@code null} represents TS {@code undefined} (an empty segment coerces to undefined). */
+        /** {@code null} represents an empty segment (coerced to absent). */
         public String projectId;
         public String managedProjectId;
 
@@ -67,13 +65,10 @@ public final class AntigravityAuth {
     }
 
     /**
-     * Splits a packed refresh string into its constituent refresh token and project IDs, matching
-     * the TS destructuring EXACTLY: {@code const [refreshToken = "", projectId = "", managedProjectId
-     * = ""] = (refresh ?? "").split("|")} followed by {@code projectId || undefined} /
-     * {@code managedProjectId || undefined}. A default ({@code ""}) only applies when the split
-     * array is SHORTER than the destructured index (not when that segment is itself an empty
-     * string) -- so {@code split("\\|", -1)} (which, unlike Java's default split, preserves
-     * trailing empty segments exactly like JS's {@code String.split}) is required for parity.
+     * Splits a packed refresh string into its refresh token and project IDs. A default ({@code ""})
+     * applies only when the split array is SHORTER than the destructured index, not when a segment is
+     * itself empty, so {@code split("\\|", -1)} (which preserves trailing empty segments, unlike
+     * Java's default split) is required to match JS's {@code String.split}.
      */
     public static RefreshParts parseRefreshParts(String refresh) {
         String[] parts = (refresh == null ? "" : refresh).split("\\|", -1);
@@ -84,14 +79,13 @@ public final class AntigravityAuth {
                 managedRaw.isEmpty() ? null : managedRaw);
     }
 
-    // ---- formatRefreshParts (auth.ts:21-28) -------------------------------------------------------
+    // ---- formatRefreshParts -----------------------------------------------------------------------
 
     /**
      * Serializes refresh token parts into the stored string format: {@code refreshToken|projectId}
-     * (or {@code refreshToken|projectId|managedProjectId} when a managed project id is present).
-     * Mirrors the TS {@code ??} (nullish, so an explicit empty-string {@code projectId} is kept
-     * as-is) vs {@code ? :} (truthy, so an empty-string {@code managedProjectId} is DROPPED)
-     * asymmetry exactly.
+     * (or {@code refreshToken|projectId|managedProjectId} when a managed project id is present). An
+     * explicit empty-string {@code projectId} is kept as-is, but an empty-string {@code
+     * managedProjectId} is DROPPED.
      */
     public static String formatRefreshParts(RefreshParts parts) {
         String projectSegment = parts.projectId != null ? parts.projectId : "";
@@ -101,15 +95,13 @@ public final class AntigravityAuth {
                 : base;
     }
 
-    // ---- accessTokenExpired (auth.ts:30-38) -------------------------------------------------------
+    // ---- accessTokenExpired -----------------------------------------------------------------------
 
     /**
      * Determines whether an access token is expired or missing, with a 60s buffer for clock skew.
-     * {@code auth.expires} must be a {@code Number} (matches the TS {@code typeof ... !== "number"}
-     * guard, which also rejects a numeric string).
+     * {@code auth.expires} must be a {@code Number} (a numeric string is rejected too).
      *
-     * @param clock injected in place of the TS's implicit {@code Date.now()} call, for
-     *              deterministic parity tests.
+     * @param clock injected in place of {@code Date.now()}, for deterministic parity tests.
      */
     public static boolean accessTokenExpired(Map<String, Object> auth, Clock clock) {
         Object access = auth == null ? null : auth.get("access");
@@ -121,13 +113,12 @@ public final class AntigravityAuth {
         return expiresMs <= clock.now() + ACCESS_TOKEN_EXPIRY_BUFFER_MS;
     }
 
-    // ---- calculateTokenExpiry (auth.ts:40-52) -----------------------------------------------------
+    // ---- calculateTokenExpiry ---------------------------------------------------------------------
 
     /**
      * Calculates the absolute expiry timestamp from a requested duration, defaulting to one hour
-     * when {@code expiresInSeconds} is not a {@code Number} (matches the TS {@code typeof ... ===
-     * "number" ? expiresInSeconds : 3600}), and returning {@code requestTimeMs} unchanged for a
-     * NaN/non-positive duration.
+     * when {@code expiresInSeconds} is not a {@code Number}, and returning {@code requestTimeMs}
+     * unchanged for a NaN/non-positive duration.
      *
      * @param requestTimeMs   the local time when the request was initiated
      * @param expiresInSeconds the duration returned by the server (may be any JSON-parsed value)

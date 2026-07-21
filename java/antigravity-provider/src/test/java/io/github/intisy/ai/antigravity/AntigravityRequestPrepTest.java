@@ -16,10 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * T7e parity: {@link AntigravityRequestPrep#prepare} vs the real {@code prepareAntigravityRequest}
- * spine (fixtures.json). Body strings are compared byte-for-byte (key order verified); the
- * ANTIGRAVITY_SYSTEM_INSTRUCTION / CLAUDE_TOOL_SYSTEM_INSTRUCTION / interleaved hint are spliced via
- * the reused constants + {@link #jesc} to keep transcription honest.
+ * Offline tests for {@link AntigravityRequestPrep#prepare}. Body strings are compared byte-for-byte
+ * (key order verified); the ANTIGRAVITY_SYSTEM_INSTRUCTION / CLAUDE_TOOL_SYSTEM_INSTRUCTION /
+ * interleaved hint are spliced from the reused constants via {@link #jesc}.
  */
 final class AntigravityRequestPrepTest {
 

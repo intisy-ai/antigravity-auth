@@ -21,9 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SP-E/E-D: model discovery is served by the typed {@link AntigravityProvider#models} capability
- * directly (backed by {@link AntigravityModelsFetch#models}), not by a URL branch. The legacy
- * Anthropic-wire {@code handle()} override was removed in T4 (canonical-IR migration).
+ * Model discovery is served by the typed {@link AntigravityProvider#models} capability directly
+ * (backed by {@link AntigravityModelsFetch#models}).
  */
 class AntigravityModelsFetchTest {
 
@@ -112,11 +111,6 @@ class AntigravityModelsFetchTest {
         assertEquals(1, http.requests.size());
         assertEquals("{}", http.requests.get(0).body);
     }
-
-    // T4 (canonical-IR migration): the two former handle()-driven regression tests (GET /v1/models
-    // no longer intercepted, POST /v1/messages still routed) are gone with the legacy Anthropic-wire
-    // handle() override itself. The typed models(ctx) capability tests above are the live coverage;
-    // the serve path is covered by AntigravityServePathTest via handleIr.
 
     // ---- shared fixtures (mirrors AntigravityServePathTest) ---------------------------------------
 

@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** T7e parity: {@link AntigravityRequestSignatures} vs the real request.ts mutators + signature helpers. */
 final class AntigravityRequestSignaturesTest {
 
     private final JsonCodec json = new TestJsonCodec();

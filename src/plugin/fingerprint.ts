@@ -53,21 +53,11 @@ export interface Fingerprint {
   version?: string;
   /** When `version` was last (re)picked (informational). */
   versionPickedAt?: number;
-  /** Per-account randomized epoch ms for the next forward drift — staggers updates
+  /** Per-account randomized epoch ms for the next forward drift, staggers updates
    *  so accounts never migrate in lockstep. */
   nextVersionDriftAt?: number;
   /** @deprecated Kept for backward compat with stored fingerprints */
   quotaUser?: string;
-}
-
-/**
- * Fingerprint version for history tracking.
- * Stores a snapshot of a fingerprint with metadata about when/why it was saved.
- */
-export interface FingerprintVersion {
-  fingerprint: Fingerprint;
-  timestamp: number;
-  reason: 'initial' | 'regenerated' | 'restored';
 }
 
 const PLATFORM_CHOICES = ["darwin", "win32"] as const;
@@ -97,7 +87,7 @@ export async function generateFingerprint(): Promise<Fingerprint> {
   const platform = randomFrom(PLATFORM_CHOICES);
   const arch = randomFrom(ARCHITECTURES);
   const osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
-  // weighted toward newer real versions — AntigravityVersions.pickVersion (Java), real jsRandom.
+  // weighted toward newer real versions, AntigravityVersions.pickVersion (Java), real jsRandom.
   const { loadOrchestrator } = await import("../driver/javaHandle.js");
   const orchestrator = await loadOrchestrator();
   const version = orchestrator.pickVersionProd(JSON.stringify(getVersionList()), "", () => Math.random());
@@ -118,20 +108,4 @@ export async function generateFingerprint(): Promise<Fingerprint> {
   };
 }
 
-/**
- * Session-level fingerprint instance.
- * Generated once at module load, persists for the lifetime of the process.
- */
-let sessionFingerprint: Fingerprint | null = null;
-
-/**
- * Get or create the session fingerprint.
- * Returns the same fingerprint for all calls within a session.
- */
-export async function getSessionFingerprint(): Promise<Fingerprint> {
-  if (!sessionFingerprint) {
-    sessionFingerprint = await generateFingerprint();
-  }
-  return sessionFingerprint;
-}
 

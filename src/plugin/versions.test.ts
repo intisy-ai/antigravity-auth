@@ -29,12 +29,10 @@ describe("versions pool", () => {
   });
 });
 
-// Task 7b-1 parity gate: pickVersion/driftVersion/nextVersionDriftDelay/driftAccountVersions are
-// deleted from TS (routed through Java). The fixed-random expected values below are the SAME frozen
-// ground truth already used by java/antigravity-provider's AntigravityVersionsTest /
-// AntigravityHandleRoutingTest (that JUnit suite's javadoc documents these as extracted verbatim from
-// the real src/plugin/versions.ts via a throwaway node harness with Math.random stubbed) — reused here
-// rather than re-derived, so both suites assert against one recorded ground truth.
+// pickVersion/driftVersion/nextVersionDriftDelay/driftAccountVersions run in Java. The fixed-random
+// expected values below are the same frozen ground truth used by java/antigravity-provider's
+// AntigravityVersionsTest / AntigravityHandleRoutingTest, reused here so both suites assert against one
+// recorded ground truth.
 const fixedRandom = (value: number) => () => value;
 const POOL_JSON = JSON.stringify([
   "2.1.1", "2.0.4", "2.0.3", "2.0.2", "2.0.1",

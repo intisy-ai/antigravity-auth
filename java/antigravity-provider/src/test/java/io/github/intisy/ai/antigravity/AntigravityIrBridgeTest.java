@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Exercises {@link AntigravityIrBridge#supportsThinking} -- the model-name predicate antigravity's
+ * Exercises {@link AntigravityIrBridge#supportsThinking}, the model-name predicate antigravity's
  * thinking-budget resolution keys off ("thinking" or "gemini-3", case-insensitive).
  */
 class AntigravityIrBridgeTest {

@@ -4,12 +4,6 @@
 import {
   ANTIGRAVITY_CLIENT_ID,
   ANTIGRAVITY_CLIENT_SECRET,
-  ANTIGRAVITY_REDIRECT_URI,
-  ANTIGRAVITY_SCOPES,
-  ANTIGRAVITY_ENDPOINT_FALLBACKS,
-  ANTIGRAVITY_LOAD_ENDPOINTS,
-  ANTIGRAVITY_ENDPOINT,
-  GEMINI_CLI_ENDPOINT,
 } from "../constants.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -25,14 +19,3 @@ export function oauthConfig() {
     clientSecret: clientSecret(),
   };
 }
-
-export const endpoints = {
-  token: TOKEN_URL,
-  authorize: AUTHORIZE_URL,
-  redirectUri: ANTIGRAVITY_REDIRECT_URI,
-  scopes: ANTIGRAVITY_SCOPES,
-  request: ANTIGRAVITY_ENDPOINT_FALLBACKS,   // daily -> autopush -> prod
-  project: ANTIGRAVITY_LOAD_ENDPOINTS,       // prod -> daily -> autopush
-  primary: ANTIGRAVITY_ENDPOINT,
-  geminiCli: GEMINI_CLI_ENDPOINT,
-};
