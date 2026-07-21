@@ -10,3 +10,10 @@ export const handleIr = driver.handleIr;
 export const accounts = driver.accounts;
 export const menu = () => runProviderMenu(driver);   // standalone (full-screen select), Claude loader / oc auth login
 export const menuModel = () => buildAccountMenu(driver);   // the menu MODEL, opencode loader renders it natively in-tab
+export const def = {
+  id: driver.id,
+  label: driver.label,
+  models: driver.models,
+  hasOAuth: typeof driver.loginFlow === "function",
+  settings: driver.settings,
+};
