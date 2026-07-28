@@ -107,7 +107,7 @@ vi.mock("../plugin/versions.js", async (importOriginal) => {
 });
 
 import { runGeminiViaJava, handleIrViaJavaOrchestrator, HandleIrError } from "../driver/javaHandle.js";
-import { translators } from "../../core-ir/dist/index.js";
+import { anthropicTranslator } from "../../anthropic-translator/dist/index.js";
 
 const harness = H.harness;
 const PROD = "https://cloudcode-pa.googleapis.com";
@@ -409,7 +409,7 @@ describe("handleIr throws the typed HandleIrError with the real status/body/retr
   async function throwsFrom(scenarioName: string) {
     const sc = irErrorScenarios.find((s) => s.name === scenarioName);
     resetForRun(sc);
-    const ir = await translators.anthropic.decodeRequest(sc.body);
+    const ir = await anthropicTranslator.decodeRequest(sc.body);
     const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };
     let caught: any;
     try { await handleIrViaJavaOrchestrator(ir, ctx); } catch (e) { caught = e; }

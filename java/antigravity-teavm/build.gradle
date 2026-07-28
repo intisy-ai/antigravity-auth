@@ -13,11 +13,12 @@ dependencies {
     // types (JsonCodec/Clock/Random) AntigravityProviderJs references directly.
     implementation project(":antigravity-provider")
     implementation project(":routing")
-    // :antigravity-provider only `compileOnly`s :ir too (same thin-jar reasoning), which does NOT
-    // propagate to us either, so :ir is declared again below so the compiled orchestrator JS
-    // bundle actually contains core-ir's IR types + AnthropicTranslator/GeminiTranslator that
-    // AntigravityIrBridge calls into.
+    // :antigravity-provider only `compileOnly`s :ir/:anthropic too (same thin-jar reasoning),
+    // which does NOT propagate to us either, so both are declared again below so the compiled
+    // orchestrator JS bundle actually contains core-ir's IR types + GeminiTranslator, and the
+    // AnthropicTranslator that AntigravityGeminiSseBridge calls into.
     implementation project(":ir")
+    implementation project(":anthropic")
     // core-proxy's own :teavm js-base (SimpleJsonCodec), reused rather than duplicated;
     // AntigravityProviderJs lives in the SAME package (io.github.intisy.ai.js) so it can
     // reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/ClaudeProviderJs do.

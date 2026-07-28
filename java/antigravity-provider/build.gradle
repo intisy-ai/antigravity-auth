@@ -9,12 +9,17 @@ dependencies {
     compileOnly project(":routing")
     testImplementation project(":routing")
 
-    // core-ir's IR types + AnthropicTranslator/GeminiTranslator: AntigravityIrBridge round-trips the
+    // core-ir's IR types + GeminiTranslator: AntigravityIrBridge round-trips the
     // Anthropic<->Gemini request format through the IR. Same "keep the shipped jar thin" discipline
     // as :routing above; ai-java does not host core-ir yet, so compileOnly keeps :ir's classes out
     // of antigravity-provider.jar; testImplementation re-adds it for test code.
     compileOnly project(":ir")
     testImplementation project(":ir")
+
+    // anthropic-translator's AnthropicTranslator, used by AntigravityGeminiSseBridge to encode the
+    // outbound Anthropic-wire SSE. Same thin-jar treatment as :ir above.
+    compileOnly project(":anthropic")
+    testImplementation project(":anthropic")
 
     // AntigravityBackend self-assembles Store/HttpClient/JsonCodec/Clock/Random + a real
     // AccountManager from the JVM backends + :accounts. CI has no composite includeBuild, so the

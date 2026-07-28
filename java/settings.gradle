@@ -16,11 +16,16 @@ project(":routing").projectDir = file("../core-proxy/java/routing")
 include ":teavm"
 project(":teavm").projectDir = file("../core-proxy/java/teavm")
 
-// :ir - core-ir's canonical IR types + vendor translators (AnthropicTranslator/GeminiTranslator),
-// aliased like :routing/:teavm above. core-ir is a DIRECT submodule of antigravity-auth
-// (../core-ir from here), not nested inside another submodule.
+// :ir - core-ir's canonical IR types + GeminiTranslator, aliased like :routing/:teavm above.
+// core-ir is a DIRECT submodule of antigravity-auth (../core-ir from here), not nested inside
+// another submodule.
 include ":ir"
 project(":ir").projectDir = file("../core-ir/java/ir")
+
+// :anthropic - the Anthropic translator (AnthropicTranslator etc.), from the anthropic-translator
+// submodule (../anthropic-translator/java/anthropic), a DIRECT submodule like core-ir.
+include ":anthropic"
+project(":anthropic").projectDir = file("../anthropic-translator/java/anthropic")
 
 // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/AntigravityCatalog/
 // AntigravityQuotaParser.
