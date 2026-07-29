@@ -16,3 +16,6 @@
 [submodule "anthropic-translator"]
 	path = anthropic-translator
 	url = https://github.com/intisy-ai/anthropic-translator.git
+[submodule "gemini-translator"]
+	path = gemini-translator
+	url = https://github.com/intisy-ai/gemini-translator.git
