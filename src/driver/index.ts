@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager } from "../../core-auth/dist/index.js";
+import { defineProvider, AccountManager, proxyManager, commonManagerOptions } from "../../core-auth/dist/index.js";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -31,7 +31,7 @@ initSignatureCache(config.signature_cache); // constructs the disk-backed Signat
 // core-auth account engine. The driver availability hook keeps antigravity's
 // "skip accounts pending Google verification" behavior without leaking it into core.
 const manager = new AccountManager(PROVIDER_ID, {
-  selection: config.account_selection_strategy || "hybrid",
+  ...commonManagerOptions(config),
   oauth: oauthConfig(),
   // transient-error cooldown (AccountManager.reportError -> calculateBackoffMs)
   backoff: { baseMs: (config.default_retry_after_seconds || 60) * 1000, maxMs: (config.max_backoff_seconds || 60) * 1000 },
