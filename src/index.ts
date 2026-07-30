@@ -1,7 +1,7 @@
 // @ts-nocheck
 // OpenCode entry. Export ONLY the provider plugin: OpenCode runs every export as a hook, so any extra export would register as a bogus plugin and can break registration.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { deployCommands, defineConfig, defineReadme, maybeRunReadmeCli } from "../core/src/index.js";
+import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli } from "../core/src/index.js";
 import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
 import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
 
@@ -10,6 +10,34 @@ import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
 // `/config` command, and the loader Configure editor expose every option (not just a
 // couple). Writes no file on load. `logging` is core's logger toggle (kept).
 defineConfig("antigravity", { ...DEFAULT_CONFIG, logging: true });
+
+defineCapabilities("antigravity", {
+  fields: [
+    { key: "logging", type: "boolean", label: "Logging", description: "Write this plugin's log file.", group: "General" },
+    { key: "debug", type: "boolean", label: "Debug logging", group: "Logging" },
+    { key: "debug_tui", type: "boolean", label: "Debug in TUI panel", group: "Logging" },
+    { key: "log_dir", type: "string", label: "Log directory", group: "Logging" },
+    { key: "cli_first", type: "boolean", label: "Prefer gemini-cli", description: "Route Gemini models through gemini-cli before Antigravity.", group: "Routing" },
+    {
+      key: "account_selection_strategy", type: "select", label: "Account selection", group: "Routing",
+      options: [
+        { value: "hybrid", label: "Hybrid (health + freshness)" },
+        { value: "sticky", label: "Sticky (until rate-limited)" },
+        { value: "round-robin", label: "Round-robin" },
+      ],
+    },
+    { key: "keep_thinking", type: "boolean", label: "Keep thinking blocks", description: "Preserve Claude thinking via signature caching.", group: "Claude compatibility" },
+    { key: "claude_tool_hardening", type: "boolean", label: "Tool hardening", description: "Curb Claude tool hallucination.", group: "Claude compatibility" },
+    { key: "claude_prompt_auto_caching", type: "boolean", label: "Prompt auto-caching", group: "Claude compatibility" },
+    { key: "default_retry_after_seconds", type: "number", label: "Default retry-after (s)", min: 0, group: "Retry" },
+    { key: "max_backoff_seconds", type: "number", label: "Max backoff (s)", min: 0, group: "Retry" },
+    { key: "request_jitter_max_ms", type: "number", label: "Request jitter max (ms)", min: 0, group: "Retry" },
+    { key: "signature_cache.enabled", type: "boolean", label: "Enabled", group: "Signature cache" },
+    { key: "signature_cache.memory_ttl_seconds", type: "number", label: "Memory TTL (s)", min: 0, group: "Signature cache" },
+    { key: "signature_cache.disk_ttl_seconds", type: "number", label: "Disk TTL (s)", min: 0, group: "Signature cache" },
+    { key: "signature_cache.write_interval_seconds", type: "number", label: "Write interval (s)", min: 0, group: "Signature cache" },
+  ],
+});
 
 defineReadme({
   description:
