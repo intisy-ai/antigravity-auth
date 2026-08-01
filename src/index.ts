@@ -60,8 +60,7 @@ const README_SPEC = {
 
 // name ("antigravity") is the config/capabilities/readme registration name; packageName
 // ("antigravity-auth") is the deployed bundle path deployCommands' {{BUNDLE}} shell resolves.
-// driver/index.ts no longer calls defineProvider(driver).opencode itself, this is now the ONLY
-// place the provider registers.
+// This is the single place the provider registers with the host.
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
   packageName: "antigravity-auth",
