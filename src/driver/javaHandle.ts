@@ -55,6 +55,15 @@ let config;
 try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 
 const PROVIDER_ID = "antigravity";
+const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
+
+// The gemini-cli provider forces the free CLI quota lane for the request; the antigravity
+// provider (or a legacy caller with no HandlerCtx.provider) keeps the config default, so
+// existing antigravity serving is unchanged.
+export function laneCliFirstFor(ctx) {
+  if (ctx && ctx.provider === GEMINI_CLI_PROVIDER_ID) return true;
+  return !!config.cli_first;
+}
 
 // Lazily-memoized dynamic import of the TeaVM ESM, staged to src/generated/ by core/teavm-build.mjs
 // at build time and bundled (deferred) by esbuild. Exported so the parity test can load the same
@@ -225,8 +234,9 @@ export function prepareViaJava(
 // provider's IR<->upstream transport core: handleIrViaJavaOrchestrator encodes the decoded IR to a
 // Gemini request and hands it here. Exported so the regression harness can drive the SAME upstream
 // decision loop (quota rotation, terminal-error, synthetic project id) directly.
-export async function runGeminiViaJava(request, ctx) {
+export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   const log = (ctx && ctx.log) || (() => {});
+  const cliFirst = laneCliFirst == null ? laneCliFirstFor(ctx) : laneCliFirst;
   const orchestrator = await loadOrchestrator();
   const { handleAntigravityRequestAsync } = orchestrator;
 
@@ -283,7 +293,7 @@ export async function runGeminiViaJava(request, ctx) {
     try {
       prepared = prepareViaJava(
         orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint,
-        config.claude_tool_hardening, config.claude_prompt_auto_caching, config.cli_first,
+        config.claude_tool_hardening, config.claude_prompt_auto_caching, cliFirst,
       );
     } catch (error) {
       log("prepare failed: " + error);
@@ -559,7 +569,7 @@ export async function handleIrViaJavaOrchestrator(ir, ctx) {
   const geminiBody = orchestrator.resolveThinkingBudgetAndEncodeGemini(JSON.stringify(ir), model);
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
   const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: geminiBody });
-  const geminiRes = await runGeminiViaJava(geminiReq, ctx); // geminiUrl isn't /v1/messages -> normal Gemini path
+  const geminiRes = await runGeminiViaJava(geminiReq, ctx, laneCliFirstFor(ctx)); // geminiUrl isn't /v1/messages -> normal Gemini path
   if (geminiRes && geminiRes.headers && geminiRes.headers.get("x-hub-chat-error")) {
     let msg = "request failed";
     try { const p = JSON.parse(await geminiRes.clone().text()); msg = (p.error && p.error.message) || msg; } catch {}

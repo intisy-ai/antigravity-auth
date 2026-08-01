@@ -16,6 +16,10 @@ import { initializeDebug } from "../plugin/debug.js";
 import { initSignatureCache } from "../plugin/cache.js";
 
 const PROVIDER_ID = "antigravity";
+// The free Gemini CLI quota pool, exposed as a second first-class provider sharing the
+// antigravity account pool. Its provider id, arriving as HandlerCtx.provider, forces the
+// gemini-cli lane per request (see javaHandle's laneCliFirst).
+export const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
 const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
@@ -184,6 +188,11 @@ const settingsGroups = [
 export const driver = {
   id: PROVIDER_ID,
   label: "Antigravity",
+  geminiCliProviderId: GEMINI_CLI_PROVIDER_ID,
+  geminiCliLabel: "Gemini CLI",
+  // Catalog is fetched live per account under the antigravity pool; the gemini-cli lane's
+  // models surface through that same live fetch, so no static list is declared here.
+  geminiCliModels: {},
   opencodeProvider: "antigravity",
   opencodeNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
   models,

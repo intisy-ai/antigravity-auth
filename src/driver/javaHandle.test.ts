@@ -64,6 +64,35 @@ describe("cli_first: threaded into prepareAntigravityRequestProd", () => {
   });
 });
 
+describe("laneCliFirstFor: provider id selects the upstream lane", () => {
+  it("forces the gemini-cli lane when the resolved provider is gemini-cli", async () => {
+    const { laneCliFirstFor } = await import("./javaHandle.js");
+    expect(laneCliFirstFor({ provider: "gemini-cli" })).toBe(true);
+  });
+
+  it("keeps the config default for the antigravity provider (default false, behavior-preserving)", async () => {
+    const { laneCliFirstFor } = await import("./javaHandle.js");
+    expect(laneCliFirstFor({ provider: "antigravity" })).toBe(false);
+  });
+
+  it("keeps the config default when no provider id is present (legacy single-provider serving)", async () => {
+    const { laneCliFirstFor } = await import("./javaHandle.js");
+    expect(laneCliFirstFor(undefined)).toBe(false);
+    expect(laneCliFirstFor({})).toBe(false);
+  });
+
+  it("honors config.cli_first as the antigravity-provider default when enabled", async () => {
+    vi.resetModules();
+    vi.doMock("../plugin/config/index.js", async () => {
+      const actual: any = await vi.importActual("../plugin/config/index.js");
+      return { ...actual, loadConfig: () => ({ ...actual.DEFAULT_CONFIG, cli_first: true }) };
+    });
+    const { laneCliFirstFor } = await import("./javaHandle.js");
+    expect(laneCliFirstFor({ provider: "antigravity" })).toBe(true);
+    expect(laneCliFirstFor({ provider: "gemini-cli" })).toBe(true);
+  });
+});
+
 describe("request_jitter_max_ms: applyRequestJitter", () => {
   afterEach(() => {
     vi.restoreAllMocks();

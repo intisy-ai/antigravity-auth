@@ -38,7 +38,14 @@
       {
         "name": "antigravity",
         "handler": "dist/handler.js",
-        "models": []
+        "models": [],
+        "accountPool": "antigravity"
+      },
+      {
+        "name": "gemini-cli",
+        "handler": "dist/handler.js",
+        "models": [],
+        "accountPool": "antigravity"
       }
     ]
   },
