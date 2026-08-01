@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { timeoutFetch } from "../../core-auth/dist/index.js";
+
 // Antigravity version pool for the User-Agent. A real user runs one of many released versions (mostly
 // recent ones) and auto-updates over time, so a single hardcoded version is an obvious fingerprint.
 // This module owns the pool itself (curated fallback plus runtime refresh from the public release
@@ -62,17 +64,11 @@ export async function refreshVersions(log) {
   fetching = true;
   lastFetchAt = now;
   try {
-    const aborter = new AbortController();
-    const timer = setTimeout(() => aborter.abort(), 8000);
-    let data;
-    try {
-      const res = await fetch(RELEASES_URL, {
-        headers: { Accept: "application/vnd.github+json", "User-Agent": "antigravity-auth" },
-        signal: aborter.signal,
-      });
-      if (!res.ok) return;
-      data = await res.json();
-    } finally { clearTimeout(timer); }
+    const res = await timeoutFetch(RELEASES_URL, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "antigravity-auth" },
+    }, 8000);
+    if (!res.ok) return;
+    const data = await res.json();
     if (!Array.isArray(data)) return;
     const fetched = data
       .map((r) => String(r && r.tag_name || "").replace(/^v/, "").trim())

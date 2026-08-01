@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { defineProvider, AccountManager, proxyManager, commonManagerOptions } from "../../core-auth/dist/index.js";
+import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups } from "../../core-auth/dist/index.js";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -32,13 +32,18 @@ try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 initializeDebug(config);     // enables the log.debug(...) calls in request/project (debug, debug_tui, log_dir)
 initSignatureCache(config.signature_cache); // constructs the disk-backed SignatureCache when enabled (inert otherwise)
 
+// antigravity's own retry/backoff config key names + default values (60s/60s); the shape,
+// coercion, and settings presentation are shared via core-auth's provider-common.
+export const RETRY_KEYS = { baseKey: "default_retry_after_seconds", maxKey: "max_backoff_seconds" };
+const RETRY_DEFAULTS = { baseSeconds: 60, maxSeconds: 60 };
+
 // core-auth account engine. The driver availability hook keeps antigravity's
 // "skip accounts pending Google verification" behavior without leaking it into core.
 const manager = new AccountManager(PROVIDER_ID, {
   ...commonManagerOptions(config),
   oauth: oauthConfig(),
   // transient-error cooldown (AccountManager.reportError -> calculateBackoffMs)
-  backoff: { baseMs: (config.default_retry_after_seconds || 60) * 1000, maxMs: (config.max_backoff_seconds || 60) * 1000 },
+  backoff: retryBackoffMs(config, RETRY_KEYS, RETRY_DEFAULTS),
   isAvailable: (account) => !(account.meta && account.meta.verificationRequired),
 });
 
@@ -137,18 +142,23 @@ async function fetchModels(ctx) {
 // token-bucket/recovery/notifications/etc.) have NO consumer in the core-auth
 // provider form, their behavior is owned by core-auth's own engine, so exposing
 // them would let users set no-ops. They are intentionally omitted.
-const settingsGroups = [
-  {
-    title: "Account rotation",
-    fields: [
-      { key: "account_selection_strategy", label: "Account selection", type: "enum", options: ["sticky", "round-robin", "hybrid"], hint: "How accounts are picked: sticky keeps prompt cache, round-robin maximizes throughput, hybrid balances by availability." },
-    ],
-  },
+const ACCOUNT_ROTATION_SETTINGS_GROUP = {
+  title: "Account rotation",
+  fields: [
+    { key: "account_selection_strategy", label: "Account selection", type: "enum", options: ["sticky", "round-robin", "hybrid"], hint: "How accounts are picked: sticky keeps prompt cache, round-robin maximizes throughput, hybrid balances by availability." },
+  ],
+};
+
+// The rest of antigravity's own settings, unified into ONE schema shared by both the loader-TUI
+// settings menu (toSettingsGroups below) and Cairn's capabilities panel (toCapabilitiesFields, in
+// ../index.ts), so the two surfaces can't drift out of key-set sync. account_selection_strategy
+// (above) and the retry/backoff pair (RETRY_KEYS, via core-auth's provider-common) are shared with
+// every core-auth provider, so they stay out of this schema and are composed back in separately by
+// each consumer.
+export const ANTIGRAVITY_SETTINGS_SCHEMA = [
   {
     title: "Rate limits",
     fields: [
-      { key: "default_retry_after_seconds", label: "Base retry delay (s)", type: "number", min: 1, max: 300, hint: "Base cooldown after a transient account error; doubles per attempt (AccountManager backoff)." },
-      { key: "max_backoff_seconds", label: "Max backoff (s)", type: "number", min: 5, max: 300, hint: "Caps how long the per-account error backoff can grow." },
       { key: "request_jitter_max_ms", label: "Request jitter (ms)", type: "number", min: 0, max: 10000, hint: "Random delay (0 to this many ms) added before each outbound request; 0 disables it." },
     ],
   },
@@ -208,10 +218,8 @@ export const driver = {
   accounts: createAntigravityAccounts(manager),
   proxies: true,
   settings: {
-    groups: settingsGroups,
+    groups: [ACCOUNT_ROTATION_SETTINGS_GROUP, ...toSettingsGroups(ANTIGRAVITY_SETTINGS_SCHEMA), ...retryBackoffSettingsGroups(RETRY_KEYS)],
     get: getConfigValue,
     set: setConfigValue,
   },
 };
-
-export const AntigravityProvider = defineProvider(driver).opencode;

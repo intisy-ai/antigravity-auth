@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_CONFIG } from "./config"
 
-// Capture what the logger hands to core's shared writeLog.
+// Capture what the logger hands to core's shared writeLog. debug.ts also reaches into core for
+// getAppConfigDir (app-aware config dir resolution), stubbed here since these tests don't care
+// which directory it resolves to.
 const { writeLogMock } = vi.hoisted(() => ({ writeLogMock: vi.fn() }))
-vi.mock("../../core/src/index.js", () => ({ makeWriteLog: () => writeLogMock }))
+vi.mock("../../core/src/index.js", () => ({ makeWriteLog: () => writeLogMock, getAppConfigDir: () => "/tmp/antigravity-logger-test-configdir" }))
 
 // debug.ts touches storage on init; stub it so the test never writes files.
 const { ensureGitignoreSyncMock } = vi.hoisted(() => ({ ensureGitignoreSyncMock: vi.fn() }))

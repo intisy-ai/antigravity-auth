@@ -6,21 +6,21 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
+import { getAppConfigDir } from '../../core/src/index.js';
 
 /**
- * Default directory for saving generated images.
- * Uses ~/.opencode/generated-images/
+ * Default directory for saving generated images, under the active app's own config dir
+ * (opencode or Claude, respecting HUB_CONFIG_DIR), e.g. ~/.opencode/generated-images/ or
+ * ~/.claude/generated-images/.
  */
 function getImageOutputDir(): string {
-  const homeDir = os.homedir();
-  const outputDir = path.join(homeDir, '.opencode', 'generated-images');
-  
+  const outputDir = path.join(getAppConfigDir(), 'generated-images');
+
 
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
-  
+
   return outputDir;
 }
 

@@ -24,22 +24,12 @@
 // `makeResponseTransformStream`.
 
 import crypto from "node:crypto";
-import { proxyManager, getAutoCandidates, chatError } from "../../core-auth/dist/index.js";
-// Local, dependency-free copy of core-proxy's HandleIrError wire-error shape. The front-door
-// recognizes it by its stable `name` marker (duck-typed isHandleIrError), not by class identity:
-// esbuild bundles each side separately, so a shared class is never instanceof-compatible across the
-// boundary. Defining it here removes a build-time dependency on core-proxy's dist (which this
-// provider never builds), so a clean checkout bundles without it.
-export class HandleIrError extends Error {
-  constructor(init) {
-    super("handleIr transport error: " + init.status);
-    this.name = "HandleIrError";
-    this.status = init.status;
-    this.headers = init.headers;
-    this.body = init.body;
-    this.retryAfterMs = init.retryAfterMs;
-  }
-}
+import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule } from "../../core-auth/dist/index.js";
+// Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
+// callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,
+// so a class imported fresh in each bundle stays a single, shared identity only if every importer
+// reaches it through the same module graph, which this re-export preserves.
+export { HandleIrError };
 import { manager } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
@@ -66,20 +56,17 @@ export function laneCliFirstFor(ctx) {
 }
 
 // Lazily-memoized dynamic import of the TeaVM ESM, staged to src/generated/ by core/teavm-build.mjs
-// at build time and bundled (deferred) by esbuild. Exported so the parity test can load the same
-// memoized module instance without re-importing it.
-let orchestratorPromise = null;
-let orchestratorLoaded = null;   // synchronously readable once loadOrchestrator() resolves
+// at build time and bundled (deferred) by esbuild. loadOrchestrator/getLoadedOrchestrator are kept as
+// named exports (the parity tests and other host modules import them directly) backed by core-auth's
+// shared lazyModule memoization.
+const orchestratorModule = lazyModule(() => import("../generated/antigravity-orchestrator.teavm.js"));
 export function loadOrchestrator() {
-  if (!orchestratorPromise) {
-    orchestratorPromise = import("../generated/antigravity-orchestrator.teavm.js").then((m) => (orchestratorLoaded = m));
-  }
-  return orchestratorPromise;
+  return orchestratorModule.load();
 }
 // For callback contracts that can't await (accounts-controller.ts's synchronous status/availableAt/
 // quota view); null until the first loadOrchestrator() resolves.
 export function getLoadedOrchestrator() {
-  return orchestratorLoaded;
+  return orchestratorModule.getLoaded();
 }
 
 // Routes fetchModels' catalog build through the Java buildCatalog export
@@ -286,8 +273,7 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   // re-raises so the orchestrator skips the endpoint. Threads config.claude_tool_hardening /
   // claude_prompt_auto_caching / cli_first through to the model resolver.
   const jsPreparer = (url, bodyText2, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
-    let account;
-    try { account = accountJson ? JSON.parse(accountJson) : {}; } catch { account = {}; }
+    const account = safeJsonParse(accountJson, {});
     const fingerprint = (account.meta && account.meta.fingerprint) ?? null;
     let prepared;
     try {
@@ -313,47 +299,30 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
     });
   };
 
-  // jsExec: pure transport. Apply the account's proxy, apply config.request_jitter_max_ms's pre-fetch
-  // delay, fetch, on a proxy fetch error reportResult(false) and retry direct, on direct/no-proxy error
-  // return transportFailed, log the non-ok snippet, on rate-limit extract {errorMessage, errorReason}
-  // (unwrapping the cloudcode-pa [{error}] array). Retains the live Response host-side; no body bytes
-  // cross to Java. The rate-limit reset regex, classification, and reporting are the orchestrator's.
+  // jsExec: pure transport, lifted into core-auth's proxiedFetch (proxy-then-direct-retry, sharing the
+  // account's already-resolved proxy so selectForAccount is still called at most once per account per
+  // request, matching proxyForAccount's own memoization). Applies config.request_jitter_max_ms's
+  // pre-fetch delay, then on a rate-limit response extracts {errorMessage, errorReason} (unwrapping the
+  // cloudcode-pa [{error}] array). Retains the live Response host-side; no body bytes cross to Java. The
+  // rate-limit reset regex, classification, and reporting stay the orchestrator's.
   const jsExec = async (accountId, preparedRefJson) => {
-    let requestRef;
-    try { requestRef = JSON.parse(preparedRefJson); } catch { requestRef = -1; }
+    const requestRef = safeJsonParse(preparedRefJson, -1);
     const prepared = preparedRequests[requestRef];
     if (!prepared) return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: false });
 
     const proxyUrl = proxyForAccount(accountId);
-    if (proxyUrl) prepared.init.proxy = proxyUrl; // Bun fetch honors .proxy
-
     await applyRequestJitter();
 
-    let response;
-    const started = Date.now();
-    let proxyOk = false;
-    try {
-      response = await fetch(prepared.request, prepared.init);
-      proxyOk = !!proxyUrl;
-    } catch (error) {
-      if (proxyUrl) {
-        proxyManager.reportResult(proxyUrl, false);
-        // proxy unreachable -> retry directly (a dead proxy gives no isolation anyway)
-        log("fetch via proxy " + proxyUrl + " failed: " + error + ", retrying directly");
-        try {
-          const directInit = { ...prepared.init };
-          delete directInit.proxy;
-          response = await fetch(prepared.request, directInit);
-        } catch (directError) {
-          log("direct retry failed: " + directError);
-          return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: !!proxyUrl });
-        }
-      } else {
-        log("fetch failed: " + error);
-        return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: false });
-      }
+    const shimProxyManager = {
+      selectForAccount: () => proxyUrl,
+      reportResult: (url, ok, elapsedMs) => proxyManager.reportResult(url, ok, elapsedMs),
+    };
+    const { response, proxyUsed: proxiedUsed, transportFailed } = await proxiedFetch(prepared.request, prepared.init, {
+      proxyManager: shimProxyManager, log,
+    });
+    if (transportFailed) {
+      return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: proxiedUsed });
     }
-    if (proxyOk) proxyManager.reportResult(proxyUrl, true, Date.now() - started);
 
     if (!response.ok) {
       let snippet = "";
@@ -362,7 +331,7 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
     }
 
     const attemptRef = responses.push(response) - 1;
-    const proxyUsed = !!proxyUrl; // gates the proxy rate-limit re-fire
+    const proxyUsed = proxiedUsed; // gates the proxy rate-limit re-fire
 
     if (isRateLimitStatus(response.status)) {
       let message, reason;
@@ -421,8 +390,7 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
       return JSON.stringify(manager.list());
     },
     mutate(accountId, updatedAccountJson) {
-      let updated;
-      try { updated = JSON.parse(updatedAccountJson); } catch { updated = null; }
+      const updated = safeJsonParse(updatedAccountJson, null);
       if (!updated) return;
       // The orchestrator only ever sets meta.syntheticProjectId / meta.managedProjectId; copy exactly
       // those so nothing else is disturbed.

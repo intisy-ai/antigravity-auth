@@ -3,36 +3,22 @@
 // antigravity provider. The front-door owns app<->IR translation and calls handleIr; the provider
 // exposes no app-wire (Anthropic) handle().
 
-import { runProviderMenu, buildAccountMenu } from "../core-auth/dist/index.js";
+import { providerHandlerExports } from "../core-auth/dist/index.js";
 import { driver } from "./driver/index.js";
 
-export const handleIr = driver.handleIr;
-export const accounts = driver.accounts;
-export const loginFlow = driver.loginFlow;
-export const menu = () => runProviderMenu(driver);   // standalone (full-screen select), Claude loader / oc auth login
-export const menuModel = () => buildAccountMenu(driver);   // the menu MODEL, opencode loader renders it natively in-tab
-
-const hasOAuth = typeof driver.loginFlow === "function";
+export const { handleIr, accounts, loginFlow, menu, menuModel, def } = providerHandlerExports(driver);
 
 // One Google account pool ("antigravity") backs two upstream lanes exposed as first-class
 // providers: the metered antigravity pool and the free gemini-cli quota pool. Both share the
 // SAME account store (accountPool), so adding an account to either serves both; the resolved
 // provider id (HandlerCtx.provider) selects the lane per request.
-export const def = {
-  id: driver.id,
-  label: driver.label,
-  models: driver.models,
-  hasOAuth,
-  settings: driver.settings,
-  accountPool: driver.id,
-};
 export const defs = [
   def,
   {
     id: driver.geminiCliProviderId,
     label: driver.geminiCliLabel,
     models: driver.geminiCliModels,
-    hasOAuth,
+    hasOAuth: def.hasOAuth,
     settings: driver.settings,
     accountPool: driver.id,
   },

@@ -5,7 +5,7 @@
 // Account name is namespaced (`/antigravity-accounts`) so it never collides with
 // the other providers' account commands; the loaders own the unified `/accounts`.
 import { configCommand, runConfigCli } from "../core/src/index.js";
-import { listAccounts } from "../core-auth/dist/index.js";
+import { listAccounts, printAccounts } from "../core-auth/dist/index.js";
 
 const PROVIDER_ID = "antigravity";
 
@@ -20,20 +20,10 @@ export const ANTIGRAVITY_COMMANDS = [
 ];
 
 function runAccounts() {
-  let accounts = [];
   try {
-    accounts = listAccounts(PROVIDER_ID) || [];
+    printAccounts(PROVIDER_ID, { list: () => listAccounts(PROVIDER_ID) || [] });
   } catch (e) {
     console.log(`Could not read accounts: ${e?.message || e}`);
-    return;
-  }
-  if (!accounts.length) {
-    console.log("No Antigravity accounts. Add one from the account menu (oc auth login).");
-    return;
-  }
-  for (const a of accounts) {
-    const state = a.enabled === false ? " (disabled)" : "";
-    console.log(`- ${a.email || a.id}${state}`);
   }
 }
 

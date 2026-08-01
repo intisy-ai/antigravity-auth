@@ -12,6 +12,7 @@ import {
 } from "../constants";
 import { createLogger } from "../plugin/logger";
 import { calculateTokenExpiry } from "../plugin/auth";
+import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "../../core-auth/dist/index.js";
 
 const log = createLogger("oauth");
 
@@ -66,20 +67,17 @@ interface AntigravityUserInfo {
  * Encode an object into a URL-safe base64 string.
  */
 export function encodeState(payload: AntigravityAuthState): string {
-  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  return coreEncodeState(payload);
 }
 
 /**
- * Decode an OAuth state parameter back into its structured representation.
+ * Decode an OAuth state parameter back into its structured representation. core-auth's
+ * decodeState returns the raw parsed payload (and throws if the PKCE verifier is missing);
+ * projectId is antigravity's own extra field, defaulted here since core-auth's shared shape
+ * doesn't know about it.
  */
 function decodeState(state: string): AntigravityAuthState {
-  const normalized = state.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
-  const json = Buffer.from(padded, "base64").toString("utf8");
-  const parsed = JSON.parse(json);
-  if (typeof parsed.verifier !== "string") {
-    throw new Error("Missing PKCE verifier in state");
-  }
+  const parsed = coreDecodeState(state);
   return {
     verifier: parsed.verifier,
     projectId: typeof parsed.projectId === "string" ? parsed.projectId : "",
@@ -117,18 +115,12 @@ const FETCH_TIMEOUT_MS = 10000;
 
 type ProxyInit = RequestInit & { proxy?: string };
 
-async function fetchWithTimeout(
+function fetchWithTimeout(
   url: string,
   options: ProxyInit,
   timeoutMs = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return timeoutFetch(url, options, timeoutMs);
 }
 
 async function fetchProjectID(accessToken: string, proxy?: string): Promise<string> {

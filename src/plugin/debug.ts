@@ -1,13 +1,13 @@
 import { createWriteStream, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { env } from "node:process";
-import { homedir } from "node:os";
 import type { AntigravityConfig } from "./config";
 import {
   deriveDebugPolicy,
   isTruthyFlag,
 } from "./logging-utils";
 import { ensureGitignoreSync } from "./storage";
+import { getAppConfigDir } from "../../core/src/index.js";
 
 interface DebugState {
   debugEnabled: boolean;
@@ -18,13 +18,11 @@ interface DebugState {
 
 let debugState: DebugState | null = null;
 
+// App-aware (respects HUB_CONFIG_DIR / the active app's registry entry, opencode or Claude), unlike
+// a hardcoded ~/.opencode path: this file's debug log otherwise silently landed in the opencode home
+// even when running under Claude Code.
 function getConfigDir(): string {
-  const platform = process.platform;
-  if (platform === "win32") {
-    return join(env.APPDATA || join(homedir(), "AppData", "Roaming"), "opencode");
-  }
-  const xdgConfig = env.XDG_CONFIG_HOME || join(homedir(), ".config");
-  return join(xdgConfig, "opencode");
+  return getAppConfigDir();
 }
 
 /**

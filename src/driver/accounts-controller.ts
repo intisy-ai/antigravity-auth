@@ -3,7 +3,7 @@
 // actions, layered on core-auth's generic list/enable/remove helper. Proxies are
 // handled entirely by the core proxy subsystem (Manage proxies / Select proxies).
 
-import { accountControllerFromManager, proxyManager } from "../../core-auth/dist/index.js";
+import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAccounts, refreshAccountToken } from "../../core-auth/dist/index.js";
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 import { login } from "./login.js";
 
@@ -61,14 +61,12 @@ async function fetchQuotaFamilies(manager, id) {
   // enabled in project …") when it's present; the project belongs in the body only.
   const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
   const proxy = proxyManager.selectForAccount(id, "antigravity");
-  const aborter = new AbortController();
-  const timer = setTimeout(() => aborter.abort(), 20000);
   let response;
   try {
-    response = await fetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:fetchAvailableModels", {
-      method: "POST", headers, body: JSON.stringify(projectId ? { project: projectId } : {}), signal: aborter.signal, proxy,
+    response = await timeoutFetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:fetchAvailableModels", {
+      method: "POST", headers, body: JSON.stringify(projectId ? { project: projectId } : {}), proxy,
     });
-  } catch { return null; } finally { clearTimeout(timer); }
+  } catch { return null; }
   if (!response.ok) return null;
   let data;
   try { data = await response.json(); } catch { return null; }
@@ -123,31 +121,13 @@ async function verify(manager, view) {
     const headers = { ...getAntigravityHeaders(), Authorization: "Bearer " + access, "Content-Type": "application/json" };
     if (projectId) headers["x-goog-user-project"] = projectId;
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });
-    const aborter = new AbortController();
-    const timer = setTimeout(() => aborter.abort(), 20000);
     const proxy = proxyManager.selectForAccount(view.id, "antigravity");
-    let response;
-    try { response = await fetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:streamGenerateContent?alt=sse", { method: "POST", headers, body, signal: aborter.signal, proxy }); }
-    finally { clearTimeout(timer); }
+    const response = await timeoutFetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:streamGenerateContent?alt=sse", { method: "POST", headers, body, proxy });
     if (response.status === 200 || response.status === 400) out("✓ " + name + ": verified");
     else if (response.status === 401) out("✗ " + name + ": token expired or revoked (401)");
     else if (response.status === 403) out("✗ " + name + ": forbidden, may need verification (403)");
     else out("✗ " + name + ": " + response.status);
   } catch (error) { out("✗ " + name + ": " + (error && error.message || error)); }
-}
-
-async function verifyAll(manager) {
-  for (const account of manager.list()) {
-    if (account.enabled === false) { out("- " + (account.email || account.id) + ": skipped (disabled)"); continue; }
-    await verify(manager, { id: account.id, email: account.email });
-  }
-  out("Done.");
-}
-
-async function refreshToken(manager, view) {
-  const name = view.email || view.id;
-  try { out(await manager.refresh(view.id) ? "✓ refreshed " + name : "✗ no OAuth config / refresh token for " + name); }
-  catch (error) { out("✗ refresh failed for " + name + ": " + (error && error.message || error)); }
 }
 
 export function createAntigravityAccounts(manager) {
@@ -161,10 +141,10 @@ export function createAntigravityAccounts(manager) {
       const account = await login({ log: (message) => process.stderr.write(message + "\n") });
       return account ? { id: account.id, email: account.email, status: "active", enabled: true } : null;
     },
-    actions: () => [{ label: "Verify all accounts", run: () => verifyAll(manager) }],
+    actions: () => [{ label: "Verify all accounts", run: () => verifyAllAccounts(manager, verify) }],
     accountActions: (view) => [
       { label: "Verify access", run: () => verify(manager, view) },
-      { label: "Refresh token", run: () => refreshToken(manager, view) },
+      { label: "Refresh token", run: () => refreshAccountToken(manager, view) },
     ],
   });
 }

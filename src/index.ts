@@ -2,38 +2,12 @@
 // OpenCode entry. Export ONLY the provider plugin: OpenCode runs every export as a hook, so any extra export would register as a bogus plugin and can break registration.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
 import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli } from "../core/src/index.js";
-import { COMMON_PROVIDER_CAPABILITIES } from "../core-auth/dist/index.js";
+import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities } from "../core-auth/dist/index.js";
 import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
 import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
+import { driver, ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
 
-// Register the FULL config schema (the driver's own DEFAULT_CONFIG, the same defaults
-// its loader applies) BEFORE the CLI guard, so `config schema`/`config list`, the
-// `/config` command, and the loader Configure editor expose every option (not just a
-// couple). Writes no file on load. `logging` is core's logger toggle (kept).
-defineConfig("antigravity", { ...DEFAULT_CONFIG, logging: true });
-
-defineCapabilities("antigravity", {
-  fields: [
-    ...COMMON_PROVIDER_CAPABILITIES,
-    { key: "logging", type: "boolean", label: "Logging", description: "Write this plugin's log file.", group: "General" },
-    { key: "debug", type: "boolean", label: "Debug logging", group: "Logging" },
-    { key: "debug_tui", type: "boolean", label: "Debug in TUI panel", group: "Logging" },
-    { key: "log_dir", type: "string", label: "Log directory", group: "Logging" },
-    { key: "cli_first", type: "boolean", label: "Prefer gemini-cli", description: "Route Gemini models through gemini-cli before Antigravity.", group: "Routing" },
-    { key: "keep_thinking", type: "boolean", label: "Keep thinking blocks", description: "Preserve Claude thinking via signature caching.", group: "Claude compatibility" },
-    { key: "claude_tool_hardening", type: "boolean", label: "Tool hardening", description: "Curb Claude tool hallucination.", group: "Claude compatibility" },
-    { key: "claude_prompt_auto_caching", type: "boolean", label: "Prompt auto-caching", group: "Claude compatibility" },
-    { key: "default_retry_after_seconds", type: "number", label: "Default retry-after (s)", min: 0, group: "Retry" },
-    { key: "max_backoff_seconds", type: "number", label: "Max backoff (s)", min: 0, group: "Retry" },
-    { key: "request_jitter_max_ms", type: "number", label: "Request jitter max (ms)", min: 0, group: "Retry" },
-    { key: "signature_cache.enabled", type: "boolean", label: "Enabled", group: "Signature cache" },
-    { key: "signature_cache.memory_ttl_seconds", type: "number", label: "Memory TTL (s)", min: 0, group: "Signature cache" },
-    { key: "signature_cache.disk_ttl_seconds", type: "number", label: "Disk TTL (s)", min: 0, group: "Signature cache" },
-    { key: "signature_cache.write_interval_seconds", type: "number", label: "Write interval (s)", min: 0, group: "Signature cache" },
-  ],
-});
-
-defineReadme({
+const README_SPEC = {
   description:
     "Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work (multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state) while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.",
   architecture: `flowchart TD
@@ -82,17 +56,27 @@ defineReadme({
       body: "`handleIr` delegates every decision (model/lane resolve, the account/endpoint retry+rotation loop, IR<->Gemini request/response translation, and rate-limit classification) to the Java orchestrator (`java/antigravity-provider`, TeaVM-compiled, called via `driver/javaHandle.ts`/`javaStream.ts`). The provider is IR-native: the front-door owns app<->IR translation, so no app-wire (Anthropic) format code lives here. This TS layer owns only host I/O: the fetch + proxy transport, `AccountManager` acquisition/reporting, project-context discovery, OAuth login, device fingerprinting, and the version pool.",
     },
   ],
+};
+
+// name ("antigravity") is the config/capabilities/readme registration name; packageName
+// ("antigravity-auth") is the deployed bundle path deployCommands' {{BUNDLE}} shell resolves.
+// driver/index.ts no longer calls defineProvider(driver).opencode itself, this is now the ONLY
+// place the provider registers.
+export const AntigravityProvider = await defineProviderPlugin({
+  name: "antigravity",
+  packageName: "antigravity-auth",
+  driver,
+  core: { defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, deployCommands },
+  configCliGuard: () => maybeRunCli("antigravity"),
+  defaults: { ...DEFAULT_CONFIG, logging: true },
+  capabilities: {
+    fields: [
+      ...COMMON_PROVIDER_CAPABILITIES,
+      { key: "logging", type: "boolean", label: "Logging", description: "Write this plugin's log file.", group: "General" },
+      ...toCapabilitiesFields(ANTIGRAVITY_SETTINGS_SCHEMA),
+      ...retryBackoffCapabilities(RETRY_KEYS),
+    ],
+  },
+  readme: README_SPEC,
+  commands: ANTIGRAVITY_COMMANDS,
 });
-
-if (maybeRunReadmeCli("antigravity")) process.exit(0);
-
-if (await maybeRunCli("antigravity")) {
-  process.exit(0);
-}
-try {
-  deployCommands("antigravity-auth", ANTIGRAVITY_COMMANDS);
-} catch {
-  /* best-effort */
-}
-
-export { AntigravityProvider } from "./driver/index.js";

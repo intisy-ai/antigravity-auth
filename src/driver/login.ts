@@ -1,12 +1,11 @@
 // @ts-nocheck
 // Google OAuth login for antigravity. loginFlow() is the split begin/complete form core-auth's opencode oauth method drives; login() is the all-in-one form the CLI uses (opens the browser itself).
 
-import { spawn } from "child_process";
 import { appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { createInterface } from "node:readline";
-import { startOAuthListener, addAccount, proxyManager, isTTY } from "../../core-auth/dist/index.js";
+import { startOAuthListener, addAccount, proxyManager, isTTY, openBrowser, parsePastedCallback, toCoreAccount as toCoreAccountBase, timeoutFetch } from "../../core-auth/dist/index.js";
 import { authorizeAntigravity, exchangeAntigravity, encodeState } from "../antigravity/oauth.js";
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";
@@ -27,11 +26,7 @@ async function checkAntigravityAccess(access, projectId, proxy) {
     }
     headers["x-goog-user-project"] = projectId;
     const body = JSON.stringify({ model: "gemini-3-flash", request: { model: "gemini-3-flash", contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1, temperature: 0 } } });
-    const aborter = new AbortController();
-    const timer = setTimeout(() => aborter.abort(), 20000);
-    let res;
-    try { res = await fetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:streamGenerateContent?alt=sse", { method: "POST", headers, body, signal: aborter.signal, proxy }); }
-    finally { clearTimeout(timer); }
+    const res = await timeoutFetch(ANTIGRAVITY_ENDPOINT_PROD + "/v1internal:streamGenerateContent?alt=sse", { method: "POST", headers, body, proxy });
     if (res.status === 200 || res.status === 400) return { ok: true };
     if (res.status === 401 || res.status === 403) return { ok: false, status: res.status };
     return { ok: true, inconclusive: res.status };
@@ -60,43 +55,13 @@ function isConnectError(message) {
   return /unable to connect|failed to connect|could not connect|fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|EAI_AGAIN|socket|proxy|tunnel|network/i.test(String(message || ""));
 }
 
-// accept either the full redirect URL (code + state) or a bare code pasted alone
-function parsePastedCallback(input) {
-  const text = (input || "").trim();
-  if (!text) return null;
-  const codeMatch = text.match(/[?&]code=([^&\s]+)/);
-  if (codeMatch) {
-    const stateMatch = text.match(/[?&]state=([^&\s]+)/);
-    return { code: decodeURIComponent(codeMatch[1]), state: stateMatch ? decodeURIComponent(stateMatch[1]) : null };
-  }
-  return { code: text, state: null };
-}
-
-function tryOpenBrowser(url) {
-  try {
-    const platform = process.platform;
-    const command = platform === "win32" ? "cmd" : platform === "darwin" ? "open" : "xdg-open";
-    const args = platform === "win32" ? ["/c", "start", "", url] : [url];
-    const child = spawn(command, args, { detached: true, stdio: "ignore" });
-    child.on("error", () => {});   // missing xdg-open/open emits an async error event, not a throw
-    child.unref();
-  } catch {}
-}
-
+// antigravity stores a composite refresh string (refreshToken|projectId|managedProjectId), so it must
+// run it through parseRefreshParts before handing off to core-auth's shared toCoreAccount, then merge
+// its own meta (projectId/managedProjectId/fingerprint) onto the result; not a drop-in.
 async function toCoreAccount(result) {
   const parts = parseRefreshParts(result.refresh);
-  const account = {
-    id: result.email || parts.refreshToken.slice(0, 16),
-    email: result.email,
-    refresh: parts.refreshToken,
-    access: result.access,
-    expires: result.expires,
-    addedAt: Date.now(),
-    lastUsed: 0,
-    enabled: true,
-    rateLimitResetTimes: {},
-    meta: { projectId: result.projectId || parts.projectId, managedProjectId: parts.managedProjectId },
-  };
+  const account = toCoreAccountBase({ ...result, refresh: parts.refreshToken });
+  account.meta = { projectId: result.projectId || parts.projectId, managedProjectId: parts.managedProjectId };
   try { account.meta.fingerprint = await generateFingerprint(); } catch {}
   return account;
 }
@@ -174,9 +139,12 @@ export async function login(opts) {
   const log = (opts && opts.log) || ((message) => process.stderr.write(message + "\n"));
   const flow = await loginFlow();
   log("Open this URL in your browser to sign in with Google:\n\n  " + flow.url + "\n\nApprove in your browser, we'll detect it automatically. In a container the localhost page won't load; copy the full URL from your address bar and paste it below.\n");
-  tryOpenBrowser(flow.url);
+  openBrowser(flow.url);
   // race the loopback auto-capture against a terminal paste; close the readline as
-  // soon as either settles so a loopback win doesn't leave it dangling
+  // soon as either settles so a loopback win doesn't leave it dangling. Uses a raw
+  // readline (not core-auth's awaitPaste) because it must close the interface as
+  // soon as the OTHER promise (loopback) wins the race, which awaitPaste's own
+  // promise (resolves only once the user actually answers) has no hook for.
   let account = null;
   if (isTTY()) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
