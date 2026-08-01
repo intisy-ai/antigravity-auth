@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isOAuthAuth, parseRefreshParts, formatRefreshParts, accessTokenExpired } from "./auth";
 import type { OAuthAuthDetails, ApiKeyAuthDetails } from "./types";
+import { initCoreAuth } from "../../core-auth/dist/index.js";
 
 describe("isOAuthAuth", () => {
   it("returns true for oauth auth type", () => {
@@ -126,6 +127,10 @@ describe("formatRefreshParts", () => {
 });
 
 describe("accessTokenExpired", () => {
+  beforeAll(async () => {
+    await initCoreAuth();
+  });
+
   beforeEach(() => {
     vi.useRealTimers();
   });

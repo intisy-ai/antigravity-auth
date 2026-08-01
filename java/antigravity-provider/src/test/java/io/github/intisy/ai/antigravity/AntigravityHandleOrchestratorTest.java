@@ -71,7 +71,7 @@ class AntigravityHandleOrchestratorTest {
 
         AntigravityHandleOrchestrator.HandleDecision d = o.handle(inputs("antigravity-claude-sonnet-4-6", ANTI_URL, null));
 
-        assertEquals(list(row("acquire", "claude"), row("reportError", "acc1", 0, "missing access token"),
+        assertEquals(list(row("acquire", "claude"), row("reportError", "acc1", "claude", 0, "missing access token"),
                 row("acquire", "claude"), row("reportSuccess", "acc1")), a.seq);
         assertEquals(AntigravityHandleOrchestrator.HandleDecision.Kind.SERVE, d.kind);
     }

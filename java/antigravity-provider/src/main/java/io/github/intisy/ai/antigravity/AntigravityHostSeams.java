@@ -63,8 +63,8 @@ final class AntigravityHostSeams {
         }
 
         @Override
-        public void reportError(String accountId, int attempt, String message) {
-            backend.accounts.reportError(accountId, attempt, message);
+        public void reportError(String accountId, String lane, int attempt, String message) {
+            backend.accounts.reportError(accountId, lane, attempt, message);
         }
 
         @Override

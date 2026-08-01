@@ -91,7 +91,7 @@ public final class AntigravityHandleOrchestrator {
         /** {@code manager.nextAvailableAt(lane)} -- epoch ms, or {@code null}. */
         Long nextAvailableAt(String lane);
 
-        void reportError(String accountId, int attempt, String message);
+        void reportError(String accountId, String lane, int attempt, String message);
 
         void reportRateLimit(String accountId, String lane, long resetMs);
 
@@ -398,7 +398,7 @@ public final class AntigravityHandleOrchestrator {
             String access = acquired.access;
             Map<String, Object> account = acquired.account;
             if (!JsCoercion.isTruthy(access)) {
-                accounts.reportError(accountId, attempt, "missing access token");
+                accounts.reportError(accountId, lane, attempt, "missing access token");
                 continue;
             }
 

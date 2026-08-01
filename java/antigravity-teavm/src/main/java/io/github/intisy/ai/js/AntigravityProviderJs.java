@@ -775,7 +775,7 @@ public final class AntigravityProviderJs {
                     }
 
                     @Override
-                    public void reportError(String accountId, int attempt, String message) {
+                    public void reportError(String accountId, String lane, int attempt, String message) {
                     }
 
                     @Override
@@ -846,7 +846,7 @@ public final class AntigravityProviderJs {
             }
 
             @Override
-            public void reportError(String accountId, int attempt, String message) {
+            public void reportError(String accountId, String lane, int attempt, String message) {
             }
 
             @Override

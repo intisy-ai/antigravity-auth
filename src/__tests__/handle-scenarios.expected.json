@@ -545,6 +545,7 @@
       [
         "manager.reportError",
         "acc1",
+        "claude",
         0,
         "missing access token"
       ],

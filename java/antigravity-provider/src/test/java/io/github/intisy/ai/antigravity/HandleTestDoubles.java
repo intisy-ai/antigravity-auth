@@ -94,8 +94,8 @@ final class HandleTestDoubles {
         }
 
         @Override
-        public void reportError(String accountId, int attempt, String message) {
-            seq.add(row("reportError", accountId, attempt, message));
+        public void reportError(String accountId, String lane, int attempt, String message) {
+            seq.add(row("reportError", accountId, lane, attempt, message));
         }
 
         @Override

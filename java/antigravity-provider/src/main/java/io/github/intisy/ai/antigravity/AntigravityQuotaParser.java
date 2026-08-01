@@ -1,5 +1,7 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.shared.select.QuotaHealth;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -151,20 +153,23 @@ public final class AntigravityQuotaParser {
 
     /**
      * Quota still remaining? Used to decide a rate-limit is an IP limit (proxy signal), not real
-     * account exhaustion. Unknown quota -&gt; false (never blame the proxy).
+     * account exhaustion. Unknown quota -&gt; false (never blame the proxy). Maps this account's
+     * cachedQuota pools into {@link QuotaHealth.Pool}s and defers the decision to the single-source
+     * {@link QuotaHealth#hasCapacity}.
      */
     @SuppressWarnings("unchecked")
     public static boolean accountHasQuota(Map<String, Object> account) {
         Object metaObj = account != null ? account.get("meta") : null;
         Object cq = metaObj instanceof Map ? ((Map<String, Object>) metaObj).get("cachedQuota") : null;
         if (!JsCoercion.isTruthy(cq) || !(cq instanceof Map)) return false;
+        List<QuotaHealth.Pool> pools = new ArrayList<>();
         for (Object poolObj : ((Map<?, ?>) cq).values()) {
             if (poolObj instanceof Map) {
                 Object rf = ((Map<?, ?>) poolObj).get("remainingFraction");
-                if (rf instanceof Number && ((Number) rf).doubleValue() > 0) return true;
+                if (rf instanceof Number) pools.add(new QuotaHealth.Pool(((Number) rf).doubleValue()));
             }
         }
-        return false;
+        return QuotaHealth.hasCapacity(pools);
     }
 
     // ---- aggregateQuotaFamilies ------------------------------------------------------------------

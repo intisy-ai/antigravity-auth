@@ -58,7 +58,7 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
     public interface JsAccountFns extends JSObject {
         JSString nextAvailableAt(JSString lane);
 
-        void reportError(JSString accountId, int attempt, JSString message);
+        void reportError(JSString accountId, JSString lane, int attempt, JSString message);
 
         void reportRateLimit(JSString accountId, JSString lane, double resetMs);
 
@@ -113,8 +113,8 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
     }
 
     @Override
-    public void reportError(String accountId, int attempt, String message) {
-        jsOps.reportError(JSString.valueOf(accountId), attempt, JSString.valueOf(message != null ? message : ""));
+    public void reportError(String accountId, String lane, int attempt, String message) {
+        jsOps.reportError(JSString.valueOf(accountId), JSString.valueOf(lane), attempt, JSString.valueOf(message != null ? message : ""));
     }
 
     @Override

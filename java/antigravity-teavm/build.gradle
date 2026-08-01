@@ -24,6 +24,12 @@ dependencies {
     // AntigravityProviderJs lives in the SAME package (io.github.intisy.ai.js) so it can
     // reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/ClaudeProviderJs do.
     implementation project(":teavm")
+    // AntigravityQuotaParser.accountHasQuota calls :accounts' QuotaHealth; :antigravity-provider
+    // only compileOnly's it (thin-jar policy), which does not propagate here, so TeaVM needs its
+    // own resolvable reference to transpile it into the JS bundle. Composite-substituted to
+    // project(":accounts") by the root settings.gradle's includeBuild, same local-dev-only
+    // resolution as :antigravity-provider's own accounts/jvm dependencies.
+    implementation "io.github.intisy:accounts:0.1.0"
     teavm teavm.libs.jsoApis
 }
 

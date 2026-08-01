@@ -58,8 +58,8 @@ const H = vi.hoisted(() => {
       if (a) fn(a);
       record(["manager.mutate", id, snapMeta(a)]);
     }
-    reportError(id: string, attempt: number, reason: string) {
-      record(["manager.reportError", id, attempt, reason]);
+    reportError(id: string, lane: string, attempt: number, reason: string) {
+      record(["manager.reportError", id, lane, attempt, reason]);
     }
     reportRateLimit(id: string, lane: string, resetMs: any) {
       const a = find(id);

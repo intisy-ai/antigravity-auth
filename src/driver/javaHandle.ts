@@ -24,7 +24,7 @@
 // `makeResponseTransformStream`.
 
 import crypto from "node:crypto";
-import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule } from "../../core-auth/dist/index.js";
+import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "../../core-auth/dist/index.js";
 // Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
 // callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,
 // so a class imported fresh in each bundle stays a single, shared identity only if every importer
@@ -224,6 +224,10 @@ export function prepareViaJava(
 export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   const log = (ctx && ctx.log) || (() => {});
   const cliFirst = laneCliFirst == null ? laneCliFirstFor(ctx) : laneCliFirst;
+  // The sync jsAccountOps callbacks below (reportError/reportRateLimit/reportSuccess/
+  // nextAvailableAt) call getCoreAuth(), which throws unless initCoreAuth() has already
+  // resolved; ensure that before the orchestrator can reach them.
+  await initCoreAuth();
   const orchestrator = await loadOrchestrator();
   const { handleAntigravityRequestAsync } = orchestrator;
 
@@ -373,8 +377,8 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
       const next = manager.nextAvailableAt(lane);
       return JSON.stringify(next == null ? null : next);
     },
-    reportError(accountId, attempt, message) {
-      manager.reportError(accountId, attempt, message);
+    reportError(accountId, lane, attempt, message) {
+      manager.reportError(accountId, lane, attempt, message);
     },
     reportRateLimit(accountId, lane, resetMs) {
       manager.reportRateLimit(accountId, lane, resetMs);
