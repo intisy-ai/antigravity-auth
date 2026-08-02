@@ -16,11 +16,6 @@ dependencies {
     compileOnly project(":ir")
     testImplementation project(":ir")
 
-    // anthropic-translator's AnthropicTranslator, used by AntigravityGeminiSseBridge to encode the
-    // outbound Anthropic-wire SSE. Same thin-jar treatment as :ir above.
-    compileOnly project(":anthropic")
-    testImplementation project(":anthropic")
-
     // gemini-translator's GeminiTranslator, used by AntigravityGeminiSseBridge/AntigravityIrBridge
     // to decode upstream Gemini responses to IR. Same thin-jar treatment as :ir above.
     compileOnly project(":gemini")

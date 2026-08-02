@@ -107,7 +107,21 @@ vi.mock("../plugin/versions.js", async (importOriginal) => {
 });
 
 import { runGeminiViaJava, handleIrViaJavaOrchestrator, HandleIrError } from "../driver/javaHandle.js";
-import { anthropicTranslator } from "../../anthropic-translator/dist/index.js";
+
+// Builds a canonical IrRequest straight from a scenario body, without going through any app-wire
+// translator: the provider is IR-native (front-door owns app<->IR translation), so its own tests
+// construct IR directly rather than reaching for a vendor translator this repo does not carry.
+function toIrRequest(body: string) {
+  const parsed = JSON.parse(body);
+  return {
+    model: parsed.model,
+    messages: parsed.messages.map((m: any) => ({
+      role: m.role,
+      content: typeof m.content === "string" ? [{ kind: "text", text: m.content }] : m.content,
+    })),
+    stream: true,
+  };
+}
 
 const harness = H.harness;
 const PROD = "https://cloudcode-pa.googleapis.com";
@@ -409,7 +423,7 @@ describe("handleIr throws the typed HandleIrError with the real status/body/retr
   async function throwsFrom(scenarioName: string) {
     const sc = irErrorScenarios.find((s) => s.name === scenarioName);
     resetForRun(sc);
-    const ir = await anthropicTranslator.decodeRequest(sc.body);
+    const ir = toIrRequest(sc.body);
     const ctx = { model: sc.model ?? "antigravity-claude-sonnet-4-6", log: () => {} };
     let caught: any;
     try { await handleIrViaJavaOrchestrator(ir, ctx); } catch (e) { caught = e; }

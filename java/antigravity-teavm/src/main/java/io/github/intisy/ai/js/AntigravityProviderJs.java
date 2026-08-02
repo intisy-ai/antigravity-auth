@@ -39,7 +39,6 @@ import io.github.intisy.ai.shared.spi.http.HttpResponse;
 import org.teavm.jso.JSExport;
 import org.teavm.jso.JSFunctor;
 import org.teavm.jso.JSObject;
-import org.teavm.jso.core.JSArray;
 import org.teavm.jso.core.JSPromise;
 import org.teavm.jso.core.JSString;
 
@@ -1231,57 +1230,6 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance; {@link #newStreamMapper}'s return. */
-    public interface JsStreamMapperHandle extends JSObject {
-        /** Takes a raw SSE text CHUNK (not a pre-parsed object); the bridge does its own line-buffering. */
-        JSArray<JSString> handle(JSString chunk);
-
-        JSArray<JSString> finish();
-    }
-
-    /**
-     * Factory for a stateful stream mapper: ONE captured {@link AntigravityGeminiSseBridge}, driven by
-     * the TS {@code TransformStream}. The bridge owns the SSE line-buffering.
-     */
-    @JSExport
-    public static JsStreamMapperHandle newStreamMapper(String model, JsIdsFns jsIds) {
-        JsonCodec json = new SimpleJsonCodec();
-        AntigravityGeminiSseBridge.IdGenerator ids = new AntigravityGeminiSseBridge.IdGenerator() {
-            @Override
-            public String newMessageId() {
-                JSString s = jsIds.newMessageId();
-                return s == null ? "" : s.stringValue();
-            }
-
-            @Override
-            public String newToolId() {
-                JSString s = jsIds.newToolId();
-                return s == null ? "" : s.stringValue();
-            }
-        };
-        AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(json, ids, model);
-        return new JsStreamMapperHandle() {
-            @Override
-            public JSArray<JSString> handle(JSString chunk) {
-                return toJsStringArray(bridge.handle(chunk != null ? chunk.stringValue() : ""));
-            }
-
-            @Override
-            public JSArray<JSString> finish() {
-                return toJsStringArray(bridge.finish());
-            }
-        };
-    }
-
-    // No String[] idiom exists elsewhere in this module; JSArray<JSString> is the documented fallback.
-    private static JSArray<JSString> toJsStringArray(List<String> values) {
-        JSArray<JSString> arr = new JSArray<>();
-        for (String v : values) {
-            arr.push(JSString.valueOf(v));
-        }
-        return arr;
-    }
-
     /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance; {@link #newIrStreamMapper}'s return. */
     public interface JsIrStreamMapperHandle extends JSObject {
         /** Raw Gemini SSE text chunk in, a JSON array of enriched {@code IrStreamEvent}s out. */
@@ -1291,11 +1239,10 @@ public final class AntigravityProviderJs {
     }
 
     /**
-     * The response-decode half of the TS {@code handleIr} boundary: {@link #newStreamMapper}'s sibling,
-     * but returns the SAME id-minted/model-overwritten {@code IrStreamEvent}s {@link
-     * AntigravityGeminiSseBridge#handle}/{@code #finish} would encode to Anthropic SSE text, serialized
-     * as a neutral JSON array instead (no Anthropic wire knowledge), for {@code javaStream.ts}'s {@code
-     * makeIrStream} to enqueue directly onto an {@code IrEventStream}.
+     * The response-decode half of the TS {@code handleIr} boundary: returns the id-minted/
+     * model-overwritten {@code IrStreamEvent}s from {@link AntigravityGeminiSseBridge#handleIrEvents}/
+     * {@code #finishIrEvents}, serialized as a neutral JSON array, for {@code javaStream.ts}'s
+     * {@code makeIrStream} to enqueue directly onto an {@code IrEventStream}.
      */
     @JSExport
     public static JsIrStreamMapperHandle newIrStreamMapper(String model, JsIdsFns jsIds) {

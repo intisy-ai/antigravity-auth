@@ -6,9 +6,8 @@ import io.github.intisy.ai.shared.spi.JsonCodec;
  * Adapts core-proxy's {@code routing} {@link JsonCodec} SPI (parse/stringify) to core-ir's own,
  * structurally identical {@link io.github.intisy.ai.ir.spi.JsonCodec}. Every call site in
  * this module already carries a routing {@code JsonCodec} (GsonJsonCodec on the JVM,
- * SimpleJsonCodec from the TeaVM export); this lets {@link AntigravityIrBridge} hand that same
- * instance to core-ir's {@code AnthropicTranslator}/{@code GeminiTranslator} instead of
- * duplicating a codec.
+ * SimpleJsonCodec from the TeaVM export); this lets {@link AntigravityGeminiSseBridge} hand that
+ * same instance to core-ir's {@code GeminiTranslator} instead of duplicating a codec.
  */
 public final class IrJsonCodecAdapter implements io.github.intisy.ai.ir.spi.JsonCodec {
     private final JsonCodec delegate;

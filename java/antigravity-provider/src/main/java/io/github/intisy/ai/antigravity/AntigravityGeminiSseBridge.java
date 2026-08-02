@@ -18,8 +18,6 @@ import io.github.intisy.ai.ir.stream.ThinkingDeltaEvent;
 import io.github.intisy.ai.ir.stream.ThinkingSignatureEvent;
 import io.github.intisy.ai.ir.stream.ToolInputDeltaEvent;
 import io.github.intisy.ai.ir.spi.StreamDecoder;
-import io.github.intisy.ai.ir.spi.StreamEncoder;
-import io.github.intisy.ai.ir.translators.anthropic.AnthropicTranslator;
 import io.github.intisy.ai.ir.translators.gemini.GeminiTranslator;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
@@ -32,10 +30,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A stateful per-connection bridge from upstream Gemini {@code streamGenerateContent} SSE to
- * outbound Anthropic Messages SSE, built on core-ir's translators: {@link
- * GeminiTranslator#newStreamDecoder()} owns the line-buffering + per-part event state machine, and
- * {@link AnthropicTranslator#newStreamEncoder()} owns the outbound SSE framing.
+ * A stateful per-connection bridge from upstream Gemini {@code streamGenerateContent} SSE to a
+ * canonical IR event stream, built on core-ir's {@link GeminiTranslator#newStreamDecoder()}, which
+ * owns the line-buffering + per-part event state machine.
  *
  * <h2>Id minting (provider policy)</h2>
  * A real Gemini {@code functionCall} rarely carries an {@code id} (core-ir falls back to the tool
@@ -55,7 +52,7 @@ import java.util.Map;
  * By Gemini API contract only the terminal chunk of a candidate carries {@code finishReason},
  * which is what closes any open content block + emits {@code message_delta}/{@code message_stop}
  * (inside {@code GeminiTranslator}'s stream decoder itself, so no separate flush hook is needed for
- * a well-formed stream). {@link #finish()} covers the abnormal case (connection ends before a
+ * a well-formed stream). {@link #finishIrEvents()} covers the abnormal case (connection ends before a
  * {@code finishReason} ever arrives): this class tracks the last unmatched {@link
  * ContentBlockStartEvent} itself (core-ir's decoder does not expose that state), so it can still
  * force-close a dangling open block before emitting the closing {@code message_delta}/{@code
@@ -72,7 +69,6 @@ public final class AntigravityGeminiSseBridge {
     }
 
     private final StreamDecoder decoder;
-    private final StreamEncoder encoder;
     private final IdGenerator ids;
     private final String model;
 
@@ -84,14 +80,16 @@ public final class AntigravityGeminiSseBridge {
     public AntigravityGeminiSseBridge(JsonCodec routingJson, IdGenerator ids, String model) {
         io.github.intisy.ai.ir.spi.JsonCodec irJson = new IrJsonCodecAdapter(routingJson);
         this.decoder = new GeminiTranslator(irJson).newStreamDecoder();
-        this.encoder = new AnthropicTranslator(irJson).newStreamEncoder();
         this.ids = ids;
         this.model = model;
     }
 
-    /** Feed one raw SSE text chunk (partial or complete lines); returns the Anthropic SSE frames it produced. */
-    public List<String> handle(String chunk) {
-        return encodeAll(decoder.decode(chunk));
+    /**
+     * Feeds one raw Gemini SSE text chunk through the decoder and returns the id-minted/
+     * model-overwritten {@link IrStreamEvent}s, for the IR-native {@code handleIr} boundary.
+     */
+    public List<IrStreamEvent> handleIrEvents(String chunk) {
+        return enrichAll(decoder.decode(chunk));
     }
 
     /**
@@ -99,27 +97,8 @@ public final class AntigravityGeminiSseBridge {
      * finishReason} ever arrived, then the empty-stream safety net (mints {@code message_start}
      * first if NOTHING valid ever arrived), then closes out with {@code message_delta}/{@code
      * message_stop} unless that already happened (a well-formed stream closes itself inside {@link
-     * #handle}).
+     * #handleIrEvents}).
      */
-    public List<String> finish() {
-        List<String> out = new ArrayList<>();
-        for (IrStreamEvent ev : finishIrEvents()) {
-            out.add(encoder.encode(ev));
-        }
-        return out;
-    }
-
-    /**
-     * The enrichment half of {@link #encodeAll} without the Anthropic encode step: feeds one raw
-     * Gemini SSE text chunk through the decoder and returns the SAME id-minted/model-overwritten
-     * {@link IrStreamEvent}s {@link #handle} would encode, for a caller that wants the neutral IR
-     * event stream itself (the IR-native {@code handleIr} boundary) instead of Anthropic wire text.
-     */
-    public List<IrStreamEvent> handleIrEvents(String chunk) {
-        return enrichAll(decoder.decode(chunk));
-    }
-
-    /** {@link #finish()} without the Anthropic encode step; see {@link #handleIrEvents}. */
     public List<IrStreamEvent> finishIrEvents() {
         List<IrStreamEvent> out = new ArrayList<>();
         if (!sawMessageStart) {
@@ -140,8 +119,7 @@ public final class AntigravityGeminiSseBridge {
         return out;
     }
 
-    // ---- shared state-tracking/id-minting enrichment (both handle()/finish() and the IR-native --
-    // handleIrEvents()/finishIrEvents() build on this SAME pass; only the wire-encode step differs) --
+    // ---- shared state-tracking/id-minting enrichment, used by both handleIrEvents()/finishIrEvents() --
 
     private List<IrStreamEvent> enrichAll(List<IrStreamEvent> events) {
         for (IrStreamEvent ev : events) {
@@ -170,14 +148,6 @@ public final class AntigravityGeminiSseBridge {
         return events;
     }
 
-    private List<String> encodeAll(List<IrStreamEvent> events) {
-        List<String> out = new ArrayList<>();
-        for (IrStreamEvent ev : enrichAll(events)) {
-            out.add(encoder.encode(ev));
-        }
-        return out;
-    }
-
     // ---- buffered variant (the ai-java ServiceLoader Provider path only) --------------------------
 
     /**
@@ -202,47 +172,11 @@ public final class AntigravityGeminiSseBridge {
         }
     };
 
-    /** {@link #bufferedGeminiSseToAnthropic(JsonCodec, String, HttpResponse, IdGenerator)} with random ids. */
-    public static HttpResponse bufferedGeminiSseToAnthropic(JsonCodec routingJson, String requestedModel,
-                                                             HttpResponse upstreamGeminiSse) {
-        return bufferedGeminiSseToAnthropic(routingJson, requestedModel, upstreamGeminiSse, RANDOM_IDS);
-    }
-
-    public static HttpResponse bufferedGeminiSseToAnthropic(JsonCodec routingJson, String requestedModel,
-                                                             HttpResponse upstreamGeminiSse, IdGenerator ids) {
-        if (upstreamGeminiSse == null) {
-            return null;
-        }
-        try {
-            String unwrapped = unwrapCloudcodeResponseEnvelope(routingJson, upstreamGeminiSse.body);
-            AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(routingJson, ids, requestedModel);
-            StringBuilder out = new StringBuilder();
-            for (String ev : bridge.handle(unwrapped)) out.append(ev);
-            for (String ev : bridge.finish()) out.append(ev);
-            String body = out.toString();
-
-            boolean upstreamHadContent = upstreamGeminiSse.body != null && !upstreamGeminiSse.body.trim().isEmpty();
-            boolean producedContent = body.contains("content_block_start");
-            if (upstreamHadContent && !producedContent) {
-                // Empty-content safety net: the upstream had bytes but the decoder never opened a
-                // single content block, which almost always means the envelope shape did not match
-                // what was expected, not a genuinely empty turn.
-                return upstreamGeminiSse;
-            }
-            return buildSseResponse(body);
-        } catch (RuntimeException e) {
-            return upstreamGeminiSse;
-        }
-    }
-
     /**
-     * {@code handleIr}'s response-side counterpart to {@link #bufferedGeminiSseToAnthropic}:
-     * decodes the buffered upstream Gemini SSE body into a single, aggregated {@link IrResponse}
-     * (no Anthropic re-encoding), for a caller working at the neutral IR boundary. Reuses the SAME
-     * unwrap + id-minting policy as the Anthropic path. Unlike the Anthropic variant (which falls
-     * back to the raw upstream response on any decode trouble, since a caller there always has a
-     * wire-shaped fallback to serve), this throws: {@code handleIr} has no wire response to fall
-     * back to, so a decode failure must surface as a thrown error.
+     * {@code handleIr}'s response-side entry point: decodes the buffered upstream Gemini SSE body
+     * into a single, aggregated {@link IrResponse}, for a caller working at the neutral IR
+     * boundary. {@code handleIr} has no wire response to fall back to, so a decode failure must
+     * surface as a thrown error.
      */
     public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
                                                     HttpResponse upstreamGeminiSse) {
@@ -269,9 +203,9 @@ public final class AntigravityGeminiSseBridge {
             }
         }
         if (upstreamHadContent && !producedContent) {
-            // Same empty-content safety net as the Anthropic variant: the upstream had bytes but the
-            // decoder never opened a single content block, almost always an envelope-shape
-            // mismatch, not a genuinely empty turn.
+            // Empty-content safety net: the upstream had bytes but the decoder never opened a
+            // single content block, almost always an envelope-shape mismatch, not a genuinely
+            // empty turn.
             throw new IllegalStateException("antigravity upstream response did not decode to any content");
         }
         return aggregate(events, requestedModel, routingJson);
@@ -283,7 +217,7 @@ public final class AntigravityGeminiSseBridge {
      * blocks assembled by index from their start/delta/stop events, final {@code stopReason}/
      * {@code usage} from the last {@link MessageDeltaEvent}.
      */
-    private static IrResponse aggregate(List<IrStreamEvent> events, String model, JsonCodec routingJson) {
+    static IrResponse aggregate(List<IrStreamEvent> events, String model, JsonCodec routingJson) {
         IrResponse response = new IrResponse();
         response.model = model;
         Map<Integer, Block> blocksByIndex = new LinkedHashMap<>();
@@ -384,16 +318,5 @@ public final class AntigravityGeminiSseBridge {
             if (i < lines.length - 1) out.append('\n');
         }
         return out.toString();
-    }
-
-    private static HttpResponse buildSseResponse(String body) {
-        HttpResponse response = new HttpResponse();
-        response.status = 200;
-        response.headers = new LinkedHashMap<>();
-        response.headers.put("content-type", "text/event-stream");
-        response.headers.put("cache-control", "no-cache");
-        response.headers.put("connection", "keep-alive");
-        response.body = body;
-        return response;
     }
 }

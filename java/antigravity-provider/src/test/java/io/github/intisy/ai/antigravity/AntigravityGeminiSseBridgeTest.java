@@ -1,18 +1,31 @@
 package io.github.intisy.ai.antigravity;
 
+import io.github.intisy.ai.ir.IrResponse;
+import io.github.intisy.ai.ir.IrStopReason;
+import io.github.intisy.ai.ir.TextBlock;
+import io.github.intisy.ai.ir.ThinkingBlock;
+import io.github.intisy.ai.ir.ToolUseBlock;
+import io.github.intisy.ai.ir.stream.ContentBlockStartEvent;
+import io.github.intisy.ai.ir.stream.ContentBlockStopEvent;
+import io.github.intisy.ai.ir.stream.IrStreamEvent;
+import io.github.intisy.ai.ir.stream.MessageDeltaEvent;
+import io.github.intisy.ai.ir.stream.MessageStartEvent;
+import io.github.intisy.ai.ir.stream.MessageStopEvent;
 import io.github.intisy.ai.shared.spi.JsonCodec;
 import io.github.intisy.ai.shared.spi.http.HttpResponse;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Exercises {@link AntigravityGeminiSseBridge}, built on core-ir's {@code GeminiTranslator} stream
- * decoder and {@code AnthropicTranslator} stream encoder.
+ * decoder. The bridge's only output is the canonical IR event stream (and its buffered
+ * {@link IrResponse} aggregate); there is no vendor-wire encode step here.
  */
 class AntigravityGeminiSseBridgeTest {
 
@@ -34,26 +47,30 @@ class AntigravityGeminiSseBridgeTest {
         return "data: " + data + "\n\n";
     }
 
+    private static List<IrStreamEvent> allEvents(AntigravityGeminiSseBridge bridge, String chunk) {
+        List<IrStreamEvent> events = new ArrayList<>(bridge.handleIrEvents(chunk));
+        events.addAll(bridge.finishIrEvents());
+        return events;
+    }
+
     @Test
     void textDelta_thenFinishReason_emitsFullMessage() {
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "claude-sonnet-4");
-        StringBuilder out = new StringBuilder();
-        for (String ev : bridge.handle(sse("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}]}"))) {
-            out.append(ev);
-        }
-        for (String ev : bridge.finish()) out.append(ev);
-        String body = out.toString();
+        List<IrStreamEvent> events = allEvents(bridge,
+                sse("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}]}"));
 
-        assertTrue(body.contains("event: message_start"), body);
-        assertTrue(body.contains("\"id\":\"msg_fixed\""), body);
-        assertTrue(body.contains("\"model\":\"claude-sonnet-4\""), body);
-        assertTrue(body.contains("\"type\":\"text_delta\",\"text\":\"hello\""), body);
-        assertTrue(body.contains("event: content_block_stop"), body);
-        assertTrue(body.contains("\"stop_reason\":\"end_turn\""), body);
-        assertTrue(body.contains("event: message_stop"), body);
-        // A real Anthropic message_start/message_delta always carries usage, default-zeroed here
-        // since this fixture's Gemini frame never reports usageMetadata.
-        assertTrue(body.contains("\"usage\":{\"input_tokens\":0,\"output_tokens\":0}"), body);
+        MessageStartEvent start = (MessageStartEvent) events.get(0);
+        assertEquals("msg_fixed", start.id);
+        assertEquals("claude-sonnet-4", start.model);
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof ContentBlockStopEvent));
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof MessageStopEvent));
+        MessageDeltaEvent delta = (MessageDeltaEvent) events.stream()
+                .filter(ev -> ev instanceof MessageDeltaEvent).findFirst().orElseThrow();
+        assertEquals(IrStopReason.END_TURN, delta.stopReason);
+
+        IrResponse response = AntigravityGeminiSseBridge.aggregate(events, "claude-sonnet-4", JSON);
+        assertEquals(1, response.content.size());
+        assertEquals("hello", ((TextBlock) response.content.get(0)).text);
     }
 
     @Test
@@ -62,98 +79,96 @@ class AntigravityGeminiSseBridgeTest {
         // minting a fresh one, which also protects two parallel calls to the SAME tool name from
         // colliding.
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "gemini-3-pro");
-        StringBuilder out = new StringBuilder();
-        for (String ev : bridge.handle(sse("{\"candidates\":[{\"content\":{\"parts\":["
+        List<IrStreamEvent> events = allEvents(bridge, sse("{\"candidates\":[{\"content\":{\"parts\":["
                 + "{\"functionCall\":{\"id\":\"wire-id-should-be-ignored\",\"name\":\"search\",\"args\":{\"q\":\"cats\"}}}"
-                + "]},\"finishReason\":\"STOP\"}]}"))) {
-            out.append(ev);
-        }
-        for (String ev : bridge.finish()) out.append(ev);
-        String body = out.toString();
+                + "]},\"finishReason\":\"STOP\"}]}"));
 
-        assertTrue(body.contains("\"type\":\"tool_use\",\"id\":\"toolu_fixed\",\"name\":\"search\""), body);
-        assertFalse(body.contains("wire-id-should-be-ignored"), body);
-        assertTrue(body.contains("\"partial_json\":\"{\\\"q\\\":\\\"cats\\\"}\""), body);
+        ContentBlockStartEvent toolStart = (ContentBlockStartEvent) events.stream()
+                .filter(ev -> ev instanceof ContentBlockStartEvent).findFirst().orElseThrow();
+        assertEquals("toolu_fixed", toolStart.toolUseId);
+        assertEquals("search", toolStart.toolName);
+
+        IrResponse response = AntigravityGeminiSseBridge.aggregate(events, "gemini-3-pro", JSON);
+        ToolUseBlock tool = (ToolUseBlock) response.content.get(0);
+        assertEquals("toolu_fixed", tool.id);
+        assertEquals("search", tool.name);
     }
 
     @Test
     void thinkingPart_opensThinkingBlock_withSignature() {
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "gemini-3-pro");
-        StringBuilder out = new StringBuilder();
-        for (String ev : bridge.handle(sse("{\"candidates\":[{\"content\":{\"parts\":["
+        List<IrStreamEvent> events = allEvents(bridge, sse("{\"candidates\":[{\"content\":{\"parts\":["
                 + "{\"thought\":true,\"text\":\"pondering\",\"thoughtSignature\":\"sig-abc\"}"
-                + "]},\"finishReason\":\"STOP\"}]}"))) {
-            out.append(ev);
-        }
-        for (String ev : bridge.finish()) out.append(ev);
-        String body = out.toString();
+                + "]},\"finishReason\":\"STOP\"}]}"));
 
-        assertTrue(body.contains("\"type\":\"thinking\",\"thinking\":\"\""), body);
-        assertTrue(body.contains("\"type\":\"thinking_delta\",\"thinking\":\"pondering\""), body);
-        assertTrue(body.contains("\"type\":\"signature_delta\",\"signature\":\"sig-abc\""), body);
+        IrResponse response = AntigravityGeminiSseBridge.aggregate(events, "gemini-3-pro", JSON);
+        ThinkingBlock thinking = (ThinkingBlock) response.content.get(0);
+        assertEquals("pondering", thinking.text);
+        assertEquals("sig-abc", thinking.signature);
     }
 
     @Test
     void emptyStream_noValidFrame_stillEmitsWellFormedScaffolding() {
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "claude-sonnet-4");
-        StringBuilder out = new StringBuilder();
-        for (String ev : bridge.finish()) out.append(ev);
-        String body = out.toString();
+        List<IrStreamEvent> events = bridge.finishIrEvents();
 
-        assertTrue(body.contains("event: message_start"), body);
-        assertTrue(body.contains("event: message_delta"), body);
-        assertTrue(body.contains("event: message_stop"), body);
+        assertTrue(events.get(0) instanceof MessageStartEvent);
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof MessageDeltaEvent));
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof MessageStopEvent));
     }
 
     @Test
     void danglingOpenBlock_getsForceClosed_whenNoFinishReasonEverArrives() {
         // Connection ends mid-turn (upstream never sent a terminal finishReason chunk): the open
-        // text block must still be closed before message_delta/message_stop, or the outbound
-        // Anthropic stream would be malformed (a content_block_start with no matching stop).
+        // text block must still be closed before message_delta/message_stop, or the outbound IR
+        // event stream would be malformed (a content_block_start with no matching stop).
         AntigravityGeminiSseBridge bridge = new AntigravityGeminiSseBridge(JSON, FIXED_IDS, "claude-sonnet-4");
-        StringBuilder out = new StringBuilder();
-        for (String ev : bridge.handle(sse("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}"))) {
-            out.append(ev);
-        }
-        for (String ev : bridge.finish()) out.append(ev);
-        String body = out.toString();
+        List<IrStreamEvent> events = allEvents(bridge, sse("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}"));
 
-        assertTrue(body.contains("event: content_block_stop"), body);
-        assertTrue(body.contains("event: message_stop"), body);
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof ContentBlockStopEvent));
+        assertTrue(events.stream().anyMatch(ev -> ev instanceof MessageStopEvent));
     }
 
     // ---- buffered (ai-java ServiceLoader Provider path) --------------------------------------------
 
     @Test
-    void bufferedGeminiSseToAnthropic_unwrapsCloudcodeResponseEnvelope() {
+    void bufferedGeminiSseToIr_unwrapsCloudcodeResponseEnvelope() {
         HttpResponse upstream = new HttpResponse();
         upstream.status = 200;
         upstream.headers = new LinkedHashMap<>();
         upstream.body = sse("{\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}}");
 
-        HttpResponse out = AntigravityGeminiSseBridge.bufferedGeminiSseToAnthropic(JSON, "claude-sonnet-4", upstream);
+        IrResponse response = AntigravityGeminiSseBridge.bufferedGeminiSseToIr(JSON, "claude-sonnet-4", upstream);
 
-        assertEquals(200, out.status);
-        assertEquals("text/event-stream", out.headers.get("content-type"));
-        assertTrue(out.body.contains("\"text_delta\",\"text\":\"ok\""), out.body);
-        assertFalse(out.body.contains("\"response\""), out.body);
+        assertEquals("claude-sonnet-4", response.model);
+        assertEquals(1, response.content.size());
+        assertEquals("ok", ((TextBlock) response.content.get(0)).text);
     }
 
     @Test
-    void bufferedGeminiSseToAnthropic_nullUpstream_returnsNull() {
-        assertEquals(null, AntigravityGeminiSseBridge.bufferedGeminiSseToAnthropic(JSON, "m", null));
+    void bufferedGeminiSseToIr_nullUpstream_throws() {
+        try {
+            AntigravityGeminiSseBridge.bufferedGeminiSseToIr(JSON, "m", null);
+            throw new AssertionError("expected IllegalStateException");
+        } catch (IllegalStateException expected) {
+            // expected: handleIr has no wire response to fall back to
+        }
     }
 
     @Test
-    void bufferedGeminiSseToAnthropic_emptyContent_fallsBackToUpstreamVerbatim() {
+    void bufferedGeminiSseToIr_emptyContent_throws() {
         // Upstream had bytes but they never opened a content block (envelope shape mismatch), so
-        // fall back to the upstream response verbatim.
+        // this must surface as a thrown decode error rather than silently returning empty content.
         HttpResponse upstream = new HttpResponse();
         upstream.status = 200;
         upstream.headers = new LinkedHashMap<>();
         upstream.body = sse("{\"unexpectedShape\":true}");
 
-        HttpResponse out = AntigravityGeminiSseBridge.bufferedGeminiSseToAnthropic(JSON, "m", upstream);
-        assertEquals(upstream, out);
+        try {
+            AntigravityGeminiSseBridge.bufferedGeminiSseToIr(JSON, "m", upstream);
+            throw new AssertionError("expected IllegalStateException");
+        } catch (IllegalStateException expected) {
+            // expected
+        }
     }
 }

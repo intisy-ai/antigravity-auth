@@ -22,13 +22,8 @@ project(":teavm").projectDir = file("../core-proxy/java/teavm")
 include ":ir"
 project(":ir").projectDir = file("../core-ir/java/ir")
 
-// :anthropic - the Anthropic translator (AnthropicTranslator etc.), from the anthropic-translator
-// submodule (../anthropic-translator/java/anthropic), a DIRECT submodule like core-ir.
-include ":anthropic"
-project(":anthropic").projectDir = file("../anthropic-translator/java/anthropic")
-
 // :gemini - the Gemini translator (GeminiTranslator etc.), from the gemini-translator submodule
-// (../gemini-translator/java/gemini), a DIRECT submodule like core-ir/anthropic-translator.
+// (../gemini-translator/java/gemini), a DIRECT submodule like core-ir.
 include ":gemini"
 project(":gemini").projectDir = file("../gemini-translator/java/gemini")
 
