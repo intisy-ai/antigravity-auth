@@ -25,7 +25,7 @@ export interface ModelModalities {
   output: ModelModality[];
 }
 
-export interface OpencodeModelDefinition extends ProviderModel {
+export interface ModelDefinition extends ProviderModel {
   name: string;
   limit: ModelLimit;
   modalities: ModelModalities;
@@ -35,9 +35,9 @@ export interface OpencodeModelDefinition extends ProviderModel {
   group?: string;
 }
 
-export type OpencodeModelDefinitions = Record<string, OpencodeModelDefinition>;
+export type ModelDefinitions = Record<string, ModelDefinition>;
 
 // The catalog is now fetched live per account (plugin/models-fetch.ts) and cached
-// by core-auth. OpenCode/Claude show no antigravity models until the first
-// `oc auth login`; this empty default is the pre-login / fetch-failure fallback.
-export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {};
+// by core-auth. Apps show no antigravity models until the first login;
+// this empty default is the pre-login / fetch-failure fallback.
+export const MODEL_DEFINITIONS: ModelDefinitions = {};
