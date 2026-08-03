@@ -203,8 +203,8 @@ export const driver = {
   // Catalog is fetched live per account under the antigravity pool; the gemini-cli lane's
   // models surface through that same live fetch, so no static list is declared here.
   geminiCliModels: {},
-  opencodeProvider: "antigravity",
-  opencodeNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
+  appProviderId: "antigravity",
+  appNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
   models,
   fetchModels,
   sorts: ["leaderboard"],   // opt into core's built-in quality sort (manual is automatic)
