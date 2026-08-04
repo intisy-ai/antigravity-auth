@@ -1,11 +1,14 @@
 // @ts-nocheck
 // OpenCode entry. Export ONLY the provider plugin: OpenCode runs every export as a hook, so any extra export would register as a bogus plugin and can break registration.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli } from "../core/src/index.js";
-import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities } from "../core-auth/dist/index.js";
+import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, emitEvent } from "../core/src/index.js";
+import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities, setActivityEmitter } from "../core-auth/dist/index.js";
 import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
 import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
 import { driver, ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
+
+// Best-effort: let core-auth's account activity (added/removed/login/rate_limited/models_refreshed) flow onto the bus.
+setActivityEmitter((spec: unknown, source: string) => emitEvent(spec, source));
 
 const README_SPEC = {
   description:
