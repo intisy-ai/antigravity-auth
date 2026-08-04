@@ -29,8 +29,13 @@ jobs:
       - run: npm install
 
       # Generates the TeaVM JS (src/generated/*.teavm.js and the antigravity-teavm module the smoke
-      # test imports) plus the esbuild bundles.
+      # test imports) plus the esbuild bundles. The Gradle build resolves io.github.intisy:ai-java
+      # from GitHub Packages Maven (intisy-ai/ai-java), which requires read:packages even for
+      # public packages; github.token cannot read another repo's packages, so use the org PAT.
       - run: npm run build
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
 
       - run: npx vitest run
 
@@ -39,6 +44,9 @@ jobs:
       - name: Gradle tests
         working-directory: java
         run: ./gradlew test -PaiJavaDir="${GITHUB_WORKSPACE}/ai-java-src"
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
 
       # Only coverage of the CPS-transformed orchestrator actually suspending and resuming across the
       # @Async bridges under genuinely async JS; exits non-zero on any mismatch.
