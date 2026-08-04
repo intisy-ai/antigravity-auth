@@ -15,24 +15,24 @@ describe("debug sink policy", () => {
 
   beforeEach(() => {
     vi.resetModules()
-    originalDebugEnv = process.env.OPENCODE_ANTIGRAVITY_DEBUG
-    originalDebugTuiEnv = process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI
-    delete process.env.OPENCODE_ANTIGRAVITY_DEBUG
-    delete process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI
+    originalDebugEnv = process.env.ANTIGRAVITY_DEBUG
+    originalDebugTuiEnv = process.env.ANTIGRAVITY_DEBUG_TUI
+    delete process.env.ANTIGRAVITY_DEBUG
+    delete process.env.ANTIGRAVITY_DEBUG_TUI
     ensureGitignoreSyncMock.mockReset()
   })
 
   afterEach(() => {
     if (originalDebugEnv === undefined) {
-      delete process.env.OPENCODE_ANTIGRAVITY_DEBUG
+      delete process.env.ANTIGRAVITY_DEBUG
     } else {
-      process.env.OPENCODE_ANTIGRAVITY_DEBUG = originalDebugEnv
+      process.env.ANTIGRAVITY_DEBUG = originalDebugEnv
     }
 
     if (originalDebugTuiEnv === undefined) {
-      delete process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI
+      delete process.env.ANTIGRAVITY_DEBUG_TUI
     } else {
-      process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI = originalDebugTuiEnv
+      process.env.ANTIGRAVITY_DEBUG_TUI = originalDebugTuiEnv
     }
   })
 
@@ -50,8 +50,8 @@ describe("debug sink policy", () => {
   })
 
   it("keeps debug_tui independent from debug in env fallback", async () => {
-    process.env.OPENCODE_ANTIGRAVITY_DEBUG = "0"
-    process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI = "1"
+    process.env.ANTIGRAVITY_DEBUG = "0"
+    process.env.ANTIGRAVITY_DEBUG_TUI = "1"
 
     const { isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
 
