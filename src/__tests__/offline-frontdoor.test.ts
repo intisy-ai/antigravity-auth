@@ -1,33 +1,46 @@
-// Proves the injected OpenCode front-door is actually wired: with driver.serveDirect set
-// (src/index.ts), core-auth's dispatchOpencodeFetch takes the in-process direct path instead of
-// the no-front-door 503, serving an offline OpenCode request (no proxy daemon running) for real,
-// all the way through the Anthropic-wire codec back to a JSON response.
-import { describe, it, expect } from "vitest";
-import { serveDirect } from "../../opencode-proxy/dist/index.js";
+// antigravity-auth carries no bundled front-door: core-auth's createProviderPlugin resolves the
+// app-shaped hooks from whatever AppFrontDoor the app layer (a loader) published at runtime via
+// HUB_APP_FRONTDOOR. With no front-door published and no out-of-process proxy configured, the
+// plugin is inert (no app-shaped hooks to build).
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-describe("antigravity offline OpenCode front-door", () => {
-  it("dispatches through the injected serveDirect instead of 503ing", async () => {
-    const def: any = {
-      id: "antigravity",
-      handleIr: async () => ({
-        id: "m",
-        model: "m",
-        content: [{ kind: "text", text: "ok" }],
-        stopReason: "end_turn",
-        usage: { inputTokens: 1, outputTokens: 1 },
-      }),
-      serveDirect,
-    };
-    const { dispatchOpencodeFetch } = await import("../../core-auth/dist/opencode-fetch.js");
-    const request = new Request("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      body: JSON.stringify({ model: "gemini", max_tokens: 8, messages: [{ role: "user", content: "hi" }] }),
-    });
-    const res = await dispatchOpencodeFetch(def, request, {}, { configDir: "/tmp", log() {} });
+let dir: string;
+let saved: Record<string, string | undefined>;
 
-    expect(res.status).not.toBe(503);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.content?.[0]?.text).toBe("ok");
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "antigravity-auth-offline-frontdoor-"));
+  mkdirSync(join(dir, "config"), { recursive: true });
+  saved = {
+    HUB_CONFIG_DIR: process.env.HUB_CONFIG_DIR,
+    CORE_APP: process.env.CORE_APP,
+    OPENCODE_CONFIG: process.env.OPENCODE_CONFIG,
+    HUB_OC_PROXY: process.env.HUB_OC_PROXY,
+    HUB_APP_FRONTDOOR: process.env.HUB_APP_FRONTDOOR,
+  };
+  process.env.HUB_CONFIG_DIR = dir;
+  process.env.CORE_APP = "opencode";
+  // Isolate the opencode.json merge target so the test never touches a real home.
+  process.env.OPENCODE_CONFIG = join(dir, "opencode.json");
+  delete process.env.HUB_OC_PROXY;
+  delete process.env.HUB_APP_FRONTDOOR;
+});
+
+afterEach(() => {
+  for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete (process.env as Record<string, string | undefined>)[key];
+    else process.env[key] = value;
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+describe("antigravity-auth with no injected front-door", () => {
+  it("returns an inert plugin (no app-shaped hooks) instead of bundling its own front-door", async () => {
+    // @ts-ignore build artifact (produced by `npm run build`)
+    const { AntigravityProvider } = await import("../../dist/index.js");
+    const hooks = await AntigravityProvider({});
+    expect(hooks.auth).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "antigravity-auth",
   "version": "1.10.0",
-  "description": "Google Antigravity provider for OpenCode and Claude Code, built on core-auth — multi-account rotation, quota management, proxy support",
+  "description": "Google Antigravity provider for OpenCode and Claude Code, built on core-auth (multi-account rotation, quota management, proxy support)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -50,7 +50,7 @@
     ]
   },
   "scripts": {
-    "build": "npm --prefix opencode-proxy install && npm --prefix opencode-proxy run build && npm --prefix core-ir install && npm --prefix core-ir run build && node core/teavm-build.mjs --java-dir java --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && npx tsc --project core-auth/tsconfig.json && node build.mjs",
+    "build": "npm --prefix core-ir install && npm --prefix core-ir run build && node core/teavm-build.mjs --java-dir java --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && npx tsc --project core-auth/tsconfig.json && node build.mjs",
     "postbuild": "node dist/index.js readme",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && vitest run",

@@ -103,14 +103,14 @@ function createLogWriter(filePath?: string): (line: string) => void {
  */
 export function initializeDebug(config: AntigravityConfig): void {
 
-  const envDebugFlag = env.OPENCODE_ANTIGRAVITY_DEBUG ?? "";
+  const envDebugFlag = env.ANTIGRAVITY_DEBUG ?? "";
   const { debugEnabled } = deriveDebugPolicy({
     configDebug: config.debug,
     configDebugTui: config.debug_tui,
     envDebugFlag,
-    envDebugTuiFlag: env.OPENCODE_ANTIGRAVITY_DEBUG_TUI,
+    envDebugTuiFlag: env.ANTIGRAVITY_DEBUG_TUI,
   });
-  const debugTuiEnabled = config.debug_tui || isTruthyFlag(env.OPENCODE_ANTIGRAVITY_DEBUG_TUI);
+  const debugTuiEnabled = config.debug_tui || isTruthyFlag(env.ANTIGRAVITY_DEBUG_TUI);
   const logFilePath = debugEnabled ? createLogFilePath(config.log_dir) : undefined;
   const logWriter = createLogWriter(logFilePath);
 
@@ -136,10 +136,10 @@ function getDebugState(): DebugState {
     const { debugEnabled } = deriveDebugPolicy({
       configDebug: false,
       configDebugTui: false,
-      envDebugFlag: env.OPENCODE_ANTIGRAVITY_DEBUG,
-      envDebugTuiFlag: env.OPENCODE_ANTIGRAVITY_DEBUG_TUI,
+      envDebugFlag: env.ANTIGRAVITY_DEBUG,
+      envDebugTuiFlag: env.ANTIGRAVITY_DEBUG_TUI,
     });
-    const debugTuiEnabled = isTruthyFlag(env.OPENCODE_ANTIGRAVITY_DEBUG_TUI);
+    const debugTuiEnabled = isTruthyFlag(env.ANTIGRAVITY_DEBUG_TUI);
     const logFilePath = debugEnabled ? createLogFilePath() : undefined;
     const logWriter = createLogWriter(logFilePath);
 

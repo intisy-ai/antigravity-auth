@@ -16,6 +16,3 @@
 [submodule "gemini-translator"]
 	path = gemini-translator
 	url = https://github.com/intisy-ai/gemini-translator.git
-[submodule "opencode-proxy"]
-	path = opencode-proxy
-	url = https://github.com/intisy-ai/opencode-proxy.git

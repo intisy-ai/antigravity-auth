@@ -6,7 +6,6 @@ import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesField
 import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
 import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
 import { driver, ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
-import { serveDirect } from "../opencode-proxy/dist/index.js";
 
 const README_SPEC = {
   description:
@@ -62,8 +61,6 @@ const README_SPEC = {
 // name ("antigravity") is the config/capabilities/readme registration name; packageName
 // ("antigravity-auth") is the deployed bundle path deployCommands' {{BUNDLE}} shell resolves.
 // This is the single place the provider registers with the host.
-driver.serveDirect = serveDirect;
-
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
   packageName: "antigravity-auth",
