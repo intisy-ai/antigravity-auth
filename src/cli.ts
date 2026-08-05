@@ -1,8 +1,13 @@
 // @ts-nocheck
 // Standalone CLI for antigravity account management; writes to the shared core-auth store so accounts are used by both OpenCode and Claude.
 
-import { runAccountCli } from "../core-auth/dist/index.js";
+import { runAccountCli, setActivityEmitter } from "../core-auth/dist/index.js";
+import { emitEvent } from "../core/src/index.js";
 import { driver } from "./driver/index.js";
+
+// dist/cli.js is the `antigravity` bin entry, a separate process/bundle from index.js and
+// handler.js with its own emitter copy; login/list/remove here must also flow onto the bus.
+setActivityEmitter((spec, source) => emitEvent(spec, source));
 
 const PROVIDER_ID = "antigravity";
 
