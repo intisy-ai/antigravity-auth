@@ -113,7 +113,7 @@ async function handleIr(ir, ctx) {
 // account's real available models, and build the catalog (+ ranking/default for
 // Auto). Returns null when no account exists or the fetch fails -> core-auth then
 // falls back to the cache (or an empty catalog before first login).
-async function fetchModels(ctx) {
+async function fetchWholeCatalog(ctx) {
   const log = (ctx && ctx.log) || (() => {});
   const account = manager.list().find((a) => a.enabled !== false && a.refresh);
   if (!account) return null;
@@ -126,6 +126,46 @@ async function fetchModels(ctx) {
   const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
   if (!payload) return null;
   return buildCatalogViaJava(payload);
+}
+
+// One upstream fetch serves both lanes, and core-auth resolves each provider's catalog
+// separately, so the result is held briefly rather than fetched twice in a row.
+const CATALOG_MEMO_MS = 60 * 1000;
+let catalogMemo = null;
+
+async function wholeCatalog(ctx) {
+  if (catalogMemo && Date.now() - catalogMemo.at < CATALOG_MEMO_MS) return catalogMemo.catalog;
+  const catalog = await fetchWholeCatalog(ctx);
+  if (catalog) catalogMemo = { at: Date.now(), catalog };
+  return catalog;
+}
+
+// The upstream account serves two lanes at once, and the catalog says which is which: a model
+// this provider meters carries its own id prefix, and what is left is the free gemini-cli
+// pool. Splitting here is what keeps each provider's model count its own, instead of filing
+// every model under whichever lane happened to do the fetch.
+export function laneOf(modelId) {
+  return modelId.startsWith(PROVIDER_ID + "-") ? PROVIDER_ID : GEMINI_CLI_PROVIDER_ID;
+}
+
+export function catalogForLane(catalog, lane) {
+  if (!catalog) return null;
+  const models = {};
+  for (const [id, model] of Object.entries(catalog.models || {})) {
+    if (laneOf(id) === lane) models[id] = model;
+  }
+  if (Object.keys(models).length === 0) return null;
+  const ranking = (catalog.ranking || Object.keys(catalog.models || {})).filter((id) => id in models);
+  const defaultModelId = catalog.defaultModelId && models[catalog.defaultModelId] ? catalog.defaultModelId : undefined;
+  return { models, ranking, defaultModelId };
+}
+
+async function fetchModels(ctx) {
+  return catalogForLane(await wholeCatalog(ctx), PROVIDER_ID);
+}
+
+async function fetchGeminiCliModels(ctx) {
+  return catalogForLane(await wholeCatalog(ctx), GEMINI_CLI_PROVIDER_ID);
 }
 
 // Settings shown in core-auth's settings UI. ONLY options actually consumed by
@@ -200,9 +240,10 @@ export const driver = {
   label: "Antigravity",
   geminiCliProviderId: GEMINI_CLI_PROVIDER_ID,
   geminiCliLabel: "Gemini CLI",
-  // Catalog is fetched live per account under the antigravity pool; the gemini-cli lane's
-  // models surface through that same live fetch, so no static list is declared here.
+  // Both lanes come out of the one live fetch, split by id prefix, so neither declares a
+  // static list and each reports only its own models.
   geminiCliModels: {},
+  fetchGeminiCliModels,
   appProviderId: "antigravity",
   appNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
   models,
