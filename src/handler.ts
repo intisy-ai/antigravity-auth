@@ -24,6 +24,8 @@ export const defs = [
     id: driver.geminiCliProviderId,
     label: driver.geminiCliLabel,
     models: driver.geminiCliModels,
+    // Its own slice of the shared fetch, so its model count is its own rather than nothing.
+    fetchModels: driver.fetchGeminiCliModels,
     hasOAuth: def.hasOAuth,
     settings: driver.settings,
     accountPool: driver.id,

@@ -4,9 +4,8 @@
 import { appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { createInterface } from "node:readline";
-import { startOAuthListener, addAccount, proxyManager, isTTY, openBrowser, parsePastedCallback, toCoreAccount as toCoreAccountBase, timeoutFetch } from "../../core-auth/dist/index.js";
-import { authorizeAntigravity, exchangeAntigravity, encodeState } from "../antigravity/oauth.js";
+import { defineOAuthLogin, proxyManager, toCoreAccount as toCoreAccountBase, timeoutFetch } from "../../core-auth/dist/index.js";
+import { authorizeAntigravity, exchangeAntigravity } from "../antigravity/oauth.js";
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";
 import { ANTIGRAVITY_REDIRECT_URI, ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
@@ -66,96 +65,48 @@ async function toCoreAccount(result) {
   return account;
 }
 
-export async function loginFlow() {
-  // bind a proxy to this new account up front so the token exchange + project
-  // discovery never touch Google from the server's own IP
-  const proxy = proxyManager.pickForLogin("antigravity");
-  const authorization = await authorizeAntigravity();
-  const listener = await startOAuthListener(ANTIGRAVITY_REDIRECT_URI, { timeoutMs: LOGIN_TIMEOUT_MS });
-  let settled = false;
-  const closeListener = () => { try { listener.close(); } catch {} };
-
-  // shared finisher for both paths (pasted code + loopback callback): exchange the
-  // code, save the account, bind its proxy. Guarded so only the first path wins.
-  const finish = async (cb) => {
-    if (settled) return null;
-    if (!cb || !cb.code) { dbg("finish: no code -> returning null"); return null; }
-    settled = true;
-    try {
-      // a pasted bare code has no state; rebuild it from this flow's own verifier
-      const state = cb.state || encodeState({ verifier: authorization.verifier, projectId: authorization.projectId });
-      let boundProxy = proxy;
-      let result = await exchangeAntigravity(cb.code, state, { proxy });
-      // A dead/unreachable login proxy bricks the token exchange (the request never
-      // reaches Google, so the auth code is NOT consumed). Retry directly, a
-      // non-working proxy provides no isolation anyway, and then DON'T bind it.
-      if (result.type !== "success" && proxy && isConnectError(result.error)) {
-        dbg("finish: proxied exchange could not connect via " + proxy + ", retrying directly");
-        process.stderr.write("antigravity: login proxy " + proxy + " unreachable, retrying token exchange without a proxy.\n");
-        boundProxy = null;
-        result = await exchangeAntigravity(cb.code, state, {});
-      }
-      dbg("finish: token exchange -> " + result.type + (result.type !== "success" ? " | error: " + (result.error || "unknown") : " | email: " + (result.email || "?")) + " | proxy=" + (boundProxy || "direct"));
-      if (result.type !== "success") {
-        process.stderr.write("antigravity login failed, token exchange error: " + (result.error || "unknown") + "\n");
-        return null;
-      }
-      const account = await toCoreAccount(result);
-      // gate: confirm Antigravity actually accepts this account before saving it
-      const projectId = account.meta.managedProjectId || account.meta.projectId || result.projectId || "";
-      const check = await checkAntigravityAccess(result.access, projectId, boundProxy);
-      if (!check.ok) {
-        dbg("finish: Antigravity REJECTED " + (result.email || "?") + " (status " + check.status + "), not adding");
-        process.stderr.write("antigravity: this account isn't enabled for Antigravity (HTTP " + check.status + "), not added.\nUse a Google account that has Antigravity/Gemini access.\n");
-        return null;
-      }
-      if (check.inconclusive) dbg("finish: access check inconclusive (" + check.inconclusive + "), adding anyway");
-      addAccount(PROVIDER_ID, account);
-      dbg("finish: addAccount done id=" + account.id);
-      if (boundProxy) proxyManager.bindAccountProxy(account.id, boundProxy);
-      return account;
-    } catch (error) {
-      dbg("finish: THREW " + (error && error.stack || error));
-      throw error;
-    } finally {
-      closeListener();
+// Every generic part of the flow (the settled guard, rebuilding a missing state, saving the
+// account, the loopback listener, racing a paste against the browser) comes from core-auth.
+// What stays here is antigravity's own: binding a login proxy, the direct-retry when that
+// proxy cannot connect, and the access gate above.
+export const { loginFlow, login } = defineOAuthLogin({
+  provider: PROVIDER_ID,
+  instructions:
+    "Sign in with Google, approve in your browser and we'll detect it automatically. In a container the localhost redirect won't load, so copy the full URL from your address bar (or just the code) and paste it here instead.",
+  redirectUri: ANTIGRAVITY_REDIRECT_URI,
+  timeoutMs: LOGIN_TIMEOUT_MS,
+  // Bind a proxy up front so the token exchange and project discovery never touch Google
+  // from the server's own IP.
+  begin: () => ({ proxy: proxyManager.pickForLogin(PROVIDER_ID) }),
+  authorize: async () => {
+    const authorization = await authorizeAntigravity();
+    return { ...authorization, stateExtra: { projectId: authorization.projectId } };
+  },
+  exchange: (code, state, ctx) => exchangeAntigravity(code, state, ctx.proxy ? { proxy: ctx.proxy } : {}),
+  // A dead login proxy bricks the exchange without the code ever reaching Google, so it is
+  // untouched and retrying directly is safe. Grant errors are not matched: those consumed it.
+  retry: (result, ctx) => {
+    if (!ctx.proxy || !isConnectError(result.error)) return null;
+    dbg("finish: proxied exchange could not connect via " + ctx.proxy + ", retrying directly");
+    process.stderr.write("antigravity: login proxy " + ctx.proxy + " unreachable, retrying token exchange without a proxy.\n");
+    return { proxy: null };
+  },
+  toAccount: toCoreAccount,
+  accept: async (account, result, ctx) => {
+    const projectId = account.meta.managedProjectId || account.meta.projectId || result.projectId || "";
+    const check = await checkAntigravityAccess(result.access, projectId, ctx.proxy);
+    if (!check.ok) {
+      dbg("finish: Antigravity REJECTED " + (result.email || "?") + " (status " + check.status + "), not adding");
+      return { ok: false, message: "antigravity: this account isn't enabled for Antigravity (HTTP " + check.status + "), not added.\nUse a Google account that has Antigravity/Gemini access." };
     }
-  };
-
-  return {
-    url: authorization.url,
-    instructions: "Sign in with Google, approve in your browser and we'll detect it automatically. In a container the localhost redirect won't load, so copy the full URL from your address bar (or just the code) and paste it here instead.",
-    // paste fallback: opencode's "code" method + the in-tab paste both pass text
-    complete: (input) => finish(parsePastedCallback(input)),
-    // primary: the loopback listener fires when the browser reaches our localhost
-    loopback: listener.waitForCallback()
-      .then((url) => { dbg("loopback: listener fired"); return finish({ code: url.searchParams.get("code"), state: url.searchParams.get("state") }); })
-      .catch((e) => { dbg("loopback: listener rejected/closed: " + (e && e.message || e)); return null; }),
-    cancel: closeListener,
-  };
-}
-
-export async function login(opts) {
-  const log = (opts && opts.log) || ((message) => process.stderr.write(message + "\n"));
-  const flow = await loginFlow();
-  log("Open this URL in your browser to sign in with Google:\n\n  " + flow.url + "\n\nApprove in your browser, we'll detect it automatically. In a container the localhost page won't load; copy the full URL from your address bar and paste it below.\n");
-  openBrowser(flow.url);
-  // race the loopback auto-capture against a terminal paste; close the readline as
-  // soon as either settles so a loopback win doesn't leave it dangling. Uses a raw
-  // readline (not core-auth's awaitPaste) because it must close the interface as
-  // soon as the OTHER promise (loopback) wins the race, which awaitPaste's own
-  // promise (resolves only once the user actually answers) has no hook for.
-  let account = null;
-  if (isTTY()) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const pasteP = rl.question("Paste the full redirect URL from your browser (or just the code), then Enter: ").then((a) => flow.complete(a)).catch(() => null);
-    account = await Promise.race([flow.loopback, pasteP]);
-    try { rl.close(); } catch {}
-  } else {
-    account = await flow.loopback;
-  }
-  try { flow.cancel(); } catch {}
-  if (!account) throw new Error("login failed");
-  log("Logged in" + (account.email ? " as " + account.email : "") + " and saved to the antigravity account pool.");
-  return account;
-}
+    if (check.inconclusive) dbg("finish: access check inconclusive (" + check.inconclusive + "), adding anyway");
+    return { ok: true };
+  },
+  onSaved: (account, ctx) => {
+    dbg("finish: addAccount done id=" + account.id);
+    if (ctx.proxy) proxyManager.bindAccountProxy(account.id, ctx.proxy);
+  },
+  signInMessage:
+    "Open this URL in your browser to sign in with Google.\nApprove in your browser, we'll detect it automatically. In a container the localhost page won't load; copy the full URL from your address bar and paste it below.",
+  pastePrompt: "Paste the full redirect URL from your browser (or just the code), then Enter: ",
+});
