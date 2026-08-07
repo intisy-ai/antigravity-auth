@@ -7,7 +7,7 @@ import {
   isTruthyFlag,
 } from "./logging-utils";
 import { ensureGitignoreSync } from "./storage";
-import { getAppConfigDir } from "../../core/src/index.js";
+import { getAppConfigDir } from "@intisy-ai/core";
 
 interface DebugState {
   debugEnabled: boolean;

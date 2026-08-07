@@ -6,7 +6,7 @@
  * request transform needs. No project-level config, no validation, core owns it.
  */
 
-import { loadConfig as coreLoadConfig, getConfigValue as coreGetConfigValue } from "../../../core/src/index.js";
+import { loadConfig as coreLoadConfig, getConfigValue as coreGetConfigValue } from "@intisy-ai/core";
 import { DEFAULT_CONFIG, type AntigravityConfig } from "./schema";
 
 export function loadConfig(): AntigravityConfig {

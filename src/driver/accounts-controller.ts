@@ -3,7 +3,7 @@
 // actions, layered on core-auth's generic list/enable/remove helper. Proxies are
 // handled entirely by the core proxy subsystem (Manage proxies / Select proxies).
 
-import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAccounts, refreshAccountToken } from "../../core-auth/dist/index.js";
+import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAccounts, refreshAccountToken } from "@intisy-ai/core-auth";
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 import { login } from "./login.js";
 

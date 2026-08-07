@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isOAuthAuth, parseRefreshParts, formatRefreshParts, accessTokenExpired } from "./auth";
 import type { OAuthAuthDetails, ApiKeyAuthDetails } from "./types";
-import { initCoreAuth } from "../../core-auth/dist/index.js";
+import { initCoreAuth } from "@intisy-ai/core-auth";
 
 describe("isOAuthAuth", () => {
   it("returns true for oauth auth type", () => {

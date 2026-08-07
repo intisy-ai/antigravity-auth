@@ -3,7 +3,7 @@ import {
   isOAuthAuth as coreIsOAuthAuth,
   accessTokenExpired as coreAccessTokenExpired,
   calculateTokenExpiry as coreCalculateTokenExpiry,
-} from "../../core-auth/dist/index.js";
+} from "@intisy-ai/core-auth";
 
 export function isOAuthAuth(auth: AuthDetails): auth is OAuthAuthDetails {
   return coreIsOAuthAuth(auth);

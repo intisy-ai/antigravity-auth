@@ -1,5 +1,7 @@
 rootProject.name = "antigravity-auth-java"
 
+apply from: file("../core/gradle/submodule-modules.gradle")
+
 // antigravity-auth's Java side holds the pure-logic pieces of the driver (AntigravityAuth,
 // AntigravityLanes, AntigravityVersions [drift math only], AntigravityCatalog,
 // AntigravityQuotaParser) as transpilable Java, needing only the JsonCodec/Clock/Random SPIs.
@@ -7,25 +9,21 @@ rootProject.name = "antigravity-auth-java"
 // core-proxy is a DIRECT submodule of antigravity-auth (../core-proxy from here). :routing is
 // aliased the way every other provider's java/ module aliases it (project path preserved, just a
 // different projectDir) so the SAME coordinates line up across the ecosystem.
-include ":routing"
-project(":routing").projectDir = file("../core-proxy/java/routing")
+includeFromSubmodule ":routing", "core-proxy"
 
 // :teavm - core-proxy's own TeaVM js-base (SimpleJsonCodec/etc), aliased like :routing
 // above so :antigravity-teavm can depend on it with a plain project(":teavm") reference and reuse
 // SimpleJsonCodec rather than duplicate it.
-include ":teavm"
-project(":teavm").projectDir = file("../core-proxy/java/teavm")
+includeFromSubmodule ":teavm", "core-proxy"
 
 // :ir - core-ir's canonical IR types only (no vendor translators), aliased like :routing/:teavm
 // above. core-ir is a DIRECT submodule of antigravity-auth (../core-ir from here), not nested
 // inside another submodule.
-include ":ir"
-project(":ir").projectDir = file("../core-ir/java/ir")
+includeFromSubmodule ":ir", "core-ir"
 
 // :gemini - the Gemini translator (GeminiTranslator etc.), from the gemini-translator submodule
 // (../gemini-translator/java/gemini), a DIRECT submodule like core-ir.
-include ":gemini"
-project(":gemini").projectDir = file("../gemini-translator/java/gemini")
+includeFromSubmodule ":gemini", "gemini-translator"
 
 // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/AntigravityCatalog/
 // AntigravityQuotaParser.
