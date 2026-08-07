@@ -12,7 +12,7 @@ import {
 } from "../constants";
 import { createLogger } from "../plugin/logger";
 import { calculateTokenExpiry } from "../plugin/auth";
-import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "../../core-auth/dist/index.js";
+import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "@intisy-ai/core-auth";
 
 const log = createLogger("oauth");
 

@@ -24,7 +24,7 @@
 // `makeResponseTransformStream`.
 
 import crypto from "node:crypto";
-import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "../../core-auth/dist/index.js";
+import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "@intisy-ai/core-auth";
 // Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
 // callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,
 // so a class imported fresh in each bundle stays a single, shared identity only if every importer

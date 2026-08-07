@@ -4,7 +4,7 @@
 import { appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { defineOAuthLogin, proxyManager, toCoreAccount as toCoreAccountBase, timeoutFetch } from "../../core-auth/dist/index.js";
+import { defineOAuthLogin, proxyManager, toCoreAccount as toCoreAccountBase, timeoutFetch } from "@intisy-ai/core-auth";
 import { authorizeAntigravity, exchangeAntigravity } from "../antigravity/oauth.js";
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";

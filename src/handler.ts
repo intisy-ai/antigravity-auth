@@ -3,8 +3,8 @@
 // antigravity provider. The front-door owns app<->IR translation and calls handleIr; the provider
 // exposes no app-wire (Anthropic) handle().
 
-import { providerHandlerExports, setActivityEmitter } from "../core-auth/dist/index.js";
-import { emitEvent } from "../core/src/index.js";
+import { providerHandlerExports, setActivityEmitter } from "@intisy-ai/core-auth";
+import { emitEvent } from "@intisy-ai/core";
 import { driver } from "./driver/index.js";
 
 // This bundle (dist/handler.js) is loaded independently of dist/index.js (the Claude proxy

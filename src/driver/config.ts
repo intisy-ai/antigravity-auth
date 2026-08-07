@@ -5,7 +5,7 @@ import {
   ANTIGRAVITY_CLIENT_ID,
   ANTIGRAVITY_CLIENT_SECRET,
 } from "../constants.js";
-import { oauthConfigFor } from "../../core-auth/dist/index.js";
+import { oauthConfigFor } from "@intisy-ai/core-auth";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";

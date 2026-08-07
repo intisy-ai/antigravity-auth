@@ -4,8 +4,8 @@
 // from the package), so `/antigravity-config` edits exactly what the driver reads.
 // Account name is namespaced (`/antigravity-accounts`) so it never collides with
 // the other providers' account commands; the loaders own the unified `/accounts`.
-import { configCommand, runConfigCli } from "../core/src/index.js";
-import { listAccounts, printAccounts } from "../core-auth/dist/index.js";
+import { configCommand, runConfigCli } from "@intisy-ai/core";
+import { listAccounts, printAccounts } from "@intisy-ai/core-auth";
 
 const PROVIDER_ID = "antigravity";
 

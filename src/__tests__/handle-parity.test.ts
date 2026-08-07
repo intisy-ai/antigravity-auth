@@ -88,7 +88,7 @@ const H = vi.hoisted(() => {
   return { harness, FakeAccountManager, fakeProxyManager };
 });
 
-vi.mock("../../core-auth/dist/index.js", async (importOriginal) => {
+vi.mock("@intisy-ai/core-auth", async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
     ...actual,
