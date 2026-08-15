@@ -12,22 +12,4 @@ import { driver } from "./driver/index.js";
 // own copy of core-auth's module-level emitter and needs its own one-time wiring.
 setActivityEmitter((spec, source) => emitEvent(spec, source));
 
-export const { handleIr, accounts, loginFlow, menu, menuModel, def } = providerHandlerExports(driver);
-
-// One Google account pool ("antigravity") backs two upstream lanes exposed as first-class
-// providers: the metered antigravity pool and the free gemini-cli quota pool. Both share the
-// SAME account store (accountPool), so adding an account to either serves both; the resolved
-// provider id (HandlerCtx.provider) selects the lane per request.
-export const defs = [
-  def,
-  {
-    id: driver.geminiCliProviderId,
-    label: driver.geminiCliLabel,
-    models: driver.geminiCliModels,
-    // Its own slice of the shared fetch, so its model count is its own rather than nothing.
-    fetchModels: driver.fetchGeminiCliModels,
-    hasOAuth: def.hasOAuth,
-    settings: driver.settings,
-    accountPool: driver.id,
-  },
-];
+export const { handleIr, accounts, loginFlow, menu, menuModel } = providerHandlerExports(driver);
