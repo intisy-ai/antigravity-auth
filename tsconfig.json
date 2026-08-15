@@ -9,8 +9,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     // Compiled from the submodules, not installed, so each specifier maps to the
-    // built output it resolves to at runtime.
-    "paths": { "@intisy-ai/core": ["./core/dist/index.d.ts"], "@intisy-ai/core-auth": ["./core-auth/dist/index.d.ts"] },
+    // built output it resolves to at runtime. api is TYPE-ONLY: nothing imports its runtime.
+    "paths": { "@intisy-ai/core": ["./core/dist/index.d.ts"], "@intisy-ai/core-auth": ["./core-auth/dist/index.d.ts"], "@intisy-ai/api": ["./core/api/dist/index.d.ts"] },
     "forceConsistentCasingInFileNames": true,
     "declaration": true
   },
