@@ -1,5 +1,6 @@
 // @ts-nocheck
-// OpenCode entry. Export ONLY the provider plugin: OpenCode runs every export as a hook, so any extra export would register as a bogus plugin and can break registration.
+// OpenCode entry. OpenCode invokes every exported FUNCTION as a hook, so only the provider
+// plugin is exported as one; the api host reads the non-function default instead.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
 import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, emitEvent } from "@intisy-ai/core";
 import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities, setActivityEmitter } from "@intisy-ai/core-auth";
@@ -82,3 +83,6 @@ export const AntigravityProvider = await defineProviderPlugin({
   readme: README_SPEC,
   commands: ANTIGRAVITY_COMMANDS,
 });
+
+// AntigravityProvider stays exported too: OpenCode invokes every exported function, while an api host reads the default.
+export { default } from "./plugin.js";
