@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -65,7 +66,7 @@ class AntigravityGeminiSseBridgeTest {
         assertTrue(events.stream().anyMatch(ev -> ev instanceof ContentBlockStopEvent));
         assertTrue(events.stream().anyMatch(ev -> ev instanceof MessageStopEvent));
         MessageDeltaEvent delta = (MessageDeltaEvent) events.stream()
-                .filter(ev -> ev instanceof MessageDeltaEvent).findFirst().orElseThrow();
+                .filter(ev -> ev instanceof MessageDeltaEvent).findFirst().orElseThrow(NoSuchElementException::new);
         assertEquals(IrStopReason.END_TURN, delta.stopReason);
 
         IrResponse response = AntigravityGeminiSseBridge.aggregate(events, "claude-sonnet-4", JSON);
@@ -84,7 +85,7 @@ class AntigravityGeminiSseBridgeTest {
                 + "]},\"finishReason\":\"STOP\"}]}"));
 
         ContentBlockStartEvent toolStart = (ContentBlockStartEvent) events.stream()
-                .filter(ev -> ev instanceof ContentBlockStartEvent).findFirst().orElseThrow();
+                .filter(ev -> ev instanceof ContentBlockStartEvent).findFirst().orElseThrow(NoSuchElementException::new);
         assertEquals("toolu_fixed", toolStart.toolUseId);
         assertEquals("search", toolStart.toolName);
 
