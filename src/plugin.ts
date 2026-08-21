@@ -1,5 +1,7 @@
 import { providerCapability } from "@intisy-ai/core-auth";
-import type { Plugin, PluginContext, ProviderDescriptor } from "@intisy-ai/api";
+import { PROVIDER } from "@intisy-ai/core-ir";
+import type { Plugin, PluginContext } from "@intisy-ai/api";
+import type { ProviderDescriptor } from "@intisy-ai/core-auth";
 import { driver } from "./driver/index.js";
 
 /**
@@ -22,7 +24,7 @@ function geminiCliLane(): ProviderDescriptor {
 /** What an in-process host loads: the api plugin this bundle's default export carries. */
 const plugin: Plugin = {
   activate(context: PluginContext) {
-    context.provide("provider", providerCapability(driver, [geminiCliLane()]));
+    context.provide(PROVIDER, providerCapability(driver, [geminiCliLane()]));
   },
   deactivate() {},
 };
