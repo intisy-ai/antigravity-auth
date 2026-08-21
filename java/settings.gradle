@@ -10,15 +10,16 @@ apply from: file("../core/gradle/submodule-modules.gradle")
 // AntigravityLanes, AntigravityVersions [drift math only], AntigravityCatalog,
 // AntigravityQuotaParser) as transpilable Java, needing only the JsonCodec/Clock/Random SPIs.
 //
-// core-proxy is a DIRECT submodule of antigravity-auth (../core-proxy from here). :routing is
-// aliased the way every other provider's java/ module aliases it (project path preserved, just a
-// different projectDir) so the SAME coordinates line up across the ecosystem.
-includeFromSubmodule ":routing", "core-proxy"
+// :spi is the plugin-to-host contract, from the core-contracts submodule (../core-contracts from
+// here). It is aliased the way every other provider's java/ module aliases it (project path
+// preserved, only projectDir differing) so the SAME coordinates line up across the ecosystem. A
+// provider carries no proxy: the routing engine is a different consumer of this same contract.
+includeFromSubmodule ":spi", "core-contracts"
 
-// :teavm - core-proxy's own TeaVM js-base (SimpleJsonCodec/etc), aliased like :routing
-// above so :antigravity-teavm can depend on it with a plain project(":teavm") reference and reuse
-// SimpleJsonCodec rather than duplicate it.
-includeFromSubmodule ":teavm", "core-proxy"
+// :js-base - the TeaVM implementations of :spi's host-injected services (SimpleJsonCodec and
+// friends), aliased like :spi above so :antigravity-teavm can reference them with a plain
+// project(":js-base") dependency and reuse the source rather than duplicating it.
+includeFromSubmodule ":js-base", "core-contracts"
 
 // :ir - core-ir's canonical IR types only (no vendor translators), aliased like :routing/:teavm
 // above. core-ir is a DIRECT submodule of antigravity-auth (../core-ir from here), not nested
