@@ -1,4 +1,5 @@
 name: Test
+
 on: [push, pull_request, workflow_dispatch]
 
 permissions:
@@ -7,54 +8,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # The provider's JUnit suite compiles against ai-java's :jvm module via includeBuild, so it
-      # needs a sibling ai-java checkout (publish.yml skips these tests for exactly this reason).
-      - uses: actions/checkout@v4
-        with:
-          repository: intisy-ai/ai-java
-          submodules: recursive
-          path: ai-java-src
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - run: npm install
-
-      # Generates the TeaVM JS (src/generated/*.teavm.js and the antigravity-teavm module the smoke
-      # test imports) plus the esbuild bundles. The Gradle build resolves io.github.intisy:ai-java
-      # from GitHub Packages Maven (intisy-ai/ai-java). GitHub Packages needs a token even for
-      # public packages; ai-java's package is public, so the job's github.token (packages: read)
-      # reads it.
-      - run: npm run build
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
-
-      - run: npx vitest run
-
-      - run: chmod +x java/gradlew
-
-      - name: Gradle tests
-        working-directory: java
-        run: ./gradlew test -PaiJavaDir="${GITHUB_WORKSPACE}/ai-java-src"
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.PAT }}
-
-      # Only coverage of the CPS-transformed orchestrator actually suspending and resuming across the
-      # @Async bridges under genuinely async JS; exits non-zero on any mismatch.
-      - name: TeaVM async suspend/resume smoke
-        run: node java/antigravity-teavm/smoke/orchestrator-async-smoke.mjs
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      extra_repository: intisy-ai/ai-java
+      extra_path: ai-java-src
+      gradle_test: 'test -PaiJavaDir=${{ github.workspace }}/ai-java-src'
+      post_test: 'node java/antigravity-teavm/smoke/orchestrator-async-smoke.mjs'
+    secrets:
+      envPAT: ${{ secrets.PAT }}
