@@ -13,6 +13,3 @@
 [submodule "gemini-translator"]
 	path = gemini-translator
 	url = https://github.com/intisy-ai/gemini-translator.git
-[submodule "core-contracts"]
-	path = core-contracts
-	url = https://github.com/intisy-ai/core-contracts.git
