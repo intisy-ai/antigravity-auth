@@ -67,12 +67,12 @@ describe("cli_first: threaded into prepareAntigravityRequestProd", () => {
 describe("laneCliFirstFor: provider id selects the upstream lane", () => {
   it("forces the gemini-cli lane when the resolved provider is gemini-cli", async () => {
     const { laneCliFirstFor } = await import("./javaHandle.js");
-    expect(laneCliFirstFor({ provider: "gemini-cli" })).toBe(true);
+    expect(laneCliFirstFor({ handlerId: "gemini-cli" })).toBe(true);
   });
 
   it("keeps the config default for the antigravity provider (default false, behavior-preserving)", async () => {
     const { laneCliFirstFor } = await import("./javaHandle.js");
-    expect(laneCliFirstFor({ provider: "antigravity" })).toBe(false);
+    expect(laneCliFirstFor({ handlerId: "antigravity" })).toBe(false);
   });
 
   it("keeps the config default when no provider id is present (legacy single-provider serving)", async () => {
@@ -88,8 +88,8 @@ describe("laneCliFirstFor: provider id selects the upstream lane", () => {
       return { ...actual, loadConfig: () => ({ ...actual.DEFAULT_CONFIG, cli_first: true }) };
     });
     const { laneCliFirstFor } = await import("./javaHandle.js");
-    expect(laneCliFirstFor({ provider: "antigravity" })).toBe(true);
-    expect(laneCliFirstFor({ provider: "gemini-cli" })).toBe(true);
+    expect(laneCliFirstFor({ handlerId: "antigravity" })).toBe(true);
+    expect(laneCliFirstFor({ handlerId: "gemini-cli" })).toBe(true);
   });
 });
 

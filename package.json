@@ -51,7 +51,7 @@
     ]
   },
   "scripts": {
-    "build": "npm --prefix core install && npm --prefix core run build && npm --prefix core-ir install && npm --prefix core-ir run build && node core/teavm-build.mjs --java-dir java --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && npm --prefix core-auth install && npm --prefix core-auth run build && node build.mjs",
+    "build": "npm --prefix core install && npm --prefix core run build && npm --prefix core-ir install && npm --prefix core-ir run build && node core/teavm-build.mjs --java-dir . --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && npm --prefix core-auth install && npm --prefix core-auth run build && node build.mjs",
     "postbuild": "node dist/index.js readme",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && vitest run",

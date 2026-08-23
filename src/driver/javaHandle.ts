@@ -51,7 +51,7 @@ const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
 // provider (or a legacy caller with no HandlerCtx.provider) keeps the config default, so
 // existing antigravity serving is unchanged.
 export function laneCliFirstFor(ctx) {
-  if (ctx && ctx.provider === GEMINI_CLI_PROVIDER_ID) return true;
+  if (ctx && ctx.handlerId === GEMINI_CLI_PROVIDER_ID) return true;
   return !!config.cli_first;
 }
 
