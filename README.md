@@ -66,7 +66,7 @@ npm install antigravity-auth
 
 ## Configuration
 
-Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/antigravity-config set`).
+Config file: `<configDir>/config/antigravity.json` (edit it directly, or through whatever settings surface the app offers).
 
 ```json
 {
@@ -109,7 +109,6 @@ Config file: `<configDir>/config/antigravity.json` (edit via the loader or `/ant
 
 | Command | Description | Arguments |
 | --- | --- | --- |
-| `/antigravity-config` | View and change antigravity configuration | `list | get <key> | set <key> <value>` |
 | `/antigravity-accounts` | List signed-in Antigravity accounts |  |
 
 ## Dependencies

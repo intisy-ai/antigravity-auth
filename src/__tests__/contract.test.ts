@@ -7,7 +7,7 @@ runPluginContract({
   entry: "dist/index.js",
   configName: "antigravity",
   app: "both",
-  commands: ["antigravity-config", "antigravity-accounts"],
+  commands: ["antigravity-accounts"],
   deploy: "load",
   actions: [["accounts"]],
   readme: true,

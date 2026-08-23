@@ -14,7 +14,7 @@ vi.mock("./driver/index.js", () => ({
     geminiCliModels: {},
     settings: {},
   },
-  ANTIGRAVITY_SETTINGS_SCHEMA: {},
+  ANTIGRAVITY_SETTINGS_SCHEMA: [],
   RETRY_KEYS: [],
 }));
 
@@ -22,7 +22,12 @@ function contextSpy() {
   const provided: Record<string, unknown> = {};
   return {
     provided,
-    context: { provide: vi.fn((key: string | { id: string }, value: unknown) => { provided[typeof key === "string" ? key : key.id] = value; }), paths: { home: "/tmp/home" } },
+    context: {
+      provide: vi.fn((key: string | { id: string }, value: unknown) => { provided[typeof key === "string" ? key : key.id] = value; }),
+      // The engine mints a typed key from an id alone, which is all the plugin needs from it here.
+      capability: (id: string) => ({ id }),
+      paths: { home: "/tmp/home" },
+    },
   };
 }
 
@@ -38,11 +43,11 @@ async function capability() {
 }
 
 describe("the antigravity-auth api plugin", () => {
-  it("provides exactly the provider capability its manifest declares", async () => {
+  it("provides exactly the capabilities its manifest declares", async () => {
     const plugin = (await import("./plugin.js")).default;
     const { context, provided } = contextSpy();
     await plugin.activate(context as never);
-    expect(Object.keys(provided)).toEqual(["provider"]);
+    expect(Object.keys(provided).sort()).toEqual(["provider", "settings"]);
   });
 
   it("advertises both lanes, the metered pool first", async () => {

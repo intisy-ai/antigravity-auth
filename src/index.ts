@@ -2,11 +2,10 @@
 // OpenCode entry. OpenCode invokes every exported FUNCTION as a hook, so only the provider
 // plugin is exported as one; the api host reads the non-function default instead.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, emitEvent } from "@intisy-ai/core";
-import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities, setActivityEmitter } from "@intisy-ai/core-auth";
-import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
-import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
-import { driver, ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
+import { defineReadme, maybeRunReadmeCli, emitEvent } from "@intisy-ai/core";
+import { defineProviderPlugin, setActivityEmitter } from "@intisy-ai/core-auth";
+import { maybeRunCli } from "./commands.js";
+import { driver } from "./driver/index.js";
 
 // Best-effort: let core-auth's account activity (added/removed/login/rate_limited/models_refreshed) flow onto the bus.
 setActivityEmitter((spec: unknown, source: string) => emitEvent(spec, source));
@@ -50,7 +49,6 @@ const README_SPEC = {
       "bundled `index.js`, `handler.js`, `cli.js` (generated; not committed)",
     ],
   },
-  commands: ANTIGRAVITY_COMMANDS,
   dependencies: ["core", "core-auth", "sync-bridge"],
   extraSections: [
     {
@@ -62,26 +60,14 @@ const README_SPEC = {
   ],
 };
 
-// name ("antigravity") is the config/capabilities/readme registration name; packageName
-// ("antigravity-auth") is the deployed bundle path deployCommands' {{BUNDLE}} shell resolves.
-// This is the single place the provider registers with the host.
+// The readme registration name is the config NAME the driver reads (config/antigravity.json),
+// which the manifest states too; the plugin id stays antigravity-auth.
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
-  packageName: "antigravity-auth",
   driver,
-  core: { defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, deployCommands },
-  configCliGuard: () => maybeRunCli("antigravity"),
-  defaults: { ...DEFAULT_CONFIG, logging: true },
-  capabilities: {
-    fields: [
-      ...COMMON_PROVIDER_CAPABILITIES,
-      { key: "logging", type: "boolean", label: "Logging", description: "Write this plugin's log file.", group: "General" },
-      ...toCapabilitiesFields(ANTIGRAVITY_SETTINGS_SCHEMA),
-      ...retryBackoffCapabilities(RETRY_KEYS),
-    ],
-  },
+  core: { defineReadme, maybeRunReadmeCli },
+  cliGuard: () => maybeRunCli(),
   readme: README_SPEC,
-  commands: ANTIGRAVITY_COMMANDS,
 });
 
 // AntigravityProvider stays exported too: OpenCode invokes every exported function, while an api host reads the default.
