@@ -4,27 +4,6 @@ plugins {
 
 rootProject.name = "antigravity-auth-java"
 
-apply from: file("core/gradle/submodule-modules.gradle")
-
-// :ir - core-ir's canonical IR types and the IrHandler seam a provider implements, from this
-// repo's own core-ir submodule, which is also what src/ imports.
-includeFromSubmodule ":ir", "core-ir"
-
-// :annotations, :processor, :contract, :seam and :js-base come from api, reached through core-ir's
-// own api submodule because :ir exports api's seam types in HandlerCtx's public fields, so every
-// module in this build resolves api at the same coordinates.
-includeFromSubmodule ":annotations", "core-ir/api"
-includeFromSubmodule ":processor", "core-ir/api"
-includeFromSubmodule ":contract", "core-ir/api"
-includeFromSubmodule ":seam", "core-ir/api"
-includeFromSubmodule ":js-base", "core-ir/api"
-
-// :auth-contracts - the provider vocabulary core-auth mints, which AntigravityProvider implements.
-includeFromSubmodule ":auth-contracts", "core-auth"
-
-// :gemini - the Gemini translator, from the gemini-translator submodule.
-includeFromSubmodule ":gemini", "gemini-translator"
-
 include ":antigravity-provider"
 include ":antigravity-teavm"
 

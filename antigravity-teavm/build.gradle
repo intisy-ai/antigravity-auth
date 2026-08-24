@@ -12,18 +12,18 @@ dependencies {
     // thin), which does NOT propagate to us, so :routing is declared again below for the SPI
     // types (JsonCodec/Clock/Random) AntigravityProviderJs references directly.
     implementation project(":antigravity-provider")
-    implementation project(":auth-contracts")
-    implementation project(":seam")
+    githubImplementation "intisy-ai:core-auth:1.0.0:auth-contracts"
+    githubImplementation "intisy-ai:api:1.0.1:seam"
     // :antigravity-provider only `compileOnly`s :ir/:gemini too (same thin-jar reasoning), which
     // does NOT propagate to us either, so both are declared again below so the compiled
     // orchestrator JS bundle actually contains core-ir's IR types and the GeminiTranslator that
     // the SSE/IR bridges call into.
-    implementation project(":ir")
-    implementation project(":gemini")
+    githubImplementation "intisy-ai:core-ir:1.0.2:ir"
+    githubImplementation "intisy-ai:gemini-translator:1.0.1:gemini"
     // core-proxy's own :teavm js-base (SimpleJsonCodec), reused rather than duplicated;
     // AntigravityProviderJs lives in the SAME package (io.github.intisy.ai.js) so it can
     // reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/ClaudeProviderJs do.
-    implementation project(":js-base")
+    githubImplementation "intisy-ai:api:1.0.1:js-base"
     // AntigravityQuotaParser.accountHasQuota calls :accounts' QuotaHealth; :antigravity-provider
     // only compileOnly's ai-java (thin-jar policy), which does not propagate here, so TeaVM needs
     // its own resolvable reference to transpile it into the JS bundle. Resolved from GitHub

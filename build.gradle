@@ -4,7 +4,7 @@
 // publishing recipe scoped to :antigravity-provider only (the one publishable artifact in this
 // multi-module build).
 plugins {
-    id "io.github.intisy.github-gradle" version "1.10.0" apply false
+    id "io.github.intisy.github-gradle" version "1.10.3" apply false
 }
 
 subprojects {

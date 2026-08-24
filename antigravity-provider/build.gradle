@@ -6,21 +6,21 @@ dependencies {
     // HttpResponse) out of this module's own built jar (the host's ProviderRegistry classloader
     // already has them); testImplementation re-adds it so test code can construct SPI-typed
     // references too.
-    compileOnly project(":auth-contracts")
-    compileOnly project(":seam")
-    testImplementation project(":auth-contracts")
+    githubCompileOnly "intisy-ai:core-auth:1.0.0:auth-contracts"
+    githubCompileOnly "intisy-ai:api:1.0.1:seam"
+    githubTestImplementation "intisy-ai:core-auth:1.0.0:auth-contracts"
 
     // core-ir's IR types only (no vendor translators): AntigravityIrBridge round-trips the
     // Anthropic<->Gemini request format through the IR. Same "keep the shipped jar thin" discipline
     // as :routing above; ai-java does not host core-ir yet, so compileOnly keeps :ir's classes out
     // of antigravity-provider.jar; testImplementation re-adds it for test code.
-    compileOnly project(":ir")
-    testImplementation project(":ir")
+    githubCompileOnly "intisy-ai:core-ir:1.0.2:ir"
+    githubTestImplementation "intisy-ai:core-ir:1.0.2:ir"
 
     // gemini-translator's GeminiTranslator, used by AntigravityGeminiSseBridge/AntigravityIrBridge
     // to decode upstream Gemini responses to IR. Same thin-jar treatment as :ir above.
-    compileOnly project(":gemini")
-    testImplementation project(":gemini")
+    githubCompileOnly "intisy-ai:gemini-translator:1.0.1:gemini"
+    githubTestImplementation "intisy-ai:gemini-translator:1.0.1:gemini"
 
     // AntigravityBackend self-assembles Store/HttpClient/JsonCodec/Clock/Random + a real
     // AccountManager from the JVM backends + shared.select.QuotaHealth. ai-java is consumed from
