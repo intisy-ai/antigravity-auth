@@ -1,3 +1,4 @@
 {
-  "jarModule": "antigravity-provider"
+  "jarModule": "antigravity-provider",
+  "generatedReadme": true
 }

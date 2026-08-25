@@ -16,3 +16,6 @@ package-lock.json
 docs/
 graphify-out/
 logs/
+
+# Generated on the default branch by the release readme job.
+README.md
