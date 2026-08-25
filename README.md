@@ -46,9 +46,7 @@ flowchart TD
   - `antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts`: the host I/O this driver owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform and decision logic lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)
   - `commands.ts`: cross-app slash-command definitions and their CLI actions
 - `dist/`
-  - `index.js`, `handler.js`, `cli.js` (generated; not committed). `@intisy-ai/core`,
-    `core-auth` and `core-ir` stay external and resolve from the home's shared library store,
-    so every plugin in a home shares one copy rather than embedding its own.
+  - `index.js`, `handler.js`, `cli.js` (generated; not committed). `@intisy-ai/core`, `core-auth` and `core-ir` stay external and resolve from the home's shared library store, so every plugin in a home shares one copy rather than embedding its own.
 
 ## Installation
 
