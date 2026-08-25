@@ -2,7 +2,7 @@
 // OpenCode entry. OpenCode invokes every exported FUNCTION as a hook, so only the provider
 // plugin is exported as one; the api host reads the non-function default instead.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { defineReadme, maybeRunReadmeCli, emitEvent } from "@intisy-ai/core";
+import { emitEvent } from "@intisy-ai/core";
 import { defineProviderPlugin, setActivityEmitter } from "@intisy-ai/core-auth";
 import { maybeRunCli } from "./commands.js";
 import { driver } from "./driver/index.js";
@@ -63,7 +63,6 @@ const README_SPEC = {
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
   driver,
-  core: { defineReadme, maybeRunReadmeCli },
   cliGuard: () => maybeRunCli(),
   readme: README_SPEC,
 });
