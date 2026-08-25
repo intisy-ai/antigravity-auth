@@ -1,0 +1,55 @@
+{
+  "$schema": "./core/api/schema/plugin.schema.json",
+  "id": "antigravity-auth",
+  "api": 1,
+  "entry": "dist/index.js",
+  "displayName": "Antigravity",
+  "icon": "icon.svg",
+  "capabilities": [
+    "provider",
+    "settings"
+  ],
+  "commands": [
+    {
+      "name": "antigravity-accounts",
+      "description": "List signed-in Antigravity accounts",
+      "shell": "node \"{{BUNDLE}}\" accounts",
+      "body": "Above are the Antigravity accounts and their enabled state. Report them; if none, tell the user to add one from the account menu (`oc auth login`)."
+    }
+  ],
+  "config": {
+    "name": "antigravity",
+    "defaults": {
+      "debug": false,
+      "debug_tui": false,
+      "keep_thinking": false,
+      "claude_tool_hardening": true,
+      "claude_prompt_auto_caching": false,
+      "cli_first": false,
+      "account_selection_strategy": "hybrid",
+      "default_retry_after_seconds": 60,
+      "max_backoff_seconds": 60,
+      "request_jitter_max_ms": 0,
+      "signature_cache": {
+        "enabled": true,
+        "memory_ttl_seconds": 3600,
+        "disk_ttl_seconds": 172800,
+        "write_interval_seconds": 60
+      },
+      "logging": true
+    }
+  },
+  "repo": {
+    "role": "Google Antigravity provider",
+    "category": "ai-provider",
+    "domains": [
+      "gemini"
+    ],
+    "tech": "typescript"
+  },
+  "services": {
+    "consumes": [
+      "provider-support"
+    ]
+  }
+}

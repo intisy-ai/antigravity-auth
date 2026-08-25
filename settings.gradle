@@ -1,0 +1,33 @@
+plugins {
+    id "org.gradle.toolchains.foojay-resolver-convention" version "0.8.0"
+}
+
+rootProject.name = "antigravity-auth-java"
+
+include ":antigravity-provider"
+include ":antigravity-teavm"
+
+// ---- test-only composite build -------------------------------------------------------------
+// Pulls ai-java's own Gradle build in so :antigravity-provider can
+// `compileOnly`/`testImplementation "io.github.intisy:jvm:0.1.0"`: AccountManager/AccountStore/
+// OAuthConfig (:accounts) and the JVM backends (FileStore/UrlConnectionHttpClient/GsonJsonCodec/
+// SystemClock/SecureRandomAdapter) that AntigravityBackend's self-assembled backend depends on.
+// LOCAL DEV-ONLY: only resolves when ai-java is checked out side by side on the same machine.
+// Override with -PaiJavaDir=<path> if your checkout isn't at the default.
+def aiJavaDir = file(providers.gradleProperty("aiJavaDir").getOrElse("../../java/ai-java"))
+if (aiJavaDir.isDirectory()) {
+    // ai-java's :jvm publishes under the artifactId "ai-java", which Gradle's automatic
+    // substitution cannot see (it matches on the project's own group:name, io.github.intisy:jvm),
+    // and declaring this block turns automatic substitution off, so both coordinates are stated by
+    // hand. Without it a local build compiles against the last PUBLISHED fat jar.
+    includeBuild(aiJavaDir) {
+        dependencySubstitution {
+            substitute module("io.github.intisy:ai-java") using project(":jvm")
+            substitute module("io.github.intisy:jvm") using project(":jvm")
+        }
+    }
+} else {
+    logger.warn("antigravity-auth java: ai-java not found at ${aiJavaDir} -- the includeBuild-based " +
+            "io.github.intisy:jvm dependency (AntigravityBackend's self-assembled backend) will fail to " +
+            "resolve. Pass -PaiJavaDir=<path-to-ai-java> to point at a different checkout.")
+}

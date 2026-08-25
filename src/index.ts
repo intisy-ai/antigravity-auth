@@ -1,11 +1,11 @@
 // @ts-nocheck
-// OpenCode entry. Export ONLY the provider plugin: OpenCode runs every export as a hook, so any extra export would register as a bogus plugin and can break registration.
+// OpenCode entry. OpenCode invokes every exported FUNCTION as a hook, so only the provider
+// plugin is exported as one; the api host reads the non-function default instead.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { deployCommands, defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, emitEvent } from "@intisy-ai/core";
-import { COMMON_PROVIDER_CAPABILITIES, defineProviderPlugin, toCapabilitiesFields, retryBackoffCapabilities, setActivityEmitter } from "@intisy-ai/core-auth";
-import { ANTIGRAVITY_COMMANDS, maybeRunCli } from "./commands.js";
-import { DEFAULT_CONFIG } from "./plugin/config/schema.js";
-import { driver, ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
+import { emitEvent } from "@intisy-ai/core";
+import { defineProviderPlugin, setActivityEmitter } from "@intisy-ai/core-auth";
+import { maybeRunCli } from "./commands.js";
+import { driver } from "./driver/index.js";
 
 // Best-effort: let core-auth's account activity (added/removed/login/rate_limited/models_refreshed) flow onto the bus.
 setActivityEmitter((spec: unknown, source: string) => emitEvent(spec, source));
@@ -42,14 +42,11 @@ const README_SPEC = {
       "`driver/`: `index.ts` (driver + `handleIr`), `config.ts`, `models.ts`, `login.ts`, `accounts-controller.ts`, `javaHandle.ts`/`javaStream.ts` (the Java orchestrator seam)",
       "`antigravity/oauth.ts`, `plugin/{request,project,fingerprint,versions,models-fetch,...}.ts`: the host I/O this driver owns (fetch-interception, OAuth, device fingerprint, version pool, model discovery); the request/response transform and decision logic lives in `java/antigravity-provider` (TeaVM-compiled, called via `driver/javaHandle.ts`)",
       "`commands.ts`: cross-app slash-command definitions and their CLI actions",
-      "`core-auth/`: the core-auth library (git submodule, bundled into the output)",
-      "`core/`: shared [`intisy-ai/core`](https://github.com/intisy-ai/core) submodule (config + logging + command framework), bundled in",
     ],
     dist: [
-      "bundled `index.js`, `handler.js`, `cli.js` (generated; not committed)",
+      "`index.js`, `handler.js`, `cli.js` (generated; not committed). `@intisy-ai/core`, `core-auth` and `core-ir` stay external and resolve from the home's shared library store, so every plugin in a home shares one copy rather than embedding its own.",
     ],
   },
-  commands: ANTIGRAVITY_COMMANDS,
   dependencies: ["core", "core-auth", "sync-bridge"],
   extraSections: [
     {
@@ -61,24 +58,14 @@ const README_SPEC = {
   ],
 };
 
-// name ("antigravity") is the config/capabilities/readme registration name; packageName
-// ("antigravity-auth") is the deployed bundle path deployCommands' {{BUNDLE}} shell resolves.
-// This is the single place the provider registers with the host.
+// The readme registration name is the config NAME the driver reads (config/antigravity.json),
+// which the manifest states too; the plugin id stays antigravity-auth.
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
-  packageName: "antigravity-auth",
   driver,
-  core: { defineConfig, defineCapabilities, defineReadme, maybeRunReadmeCli, deployCommands },
-  configCliGuard: () => maybeRunCli("antigravity"),
-  defaults: { ...DEFAULT_CONFIG, logging: true },
-  capabilities: {
-    fields: [
-      ...COMMON_PROVIDER_CAPABILITIES,
-      { key: "logging", type: "boolean", label: "Logging", description: "Write this plugin's log file.", group: "General" },
-      ...toCapabilitiesFields(ANTIGRAVITY_SETTINGS_SCHEMA),
-      ...retryBackoffCapabilities(RETRY_KEYS),
-    ],
-  },
+  cliGuard: () => maybeRunCli(),
   readme: README_SPEC,
-  commands: ANTIGRAVITY_COMMANDS,
 });
+
+// AntigravityProvider stays exported too: OpenCode invokes every exported function, while an api host reads the default.
+export { default } from "./plugin.js";
