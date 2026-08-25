@@ -6,30 +6,20 @@ plugins {
 }
 
 dependencies {
-    // :antigravity-provider - AntigravityAuth/AntigravityLanes/AntigravityVersions/
-    // AntigravityCatalog/AntigravityQuotaParser are the transpilable "core" this export reuses
-    // verbatim. :antigravity-provider itself only `compileOnly`s :routing (keeping its shipped jar
-    // thin), which does NOT propagate to us, so :routing is declared again below for the SPI
-    // types (JsonCodec/Clock/Random) AntigravityProviderJs references directly.
+    // :antigravity-provider carries the transpilable core this export reuses verbatim. Its own
+    // first-party dependencies are all compileOnly (a thin shipped jar), which does not propagate,
+    // so every classifier TeaVM must see bytecode for is declared again here as implementation.
     implementation project(":antigravity-provider")
     githubImplementation "intisy-ai:core-auth:1.0.0:auth-contracts"
-    githubImplementation "intisy-ai:api:1.0.1:seam"
-    // :antigravity-provider only `compileOnly`s :ir/:gemini too (same thin-jar reasoning), which
-    // does NOT propagate to us either, so both are declared again below so the compiled
-    // orchestrator JS bundle actually contains core-ir's IR types and the GeminiTranslator that
-    // the SSE/IR bridges call into.
+    githubImplementation "intisy-ai:core-auth:1.0.0:accounts"
+    githubImplementation "intisy-ai:api:1.2.0:contract"
+    // AntigravityProviderJs lives in the SAME package as :js-base (io.github.intisy.ai.js) so it
+    // can reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/StubProviderJs do.
+    githubImplementation "intisy-ai:api:1.2.0:seam"
+    githubImplementation "intisy-ai:api:1.2.0:js-base"
+    githubImplementation "intisy-ai:core-proxy:1.0.0:routing"
     githubImplementation "intisy-ai:core-ir:1.0.2:ir"
     githubImplementation "intisy-ai:gemini-translator:1.0.1:gemini"
-    // core-proxy's own :teavm js-base (SimpleJsonCodec), reused rather than duplicated;
-    // AntigravityProviderJs lives in the SAME package (io.github.intisy.ai.js) so it can
-    // reference SimpleJsonCodec unqualified, exactly like CoreProxyJs/ClaudeProviderJs do.
-    githubImplementation "intisy-ai:api:1.0.1:js-base"
-    // AntigravityQuotaParser.accountHasQuota calls :accounts' QuotaHealth; :antigravity-provider
-    // only compileOnly's ai-java (thin-jar policy), which does not propagate here, so TeaVM needs
-    // its own resolvable reference to transpile it into the JS bundle. Resolved from GitHub
-    // Packages Maven (java/build.gradle's repositories block), same coordinate as
-    // :antigravity-provider's own ai-java dependency.
-    implementation "io.github.intisy:ai-java:1.1.0"
     teavm teavm.libs.jsoApis
 }
 

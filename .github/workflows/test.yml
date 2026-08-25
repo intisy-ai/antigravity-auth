@@ -10,9 +10,6 @@ jobs:
   test:
     uses: intisy/workflows/.github/workflows/test.yml@main
     with:
-      extra_repository: intisy-ai/ai-java
-      extra_path: ai-java-src
-      gradle_test: 'test -PaiJavaDir=${{ github.workspace }}/ai-java-src'
-      post_test: 'node java/antigravity-teavm/smoke/orchestrator-async-smoke.mjs'
+      post_test: 'node antigravity-teavm/smoke/orchestrator-async-smoke.mjs'
     secrets:
       envPAT: ${{ secrets.PAT }}

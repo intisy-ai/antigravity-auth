@@ -1,39 +1,31 @@
 dependencies {
-    // The pure-logic classes only need the JsonCodec/Clock/Random SPIs
-    // (io.github.intisy.ai.shared.spi.*). AntigravityProvider implements the host-provided
-    // Provider/ProxyHandler SPI, the same "keep the shipped jar thin" discipline stub-provider/
-    // echo-provider use: compileOnly keeps :routing's classes (Provider/HandlerCtx/HttpRequest/
-    // HttpResponse) out of this module's own built jar (the host's ProviderRegistry classloader
-    // already has them); testImplementation re-adds it so test code can construct SPI-typed
-    // references too.
+    // Every first-party coordinate is compileOnly: the host's ProviderRegistry classloader already
+    // carries these classes, so the shipped provider jar must not bundle a second copy. A
+    // release-asset jar exports nothing transitively, so each classifier a source imports from is
+    // named here, and named again as githubTestImplementation because compileOnly does not reach
+    // the test compile classpath.
     githubCompileOnly "intisy-ai:core-auth:1.0.0:auth-contracts"
-    githubCompileOnly "intisy-ai:api:1.0.1:seam"
-    githubTestImplementation "intisy-ai:core-auth:1.0.0:auth-contracts"
-
-    // core-ir's IR types only (no vendor translators): AntigravityIrBridge round-trips the
-    // Anthropic<->Gemini request format through the IR. Same "keep the shipped jar thin" discipline
-    // as :routing above; ai-java does not host core-ir yet, so compileOnly keeps :ir's classes out
-    // of antigravity-provider.jar; testImplementation re-adds it for test code.
+    githubCompileOnly "intisy-ai:core-auth:1.0.0:accounts"
+    githubCompileOnly "intisy-ai:api:1.2.0:contract"
+    githubCompileOnly "intisy-ai:api:1.2.0:seam"
+    githubCompileOnly "intisy-ai:api:1.2.0:jvm-seam"
+    // ModelsCache, the cached model catalogue AntigravityHostSeams reads and writes. It lives in
+    // core-proxy's routing module today, which is why a provider names a routing coordinate at all.
+    githubCompileOnly "intisy-ai:core-proxy:1.0.0:routing"
     githubCompileOnly "intisy-ai:core-ir:1.0.2:ir"
-    githubTestImplementation "intisy-ai:core-ir:1.0.2:ir"
-
-    // gemini-translator's GeminiTranslator, used by AntigravityGeminiSseBridge/AntigravityIrBridge
-    // to decode upstream Gemini responses to IR. Same thin-jar treatment as :ir above.
     githubCompileOnly "intisy-ai:gemini-translator:1.0.1:gemini"
-    githubTestImplementation "intisy-ai:gemini-translator:1.0.1:gemini"
 
-    // AntigravityBackend self-assembles Store/HttpClient/JsonCodec/Clock/Random + a real
-    // AccountManager from the JVM backends + shared.select.QuotaHealth. ai-java is consumed from
-    // GitHub Packages Maven (java/build.gradle's repositories block) as a single fat jar
-    // (:routing + :accounts + :jvm shaded together), so one coordinate covers everything
-    // AntigravityBackend and AntigravityQuotaParser.accountHasQuota (QuotaHealth) need.
-    // compileOnly (not implementation) keeps this module's own jar THIN: the host's
-    // ProviderRegistry classloader already has these classes on its classpath.
-    compileOnly "io.github.intisy:ai-java:1.1.0"
-    // Local dev/test only: the composite includeBuild (settings.gradle) substitutes this
-    // io.github.intisy:jvm coordinate for the real :jvm project, transitively pulling in :accounts.
-    // Tests are skipped in CI (-x test -x compileTestJava) so this never needs to resolve there.
-    testImplementation "io.github.intisy:jvm:0.1.0"
+    githubTestImplementation "intisy-ai:core-auth:1.0.0:auth-contracts"
+    githubTestImplementation "intisy-ai:core-auth:1.0.0:accounts"
+    githubTestImplementation "intisy-ai:api:1.2.0:contract"
+    githubTestImplementation "intisy-ai:api:1.2.0:seam"
+    githubTestImplementation "intisy-ai:api:1.2.0:jvm-seam"
+    githubTestImplementation "intisy-ai:core-proxy:1.0.0:routing"
+    githubTestImplementation "intisy-ai:core-ir:1.0.2:ir"
+    githubTestImplementation "intisy-ai:gemini-translator:1.0.1:gemini"
+    // GsonJsonCodec's own dependency, which a release-asset jar does not carry with it. Test-only:
+    // at run time the host that loads this provider supplies gson, as it supplies the codec.
+    testImplementation "com.google.code.gson:gson:2.10.1"
 }
 
 // Keep the jar filename version-less (antigravity-provider.jar) even though project.version is
