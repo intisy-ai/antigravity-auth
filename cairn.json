@@ -1,8 +1,0 @@
-{
-  "displayName": "Antigravity",
-  "icon": "icon.svg",
-  "providers": {
-    "antigravity": "icon.svg",
-    "gemini-cli": "icons/gemini-cli.svg"
-  }
-}
