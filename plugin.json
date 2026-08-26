@@ -5,10 +5,19 @@
   "entry": "dist/index.js",
   "displayName": "Antigravity",
   "icon": "icon.svg",
+  "icons": {
+    "antigravity": "icon.svg",
+    "gemini-cli": "icons/gemini-cli.svg"
+  },
   "capabilities": [
     "provider",
     "settings"
   ],
+  "services": {
+    "consumes": [
+      "provider-support"
+    ]
+  },
   "commands": [
     {
       "name": "antigravity-accounts",
@@ -38,11 +47,6 @@
       },
       "logging": true
     }
-  },
-  "services": {
-    "consumes": [
-      "provider-support"
-    ]
   },
   "publish": {
     "jarModule": [
