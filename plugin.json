@@ -1,14 +1,23 @@
 {
-  "$schema": "./core/api/schema/plugin.schema.json",
+  "$schema": "./node_modules/@intisy-ai/api/schema/plugin.schema.json",
   "id": "antigravity-auth",
   "api": 1,
   "entry": "dist/index.js",
   "displayName": "Antigravity",
   "icon": "icon.svg",
+  "icons": {
+    "antigravity": "icon.svg",
+    "gemini-cli": "icons/gemini-cli.svg"
+  },
   "capabilities": [
     "provider",
     "settings"
   ],
+  "services": {
+    "consumes": [
+      "provider-support"
+    ]
+  },
   "commands": [
     {
       "name": "antigravity-accounts",
@@ -39,17 +48,20 @@
       "logging": true
     }
   },
+  "publish": {
+    "jarModule": [
+      "antigravity-provider"
+    ],
+    "generatedReadme": true
+  },
   "repo": {
     "role": "Google Antigravity provider",
     "category": "ai-provider",
     "domains": [
       "gemini"
     ],
-    "tech": "typescript"
-  },
-  "services": {
-    "consumes": [
-      "provider-support"
+    "tech": [
+      "typescript"
     ]
   }
 }
