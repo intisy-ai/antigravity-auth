@@ -39,17 +39,25 @@
       "logging": true
     }
   },
+  "services": {
+    "consumes": [
+      "provider-support"
+    ]
+  },
+  "publish": {
+    "jarModule": [
+      "antigravity-provider"
+    ],
+    "generatedReadme": true
+  },
   "repo": {
     "role": "Google Antigravity provider",
     "category": "ai-provider",
     "domains": [
       "gemini"
     ],
-    "tech": "typescript"
-  },
-  "services": {
-    "consumes": [
-      "provider-support"
+    "tech": [
+      "typescript"
     ]
   }
 }
