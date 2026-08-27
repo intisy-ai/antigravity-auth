@@ -19,7 +19,7 @@ dependencies {
     githubImplementation "intisy-ai:api:1.6.0:js-base"
     githubImplementation "intisy-ai:core-proxy:2.1.0:routing"
     githubImplementation "intisy-ai:core-ir:1.4.0:ir"
-    githubImplementation "intisy-ai:gemini-translator:1.1.1:gemini"
+    githubImplementation "intisy-ai:gemini-translator:1.2.0:gemini"
     teavm teavm.libs.jsoApis
 }
 

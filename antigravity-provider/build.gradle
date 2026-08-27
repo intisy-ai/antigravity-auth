@@ -13,7 +13,7 @@ dependencies {
     // core-proxy's routing module today, which is why a provider names a routing coordinate at all.
     githubCompileOnly "intisy-ai:core-proxy:2.1.0:routing"
     githubCompileOnly "intisy-ai:core-ir:1.4.0:ir"
-    githubCompileOnly "intisy-ai:gemini-translator:1.1.1:gemini"
+    githubCompileOnly "intisy-ai:gemini-translator:1.2.0:gemini"
 
     githubTestImplementation "intisy-ai:core-auth:2.0.0:auth-contracts"
     githubTestImplementation "intisy-ai:core-auth:2.0.0:accounts"
@@ -22,7 +22,7 @@ dependencies {
     githubTestImplementation "intisy-ai:api:1.6.0:jvm-seam"
     githubTestImplementation "intisy-ai:core-proxy:2.1.0:routing"
     githubTestImplementation "intisy-ai:core-ir:1.4.0:ir"
-    githubTestImplementation "intisy-ai:gemini-translator:1.1.1:gemini"
+    githubTestImplementation "intisy-ai:gemini-translator:1.2.0:gemini"
     // GsonJsonCodec's own dependency, which a release-asset jar does not carry with it. Test-only:
     // at run time the host that loads this provider supplies gson, as it supplies the codec.
     testImplementation "com.google.code.gson:gson:2.10.1"
