@@ -59,7 +59,7 @@
   "dependencies": {
     "@intisy-ai/core": "^2.0.0",
     "@intisy-ai/core-auth": "^1.4.0",
-    "@intisy-ai/core-ir": "^1.0.3",
+    "@intisy-ai/core-ir": "^1.4.0",
     "@openauthjs/openauth": "^0.4.3"
   },
   "devDependencies": {
