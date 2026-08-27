@@ -10,8 +10,8 @@
 // acquire->load->onboard->execute chain to prove all four @Async bridges interleave. Exits non-zero
 // on ANY mismatch.
 //
-// Run from repo root, AFTER `cd java && ./gradlew :antigravity-teavm:generateJavaScript`:
-//   node java/antigravity-teavm/smoke/orchestrator-async-smoke.mjs
+// Run from repo root, AFTER `./gradlew :antigravity-teavm:generateJavaScript`:
+//   node antigravity-teavm/smoke/orchestrator-async-smoke.mjs
 
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
