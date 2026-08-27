@@ -11,7 +11,7 @@ dependencies {
     githubCompileOnly "intisy-ai:api:1.6.0:jvm-seam"
     // ModelsCache, the cached model catalogue AntigravityHostSeams reads and writes. It lives in
     // core-proxy's routing module today, which is why a provider names a routing coordinate at all.
-    githubCompileOnly "intisy-ai:core-proxy:2.0.2:routing"
+    githubCompileOnly "intisy-ai:core-proxy:2.1.0:routing"
     githubCompileOnly "intisy-ai:core-ir:1.4.0:ir"
     githubCompileOnly "intisy-ai:gemini-translator:1.1.1:gemini"
 
@@ -20,7 +20,7 @@ dependencies {
     githubTestImplementation "intisy-ai:api:1.6.0:contract"
     githubTestImplementation "intisy-ai:api:1.6.0:seam"
     githubTestImplementation "intisy-ai:api:1.6.0:jvm-seam"
-    githubTestImplementation "intisy-ai:core-proxy:2.0.2:routing"
+    githubTestImplementation "intisy-ai:core-proxy:2.1.0:routing"
     githubTestImplementation "intisy-ai:core-ir:1.4.0:ir"
     githubTestImplementation "intisy-ai:gemini-translator:1.1.1:gemini"
     // GsonJsonCodec's own dependency, which a release-asset jar does not carry with it. Test-only:
