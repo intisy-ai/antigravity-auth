@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema } from "@intisy-ai/core-auth";
+import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema, type SettingsMenuGroup, type ProviderSort } from "@intisy-ai/core-auth";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -187,7 +187,7 @@ const ACCOUNT_ROTATION_SETTINGS_GROUP = {
   fields: [
     { key: "account_selection_strategy", label: "Account selection", type: "enum", options: ["sticky", "round-robin", "hybrid"], hint: "How accounts are picked: sticky keeps prompt cache, round-robin maximizes throughput, hybrid balances by availability." },
   ],
-};
+} satisfies SettingsMenuGroup;
 
 // The rest of antigravity's own settings, unified into ONE schema shared by both the loader-TUI
 // settings menu (toSettingsGroups below) and Cairn's capabilities panel (toCapabilitiesFields, in
@@ -248,7 +248,7 @@ export const driver = {
   appNpm: "@ai-sdk/google",   // matches the Gemini-format transform; keeps the real "google" provider free
   models,
   fetchModels,
-  sorts: ["leaderboard"],   // opt into core's built-in quality sort (manual is automatic)
+  sorts: ["leaderboard"] satisfies ProviderSort[],   // opt into core's built-in quality sort (manual is automatic)
   // Shown under the Quota view: the gemini-cli models are a separate fallback pool
   // whose quota the antigravity API doesn't expose (fetchAvailableModels 403s under
   // the CLI header context), so it can't be graphed like the metered pools.
