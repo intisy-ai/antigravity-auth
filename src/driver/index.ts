@@ -4,7 +4,7 @@
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups } from "@intisy-ai/core-auth";
+import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema } from "@intisy-ai/core-auth";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -195,7 +195,7 @@ const ACCOUNT_ROTATION_SETTINGS_GROUP = {
 // (above) and the retry/backoff pair (RETRY_KEYS, via core-auth's provider-common) are shared with
 // every core-auth provider, so they stay out of this schema and are composed back in separately by
 // each consumer.
-export const ANTIGRAVITY_SETTINGS_SCHEMA = [
+export const ANTIGRAVITY_SETTINGS_SCHEMA: ProviderSettingsSchema = [
   {
     title: "Rate limits",
     fields: [

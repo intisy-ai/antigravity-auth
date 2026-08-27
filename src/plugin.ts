@@ -1,5 +1,5 @@
 import type { Plugin, PluginContext } from "@intisy-ai/api";
-import type { ProviderCapability, ProviderDescriptor, ProviderSupport } from "@intisy-ai/core-auth";
+import type { Provider, ProviderDescriptor, ProviderSupport } from "@intisy-ai/core-auth";
 import type { SettingsCapability } from "@intisy-ai/core";
 import { driver } from "./driver/index.js";
 import { ANTIGRAVITY_SETTINGS } from "./settings.js";
@@ -38,7 +38,7 @@ const plugin: Plugin = {
   activate(context: PluginContext) {
     const support = context.services.get(context.service<ProviderSupport>(PROVIDER_SUPPORT));
     if (!support) throw new Error(`this host offers no "${PROVIDER_SUPPORT}" service, so it cannot run a provider`);
-    context.provide(context.capability<ProviderCapability>("provider"), support.capability(driver, [geminiCliLane()]));
+    context.provide(context.capability<Provider>("provider"), support.capability(driver, [geminiCliLane()]));
     context.provide(context.capability<SettingsCapability>("settings"), {
       schema: () => ANTIGRAVITY_SETTINGS,
       run: async (actionId: string) => {
