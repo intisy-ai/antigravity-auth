@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG } from "./config"
 // getAppConfigDir (app-aware config dir resolution), stubbed here since these tests don't care
 // which directory it resolves to.
 const { writeLogMock } = vi.hoisted(() => ({ writeLogMock: vi.fn() }))
-vi.mock("@intisy-ai/core", () => ({ makeWriteLog: () => writeLogMock, getAppConfigDir: () => "/tmp/antigravity-logger-test-configdir" }))
+vi.mock("@intisy-ai/basekit", () => ({ makeWriteLog: () => writeLogMock, getAppConfigDir: () => "/tmp/antigravity-logger-test-configdir" }))
 
 // debug.ts touches storage on init; stub it so the test never writes files.
 const { ensureGitignoreSyncMock } = vi.hoisted(() => ({ ensureGitignoreSyncMock: vi.fn() }))

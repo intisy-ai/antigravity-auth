@@ -6,8 +6,8 @@ const banner = {
 };
 
 // sync-bridge is an optional dependency loaded at runtime; keep it external so a
-// missing module never breaks the bundle (core-auth no-ops when it is absent)
-const common = { bundle: true, platform: "node", format: "esm", banner, logLevel: "info", external: ["sync-bridge", "@intisy-ai/core", "@intisy-ai/core-auth", "@intisy-ai/core-ir"] };
+// missing module never breaks the bundle (basekit/auth no-ops when it is absent)
+const common = { bundle: true, platform: "node", format: "esm", banner, logLevel: "info", external: ["sync-bridge", "@intisy-ai/basekit", "@intisy-ai/basekit/auth", "@intisy-ai/basekit/ir"] };
 
 await build({ ...common, entryPoints: ["src/index.ts"], outfile: "dist/index.js" });
 await build({ ...common, entryPoints: ["src/handler.ts"], outfile: "dist/handler.js" });

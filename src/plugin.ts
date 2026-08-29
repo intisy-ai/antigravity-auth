@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from "@intisy-ai/api";
-import type { Provider, ProviderDescriptor, ProviderSupport } from "@intisy-ai/core-auth";
-import type { SettingsCapability } from "@intisy-ai/core";
+import type { Provider, ProviderDescriptor, ProviderSupport } from "@intisy-ai/basekit/auth";
+import type { SettingsCapability } from "@intisy-ai/basekit";
 import { driver } from "./driver/index.js";
 import { ANTIGRAVITY_SETTINGS } from "./settings.js";
 import { runAccounts } from "./commands.js";

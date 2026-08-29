@@ -2,17 +2,17 @@
 // OpenCode entry. OpenCode invokes every exported FUNCTION as a hook, so only the provider
 // plugin is exported as one; the api host reads the non-function default instead.
 // Slash-command / config invocations shell back in as `node <bundle> <action>`; handle those first and exit so they never register the provider.
-import { emitEvent } from "@intisy-ai/core";
-import { defineProviderPlugin, setActivityEmitter } from "@intisy-ai/core-auth";
+import { emitEvent } from "@intisy-ai/basekit";
+import { defineProviderPlugin, setActivityEmitter } from "@intisy-ai/basekit/auth";
 import { maybeRunCli } from "./commands.js";
 import { driver } from "./driver/index.js";
 
-// Best-effort: let core-auth's account activity (added/removed/login/rate_limited/models_refreshed) flow onto the bus.
+// Best-effort: let basekit/auth's account activity (added/removed/login/rate_limited/models_refreshed) flow onto the bus.
 setActivityEmitter((spec: unknown, source: string) => emitEvent(spec, source));
 
 const README_SPEC = {
   description:
-    "Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [core-auth](https://github.com/intisy-ai/core-auth). core-auth owns all the generic work (multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state) while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.",
+    "Google Antigravity provider for OpenCode and Claude Code, built as a thin driver on top of [basekit/auth](https://github.com/intisy-ai/basekit). basekit/auth owns all the generic work (multi-account storage, selection/rotation, token refresh, and rate-limit/cooldown state) while this package supplies only the antigravity specifics: the request/response transform, the Cloud Code Assist endpoints, and the Google OAuth login. The same account pool is shared by both OpenCode and Claude Code.",
   architecture: `flowchart TD
     subgraph Apps
         OC[OpenCode] -->|auth hook loader.fetch| HANDLE
@@ -44,10 +44,10 @@ const README_SPEC = {
       "`commands.ts`: cross-app slash-command definitions and their CLI actions",
     ],
     dist: [
-      "`index.js`, `handler.js`, `cli.js` (generated; not committed). `@intisy-ai/core`, `core-auth` and `core-ir` stay external and resolve from the home's shared library store, so every plugin in a home shares one copy rather than embedding its own.",
+      "`index.js`, `handler.js`, `cli.js` (generated; not committed). `@intisy-ai/basekit`, `core-auth` and `core-ir` stay external and resolve from the home's shared library store, so every plugin in a home shares one copy rather than embedding its own.",
     ],
   },
-  dependencies: ["core", "core-auth", "sync-bridge"],
+  dependencies: ["basekit", "sync-bridge"],
   extraSections: [
     {
       id: "arch-detail",

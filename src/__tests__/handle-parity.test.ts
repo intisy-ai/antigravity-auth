@@ -7,7 +7,7 @@
 // unintended behavior drift in the orchestrator or its host seams fails this test. runGeminiViaJava
 // is exactly what the IR-native handleIr feeds after encoding IR to a Gemini request.
 //
-// Fakes: core-auth's AccountManager + proxyManager + getAutoCandidates are replaced with an
+// Fakes: basekit/auth's AccountManager + proxyManager + getAutoCandidates are replaced with an
 // instrumented harness; global fetch is scripted per scenario. Date, Math.random, and
 // crypto.randomUUID are pinned so the run is fully deterministic and matches the fixture capture.
 
@@ -88,7 +88,7 @@ const H = vi.hoisted(() => {
   return { harness, FakeAccountManager, fakeProxyManager };
 });
 
-vi.mock("@intisy-ai/core-auth", async (importOriginal) => {
+vi.mock("@intisy-ai/basekit/auth", async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
     ...actual,

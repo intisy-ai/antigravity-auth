@@ -1,4 +1,4 @@
-// antigravity-auth carries no bundled front-door: core-auth's createProviderPlugin resolves the
+// antigravity-auth carries no bundled front-door: basekit/auth's createProviderPlugin resolves the
 // app-shaped hooks from whatever AppFrontDoor the app layer (a loader) published at runtime via
 // HUB_APP_FRONTDOOR. With no front-door published and no out-of-process proxy configured, the
 // plugin is inert (no app-shaped hooks to build).

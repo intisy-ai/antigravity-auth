@@ -1,10 +1,10 @@
 // @ts-nocheck
-// The antigravity driver: a thin object on top of core-auth. core-auth owns
+// The antigravity driver: a thin object on top of basekit/auth. basekit/auth owns
 // account storage, selection, token refresh, and rate-limit/cooldown state; this
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema, type SettingsMenuGroup, type ProviderSort } from "@intisy-ai/core-auth";
+import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema, type SettingsMenuGroup, type ProviderSort } from "@intisy-ai/basekit/auth";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -24,7 +24,7 @@ const lastAccountByLane = {};   // lane -> last account id, to notify only on re
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below, account selection
-// (core-auth's engine), the Claude request flags passed into prepareAntigravityRequest,
+// (basekit/auth's engine), the Claude request flags passed into prepareAntigravityRequest,
 // and keep_thinking (read fresh by the request transform via getKeepThinking). The other
 // historical AntigravityConfig keys have no consumer here, so the settings UI omits them.
 let config;
@@ -33,11 +33,11 @@ initializeDebug(config);     // enables the log.debug(...) calls in request/proj
 initSignatureCache(config.signature_cache); // constructs the disk-backed SignatureCache when enabled (inert otherwise)
 
 // antigravity's own retry/backoff config key names + default values (60s/60s); the shape,
-// coercion, and settings presentation are shared via core-auth's provider-common.
+// coercion, and settings presentation are shared via basekit/auth's provider-common.
 export const RETRY_KEYS = { baseKey: "default_retry_after_seconds", maxKey: "max_backoff_seconds" };
 const RETRY_DEFAULTS = { baseSeconds: 60, maxSeconds: 60 };
 
-// core-auth account engine. The driver availability hook keeps antigravity's
+// basekit auth account engine. The driver availability hook keeps antigravity's
 // "skip accounts pending Google verification" behavior without leaking it into core.
 const manager = new AccountManager(PROVIDER_ID, {
   ...commonManagerOptions(config),
@@ -109,9 +109,9 @@ async function handleIr(ir, ctx) {
   return handleIrViaJavaOrchestrator(ir, ctx);
 }
 
-// Live model discovery for core-auth: pick the first usable account, fetch the
+// Live model discovery for basekit/auth: pick the first usable account, fetch the
 // account's real available models, and build the catalog (+ ranking/default for
-// Auto). Returns null when no account exists or the fetch fails -> core-auth then
+// Auto). Returns null when no account exists or the fetch fails -> basekit/auth then
 // falls back to the cache (or an empty catalog before first login).
 async function fetchWholeCatalog(ctx) {
   const log = (ctx && ctx.log) || (() => {});
@@ -128,7 +128,7 @@ async function fetchWholeCatalog(ctx) {
   return buildCatalogViaJava(payload);
 }
 
-// One upstream fetch serves both lanes, and core-auth resolves each provider's catalog
+// One upstream fetch serves both lanes, and basekit/auth resolves each provider's catalog
 // separately, so the result is held briefly rather than fetched twice in a row.
 const CATALOG_MEMO_MS = 60 * 1000;
 let catalogMemo = null;
@@ -168,7 +168,7 @@ async function fetchGeminiCliModels(ctx) {
   return catalogForLane(await wholeCatalog(ctx), GEMINI_CLI_PROVIDER_ID);
 }
 
-// Settings shown in core-auth's settings UI. ONLY options actually consumed by
+// Settings shown in basekit/auth's settings UI. ONLY options actually consumed by
 // this provider at runtime are listed, verified by tracing each to its consumer:
 //   account_selection_strategy -> AccountManager(selection) above
 //   keep_thinking              -> request transform via getKeepThinking() (initRuntimeConfig above)
@@ -179,8 +179,8 @@ async function fetchGeminiCliModels(ctx) {
 //   request_jitter_max_ms      -> pre-fetch delay in javaHandle.ts's jsExec transport
 //   signature_cache.*          -> initSignatureCache() at startup (plugin/cache.ts's diskCache)
 // The other historical AntigravityConfig keys (scheduling/rate-limit/quota/health/
-// token-bucket/recovery/notifications/etc.) have NO consumer in the core-auth
-// provider form, their behavior is owned by core-auth's own engine, so exposing
+// token-bucket/recovery/notifications/etc.) have NO consumer in the basekit auth
+// provider form, their behavior is owned by basekit/auth's own engine, so exposing
 // them would let users set no-ops. They are intentionally omitted.
 const ACCOUNT_ROTATION_SETTINGS_GROUP = {
   title: "Account rotation",
@@ -192,8 +192,8 @@ const ACCOUNT_ROTATION_SETTINGS_GROUP = {
 // The rest of antigravity's own settings, unified into ONE schema shared by both the loader-TUI
 // settings menu (toSettingsGroups below) and Cairn's capabilities panel (toCapabilitiesFields, in
 // ../index.ts), so the two surfaces can't drift out of key-set sync. account_selection_strategy
-// (above) and the retry/backoff pair (RETRY_KEYS, via core-auth's provider-common) are shared with
-// every core-auth provider, so they stay out of this schema and are composed back in separately by
+// (above) and the retry/backoff pair (RETRY_KEYS, via basekit/auth's provider-common) are shared with
+// every basekit auth provider, so they stay out of this schema and are composed back in separately by
 // each consumer.
 export const ANTIGRAVITY_SETTINGS_SCHEMA: ProviderSettingsSchema = [
   {

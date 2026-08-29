@@ -7,7 +7,7 @@
 // gated by config.debug (off by default) to avoid flooding the log file.
 
 import { isDebugEnabled } from "./debug";
-import { makeWriteLog } from "@intisy-ai/core";
+import { makeWriteLog } from "@intisy-ai/basekit";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 

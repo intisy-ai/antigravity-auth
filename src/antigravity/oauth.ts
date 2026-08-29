@@ -12,7 +12,7 @@ import {
 } from "../constants";
 import { createLogger } from "../plugin/logger";
 import { calculateTokenExpiry } from "../plugin/auth";
-import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "@intisy-ai/core-auth";
+import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "@intisy-ai/basekit/auth";
 
 const log = createLogger("oauth");
 
@@ -71,9 +71,9 @@ export function encodeState(payload: AntigravityAuthState): string {
 }
 
 /**
- * Decode an OAuth state parameter back into its structured representation. core-auth's
+ * Decode an OAuth state parameter back into its structured representation. basekit/auth's
  * decodeState returns the raw parsed payload (and throws if the PKCE verifier is missing);
- * projectId is antigravity's own extra field, defaulted here since core-auth's shared shape
+ * projectId is antigravity's own extra field, defaulted here since basekit/auth's shared shape
  * doesn't know about it.
  */
 function decodeState(state: string): AntigravityAuthState {

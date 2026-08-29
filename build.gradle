@@ -60,7 +60,7 @@ subprojects {
     }
 
     // Only :antigravity-provider is a published artifact (:routing/:teavm are aliased from
-    // core-proxy, :antigravity-teavm is a TeaVM js-export module), so scope publishGithub so an
+    // basekit, :antigravity-teavm is a TeaVM js-export module), so scope publishGithub so an
     // aggregate `publish` doesn't fail on the non-library modules.
     tasks.matching { it.name == "publishGithub" }.configureEach {
         onlyIf { project.path == ":antigravity-provider" }

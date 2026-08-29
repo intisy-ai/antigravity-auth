@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { timeoutFetch } from "@intisy-ai/core-auth";
+import { timeoutFetch } from "@intisy-ai/basekit/auth";
 
 // Antigravity version pool for the User-Agent. A real user runs one of many released versions (mostly
 // recent ones) and auto-updates over time, so a single hardcoded version is an obvious fingerprint.

@@ -1,7 +1,7 @@
 {
   "name": "antigravity-auth",
   "version": "1.17.7",
-  "description": "Google Antigravity provider for OpenCode and Claude Code, built on core-auth (multi-account rotation, quota management, proxy support)",
+  "description": "Google Antigravity provider for OpenCode and Claude Code, built on basekit/auth (multi-account rotation, quota management, proxy support)",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -20,7 +20,7 @@
     "google",
     "oauth",
     "gemini",
-    "core-auth",
+    "basekit",
     "provider"
   ],
   "engines": {
@@ -57,9 +57,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@intisy-ai/core": "^2.6.0",
-    "@intisy-ai/core-auth": "^2.0.0",
-    "@intisy-ai/core-ir": "^1.4.0",
+    "@intisy-ai/basekit": "^4.0.0",
     "@openauthjs/openauth": "^0.4.3"
   },
   "devDependencies": {

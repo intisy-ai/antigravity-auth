@@ -1,10 +1,10 @@
 // @ts-nocheck
-// Google OAuth login for antigravity. loginFlow() is the split begin/complete form core-auth's opencode oauth method drives; login() is the all-in-one form the CLI uses (opens the browser itself).
+// Google OAuth login for antigravity. loginFlow() is the split begin/complete form basekit/auth's opencode oauth method drives; login() is the all-in-one form the CLI uses (opens the browser itself).
 
 import { appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { defineOAuthLogin, proxyManager, toCoreAccount as toCoreAccountBase, timeoutFetch } from "@intisy-ai/core-auth";
+import { defineOAuthLogin, proxyManager, toCoreAccount as toCoreAccountBase, timeoutFetch } from "@intisy-ai/basekit/auth";
 import { authorizeAntigravity, exchangeAntigravity } from "../antigravity/oauth.js";
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";
@@ -55,7 +55,7 @@ function isConnectError(message) {
 }
 
 // antigravity stores a composite refresh string (refreshToken|projectId|managedProjectId), so it must
-// run it through parseRefreshParts before handing off to core-auth's shared toCoreAccount, then merge
+// run it through parseRefreshParts before handing off to basekit/auth's shared toCoreAccount, then merge
 // its own meta (projectId/managedProjectId/fingerprint) onto the result; not a drop-in.
 async function toCoreAccount(result) {
   const parts = parseRefreshParts(result.refresh);
@@ -66,7 +66,7 @@ async function toCoreAccount(result) {
 }
 
 // Every generic part of the flow (the settled guard, rebuilding a missing state, saving the
-// account, the loopback listener, racing a paste against the browser) comes from core-auth.
+// account, the loopback listener, racing a paste against the browser) comes from basekit/auth.
 // What stays here is antigravity's own: binding a login proxy, the direct-retry when that
 // proxy cannot connect, and the access gate above.
 export const { loginFlow, login } = defineOAuthLogin({

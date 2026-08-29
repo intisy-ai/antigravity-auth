@@ -4,7 +4,7 @@
  * get reads the on-disk value; set writes it (and creates the file on first change).
  */
 
-import { getConfigValue as coreGetConfigValue, setConfigValue as coreSetConfigValue } from "@intisy-ai/core";
+import { getConfigValue as coreGetConfigValue, setConfigValue as coreSetConfigValue } from "@intisy-ai/basekit";
 
 export function getConfigValue(key: string): any {
   return coreGetConfigValue("antigravity", key);

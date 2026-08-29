@@ -1,8 +1,8 @@
 // @ts-nocheck
-// Standalone CLI for antigravity account management; writes to the shared core-auth store so accounts are used by both OpenCode and Claude.
+// Standalone CLI for antigravity account management; writes to the shared basekit auth store so accounts are used by both OpenCode and Claude.
 
-import { runAccountCli, setActivityEmitter } from "@intisy-ai/core-auth";
-import { emitEvent } from "@intisy-ai/core";
+import { runAccountCli, setActivityEmitter } from "@intisy-ai/basekit/auth";
+import { emitEvent } from "@intisy-ai/basekit";
 import { driver } from "./driver/index.js";
 
 // dist/cli.js is the `antigravity` bin entry, a separate process/bundle from index.js and

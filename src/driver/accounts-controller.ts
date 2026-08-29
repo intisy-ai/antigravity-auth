@@ -1,9 +1,9 @@
 // @ts-nocheck
 // Antigravity's AccountController: provider-owned status/quota + Verify / Refresh
-// actions, layered on core-auth's generic list/enable/remove helper. Proxies are
+// actions, layered on basekit/auth's generic list/enable/remove helper. Proxies are
 // handled entirely by the core proxy subsystem (Manage proxies / Select proxies).
 
-import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAccounts, refreshAccountToken } from "@intisy-ai/core-auth";
+import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAccounts, refreshAccountToken } from "@intisy-ai/basekit/auth";
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 import { login } from "./login.js";
 
@@ -11,7 +11,7 @@ function out(message) { process.stdout.write(message + "\n"); }
 
 // The status/quota-view helpers (allPoolsExhausted/antigravityStatus/antigravityAvailableAt/
 // antigravityQuota/familyLabel plus the per-family quota aggregation) run in Java
-// (AntigravityQuotaParser), reached via AntigravityProviderJs's exports. core-auth's `list()` callback
+// (AntigravityQuotaParser), reached via AntigravityProviderJs's exports. basekit/auth's `list()` callback
 // contract is synchronous, so the Java module (a dynamic import, kept off this module's load path) is
 // warmed on the first call rather than at module load. Warming at module load would race javaHandle.ts's
 // circular import back into the driver entry module while that is still mid-evaluation; a call

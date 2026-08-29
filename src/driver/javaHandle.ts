@@ -24,7 +24,7 @@
 // `makeResponseTransformStream`.
 
 import crypto from "node:crypto";
-import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "@intisy-ai/core-auth";
+import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "@intisy-ai/basekit/auth";
 // Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
 // callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,
 // so a class imported fresh in each bundle stays a single, shared identity only if every importer
@@ -57,7 +57,7 @@ export function laneCliFirstFor(ctx) {
 
 // Lazily-memoized dynamic import of the TeaVM ESM, staged to src/generated/ by core/teavm-build.mjs
 // at build time and bundled (deferred) by esbuild. loadOrchestrator/getLoadedOrchestrator are kept as
-// named exports (the parity tests and other host modules import them directly) backed by core-auth's
+// named exports (the parity tests and other host modules import them directly) backed by basekit/auth's
 // shared lazyModule memoization.
 const orchestratorModule = lazyModule(() => import("../generated/antigravity-orchestrator.teavm.js"));
 export function loadOrchestrator() {
@@ -303,7 +303,7 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
     });
   };
 
-  // jsExec: pure transport, lifted into core-auth's proxiedFetch (proxy-then-direct-retry, sharing the
+  // jsExec: pure transport, lifted into basekit/auth's proxiedFetch (proxy-then-direct-retry, sharing the
   // account's already-resolved proxy so selectForAccount is still called at most once per account per
   // request, matching proxyForAccount's own memoization). Applies config.request_jitter_max_ms's
   // pre-fetch delay, then on a rate-limit response extracts {errorMessage, errorReason} (unwrapping the

@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getAppConfigDir } from '@intisy-ai/core';
+import { getAppConfigDir } from '@intisy-ai/basekit';
 
 /**
  * Default directory for saving generated images, under the active app's own config dir

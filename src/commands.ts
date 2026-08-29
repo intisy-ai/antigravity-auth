@@ -4,7 +4,7 @@
 // action and the process exits before the provider boots. The account command is namespaced
 // (`/antigravity-accounts`) so it never collides with the other providers'; the loaders own the
 // unified `/accounts`.
-import { listAccounts, printAccounts } from "@intisy-ai/core-auth";
+import { listAccounts, printAccounts } from "@intisy-ai/basekit/auth";
 
 const PROVIDER_ID = "antigravity";
 
