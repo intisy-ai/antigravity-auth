@@ -6,7 +6,7 @@ import { accountControllerFromManager, proxyManager, timeoutFetch, verifyAllAcco
 import { ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
 import { login } from "./login.js";
 import { orchestrator, generateSyntheticProjectIdViaJava } from "./java.js";
-import type { ProxiedInit } from "../plugin/types.js";
+import type { ProxiedInit } from "@intisy-ai/basekit/auth";
 
 /** The manager surface this controller needs beyond the generic one: an access token per account. */
 type AntigravityManager = AccountManagerLike & { ensureAccess(id: string): Promise<string | undefined | null> };

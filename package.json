@@ -58,7 +58,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@intisy-ai/basekit": "^4.0.0",
+    "@intisy-ai/basekit": "^5.0.0",
     "@openauthjs/openauth": "^0.4.3"
   },
   "devDependencies": {

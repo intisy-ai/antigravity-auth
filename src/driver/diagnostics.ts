@@ -1,22 +1,19 @@
 import type { HandlerCtx } from "@intisy-ai/basekit/ir";
 
-/** The two shapes a handler context's log is observed to have. */
+/** The two shapes a context's log has, depending on which contract the context comes from. */
 type ContextLog = HandlerCtx["log"] | ((message: string) => void);
 
 /**
- * A one-argument diagnostic sink over the handler context's logger.
+ * A one-argument diagnostic sink over whichever context a caller holds.
  *
  * @remarks
- * The declared `HandlerCtx.log` is a `Logger` object with `debug`/`info`/`warn`/`error`, and the
- * Java router builds one. The TypeScript front-door does not: `basekit/proxy`'s `java-route.ts`
- * `contextOf` puts a plain `(message: string) => void` there. Both shapes therefore reach a
- * provider, and calling the wrong one throws on a failure path, which is where a second failure is
- * least affordable.
+ * This provider is reached through two different context contracts. A served request carries a
+ * `HandlerCtx`, whose `log` is a `Logger` with `debug`/`info`/`warn`/`error`. A model fetch or a
+ * login carries a `ProviderCtx`, whose `log` is a plain `(message: string) => void`. Both are
+ * correct for their own contract, so the call sites that take either go through this rather than
+ * each testing the shape themselves.
  *
- * This is the second copy of this shim, claude-code-auth carrying the first. The disagreement is a
- * defect in the layer that declares the type, and settling it there is what removes both.
- *
- * @param ctx - the handler context, which a caller may not have
+ * @param ctx - the context, which a caller may not have
  * @returns a function that writes one diagnostic line, and does nothing when there is nowhere to
  */
 export function diagnostic(ctx?: { log?: ContextLog }): (message: string) => void {

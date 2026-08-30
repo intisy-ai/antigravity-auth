@@ -34,7 +34,7 @@ import type {
 } from "../generated/antigravity-orchestrator.teavm.js";
 import { orchestrator, jsRandom, jsUuid } from "./java.js";
 import { diagnostic } from "./diagnostics.js";
-import type { ProxiedInit } from "../plugin/types.js";
+import type { ProxiedInit } from "@intisy-ai/basekit/auth";
 import type { AntigravityConfig } from "../plugin/config/schema.js";
 // Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
 // callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,

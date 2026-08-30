@@ -8,8 +8,8 @@ import { authorizeAntigravity, exchangeAntigravity } from "../antigravity/oauth.
 import { parseRefreshParts } from "../plugin/auth.js";
 import { generateFingerprint } from "../plugin/fingerprint.js";
 import { generateSyntheticProjectIdViaJava } from "./java.js";
+import type { ProxiedInit } from "@intisy-ai/basekit/auth";
 import { ANTIGRAVITY_REDIRECT_URI, ANTIGRAVITY_ENDPOINT_PROD, getAntigravityHeaders } from "../constants.js";
-import type { ProxiedInit } from "../plugin/types.js";
 import type { CoreAccount, OauthExchangeResult } from "@intisy-ai/basekit/auth";
 
 // The per-attempt state this provider carries around the exchange. basekit types it `unknown` and
