@@ -24,14 +24,30 @@ import org.teavm.jso.core.JSString;
  */
 public final class JsProjectOnboarderBridge implements AntigravityProjectContext.ProjectOnboarder {
 
+    /** The host's managed-project provisioning, as one JS function. */
     @JSFunctor
     public interface JsOnboardFn extends JSObject {
+        /**
+         * Provisions a managed project for one account.
+         *
+         * @param accessToken the account's access token
+         * @param tierId the tier to provision under
+         * @param projectId the project to provision, or empty to let the upstream choose
+         * @param proxy the outbound proxy, or empty for a direct connection
+         * @return the provisioned project id as JSON, or {@code null} when it did not complete
+         */
         JSPromise<JSString> onboard(JSString accessToken, JSString tierId, JSString projectId, JSString proxy);
     }
 
     private final JsOnboardFn jsOnboard;
     private final JsonCodec json;
 
+    /**
+     * One bridge over the host's managed-project provisioning.
+     *
+     * @param jsOnboard the host's provisioning
+     * @param json the codec each answer crosses the boundary through
+     */
     public JsProjectOnboarderBridge(JsOnboardFn jsOnboard, JsonCodec json) {
         this.jsOnboard = jsOnboard;
         this.json = json;

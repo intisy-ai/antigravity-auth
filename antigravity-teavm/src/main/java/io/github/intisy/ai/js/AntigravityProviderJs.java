@@ -77,14 +77,24 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityAuth --------------------------------------------------------------------------
 
-    /** Exercises {@link AntigravityAuth#parseRefreshParts} + {@link AntigravityAuth#formatRefreshParts} round-trip. */
+    /**
+     * Exercises {@link AntigravityAuth#parseRefreshParts} + {@link AntigravityAuth#formatRefreshParts} round-trip.
+     *
+     * @param refresh the packed refresh string
+     * @return what {@link AntigravityAuth#formatRefreshParts} answers
+     */
     @JSExport
     public static String refreshRoundTrip(String refresh) {
         AntigravityAuth.RefreshParts parts = AntigravityAuth.parseRefreshParts(refresh);
         return AntigravityAuth.formatRefreshParts(parts);
     }
 
-    /** Exercises {@link AntigravityAuth#isOAuthAuth} + {@link AntigravityAuth#accessTokenExpired} via the JsonCodec SPI. */
+    /**
+     * Exercises {@link AntigravityAuth#isOAuthAuth} + {@link AntigravityAuth#accessTokenExpired} via the JsonCodec SPI.
+     *
+     * @param authJson the stored auth, as JSON
+     * @return what {@link AntigravityAuth#accessTokenExpired} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static boolean authExpired(String authJson) {
@@ -97,13 +107,24 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityLanes -------------------------------------------------------------------------
 
-    /** Exercises {@link AntigravityLanes#laneFor}. */
+    /**
+     * Exercises {@link AntigravityLanes#laneFor}.
+     *
+     * @param model the model id
+     * @return what {@link AntigravityLanes#laneFor} answers
+     */
     @JSExport
     public static String laneFor(String model) {
         return AntigravityLanes.laneFor(model);
     }
 
-    /** Exercises {@link AntigravityLanes#parseRateLimitReason} + {@link AntigravityLanes#calculateBackoffMs}. */
+    /**
+     * Exercises {@link AntigravityLanes#parseRateLimitReason} + {@link AntigravityLanes#calculateBackoffMs}.
+     *
+     * @param reason the upstream's own reason code
+     * @param consecutiveFailures how many attempts have failed in a row
+     * @return what {@link AntigravityLanes#calculateBackoffMs} answers
+     */
     @JSExport
     public static String backoffMs(String reason, int consecutiveFailures) {
         String classified = AntigravityLanes.parseRateLimitReason(reason, null, null);
@@ -112,8 +133,15 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityVersions (production exports, real jsRandom) -----------------------------------
 
-    /** JS {@code (versionListJson, min, jsRandom) => string}: {@link AntigravityVersions#pickVersion}
-     *  (new-account version pick; {@code min} empty/{@code null} = no floor). */
+    /**
+     * JS {@code (versionListJson, min, jsRandom) => string}: {@link AntigravityVersions#pickVersion}
+     * (new-account version pick; {@code min} empty/{@code null} = no floor).
+     *
+     * @param versionListJson the versions to pick from, as a JSON array
+     * @param min the lowest version worth picking, or empty for no floor
+     * @param jsRandom the host's entropy
+     * @return the chosen version
+     */
     @JSExport
     public static String pickVersionProd(String versionListJson, String min, JsRandomFn jsRandom) {
         JsonCodec json = new SimpleJsonCodec();
@@ -128,6 +156,12 @@ public final class AntigravityProviderJs {
      * AntigravityHandleRouting#driftAccountVersions}, the per-account UA version-drift scheduler.
      * Returns the ordered mutations only; the host applies each via {@code manager.mutate} (Java
      * decides, host applies).
+     *
+     * @param accountsJson the accounts, as a JSON array
+     * @param now the current time, in epoch milliseconds
+     * @param versionListJson the versions to pick from, as a JSON array
+     * @param jsRandom the host's entropy, so an account's drift is not baked into the bundle
+     * @return the mutations in order, as a JSON array, for the host to apply
      */
     @JSExport
     public static String driftAccountVersionsProd(String accountsJson, double now, String versionListJson, JsRandomFn jsRandom) {
@@ -171,7 +205,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityCatalog -----------------------------------------------------------------------
 
-    /** Exercises {@link AntigravityCatalog#buildAntigravityCatalog} via the JsonCodec SPI (JSON in -> JSON out). */
+    /**
+     * Exercises {@link AntigravityCatalog#buildAntigravityCatalog} via the JsonCodec SPI (JSON in -> JSON out).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @return what {@link AntigravityCatalog#buildAntigravityCatalog} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String buildCatalog(String payloadJson) {
@@ -183,7 +222,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityQuotaParser -------------------------------------------------------------------
 
-    /** Exercises {@link AntigravityQuotaParser#aggregateQuotaFamilies} via the JsonCodec SPI (JSON in -> JSON out). */
+    /**
+     * Exercises {@link AntigravityQuotaParser#aggregateQuotaFamilies} via the JsonCodec SPI (JSON in -> JSON out).
+     *
+     * @param modelsJson the upstream model list, as JSON
+     * @return what {@link AntigravityQuotaParser#aggregateQuotaFamilies} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String aggregateQuota(String modelsJson) {
@@ -198,7 +242,13 @@ public final class AntigravityProviderJs {
     // aggregateQuotaFamilies (above, wired to fetchQuotaFamilies); allPoolsExhausted is used
     // internally by antigravityStatus/antigravityAvailableAt below. Neither needs its own JS export.
 
-    /** Exercises {@link AntigravityQuotaParser#antigravityStatus} (account JSON + now epoch-ms). */
+    /**
+     * Exercises {@link AntigravityQuotaParser#antigravityStatus} (account JSON + now epoch-ms).
+     *
+     * @param accountJson the account, as JSON
+     * @param now the current time, in epoch milliseconds
+     * @return what {@link AntigravityQuotaParser#antigravityStatus} answers
+     */
     @JSExport
     public static String antigravityStatus(String accountJson, double now) {
         JsonCodec json = new SimpleJsonCodec();
@@ -209,6 +259,10 @@ public final class AntigravityProviderJs {
      * Exercises {@link AntigravityQuotaParser#antigravityAvailableAt} (account JSON + now epoch-ms).
      * Returns the raw {@code double} (not JSON) so a disabled account's {@code Double.POSITIVE_INFINITY}
      * compiles straight to JS {@code Infinity}, which {@code SimpleJsonCodec} has no JSON encoding for.
+     *
+     * @param accountJson the account, as JSON
+     * @param now the current time, in epoch milliseconds
+     * @return what {@link AntigravityQuotaParser#antigravityAvailableAt} answers
      */
     @JSExport
     public static double antigravityAvailableAt(String accountJson, double now) {
@@ -216,7 +270,12 @@ public final class AntigravityProviderJs {
         return AntigravityQuotaParser.antigravityAvailableAt(asMap(json.parse(accountJson)), (long) now);
     }
 
-    /** Exercises {@link AntigravityQuotaParser#antigravityQuota} via JsonCodec (JSON out, {@code null} when uncached). */
+    /**
+     * Exercises {@link AntigravityQuotaParser#antigravityQuota} via JsonCodec (JSON out, {@code null} when uncached).
+     *
+     * @param accountJson the account, as JSON
+     * @return what {@link AntigravityQuotaParser#antigravityQuota} answers
+     */
     @JSExport
     public static String antigravityQuota(String accountJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -226,13 +285,25 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityModelResolver -----------------------------------------------------------------
 
-    /** Exercises {@link AntigravityModelResolver#resolveModelWithTier} (JSON out). */
+    /**
+     * Exercises {@link AntigravityModelResolver#resolveModelWithTier} (JSON out).
+     *
+     * @param model the model id
+     * @param cliFirst whether the free lane is preferred
+     * @return what {@link AntigravityModelResolver#resolveModelWithTier} answers
+     */
     @JSExport
     public static String resolveModelWithTier(String model, boolean cliFirst) {
         return new SimpleJsonCodec().stringify(AntigravityModelResolver.resolveModelWithTier(model, cliFirst));
     }
 
-    /** Exercises {@link AntigravityModelResolver#resolveModelForHeaderStyle} (JSON out). */
+    /**
+     * Exercises {@link AntigravityModelResolver#resolveModelForHeaderStyle} (JSON out).
+     *
+     * @param model the model id
+     * @param headerStyle which header set the endpoint expects
+     * @return what {@link AntigravityModelResolver#resolveModelForHeaderStyle} answers
+     */
     @JSExport
     public static String resolveModelForHeaderStyle(String model, String headerStyle) {
         return new SimpleJsonCodec().stringify(AntigravityModelResolver.resolveModelForHeaderStyle(model, headerStyle));
@@ -240,7 +311,13 @@ public final class AntigravityProviderJs {
 
     // ---- CrossModelSanitizer ----------------------------------------------------------------------
 
-    /** Exercises {@link CrossModelSanitizer#sanitizeCrossModelPayload} via the JsonCodec SPI. */
+    /**
+     * Exercises {@link CrossModelSanitizer#sanitizeCrossModelPayload} via the JsonCodec SPI.
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @param targetModel the model the request is being rewritten for
+     * @return what {@link CrossModelSanitizer#sanitizeCrossModelPayload} answers
+     */
     @JSExport
     public static String sanitizeCrossModelPayload(String payloadJson, String targetModel) {
         JsonCodec json = new SimpleJsonCodec();
@@ -257,14 +334,25 @@ public final class AntigravityProviderJs {
 
     // ---- GeminiTransforms -------------------------------------------------------------------------
 
-    /** Exercises {@link GeminiTransforms#toGeminiSchema} via the JsonCodec SPI. */
+    /**
+     * Exercises {@link GeminiTransforms#toGeminiSchema} via the JsonCodec SPI.
+     *
+     * @param schemaJson the schema, as JSON
+     * @return what {@link GeminiTransforms#toGeminiSchema} answers
+     */
     @JSExport
     public static String toGeminiSchema(String schemaJson) {
         JsonCodec json = new SimpleJsonCodec();
         return json.stringify(GeminiTransforms.toGeminiSchema(schemaJson != null ? json.parse(schemaJson) : null));
     }
 
-    /** Exercises {@link GeminiTransforms#applyGeminiTransforms} (mutates payload, no-op Logger). */
+    /**
+     * Exercises {@link GeminiTransforms#applyGeminiTransforms} (mutates payload, no-op Logger).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @param optionsJson the options, as a JSON object
+     * @return what {@link GeminiTransforms#applyGeminiTransforms} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String applyGeminiTransforms(String payloadJson, String optionsJson) {
@@ -280,7 +368,13 @@ public final class AntigravityProviderJs {
 
     // ---- ClaudeTransforms -------------------------------------------------------------------------
 
-    /** Exercises {@link ClaudeTransforms#applyClaudeTransforms} (mutates payload, identity cleaner). */
+    /**
+     * Exercises {@link ClaudeTransforms#applyClaudeTransforms} (mutates payload, identity cleaner).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @param optionsJson the options, as a JSON object
+     * @return what {@link ClaudeTransforms#applyClaudeTransforms} answers
+     */
     @JSExport
     public static String applyClaudeTransforms(String payloadJson, String optionsJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -295,7 +389,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravitySchemaCleaner -----------------------------------------------------------------
 
-    /** Exercises {@link AntigravitySchemaCleaner#clean} via the JsonCodec SPI (JSON in -> JSON out). */
+    /**
+     * Exercises {@link AntigravitySchemaCleaner#clean} via the JsonCodec SPI (JSON in -> JSON out).
+     *
+     * @param schemaJson the schema, as JSON
+     * @return what {@link AntigravitySchemaCleaner#clean} answers
+     */
     @JSExport
     public static String cleanSchema(String schemaJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -304,7 +403,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityThinkingConfig ----------------------------------------------------------------
 
-    /** Exercises {@link AntigravityThinkingConfig#normalizeThinkingConfig} via the JsonCodec SPI. */
+    /**
+     * Exercises {@link AntigravityThinkingConfig#normalizeThinkingConfig} via the JsonCodec SPI.
+     *
+     * @param configJson the platform, architecture and optional fixed clock, as a JSON object
+     * @return what {@link AntigravityThinkingConfig#normalizeThinkingConfig} answers
+     */
     @JSExport
     public static String normalizeThinkingConfig(String configJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -312,7 +416,13 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityThinkingConfig.normalizeThinkingConfig(cfg));
     }
 
-    /** Exercises {@link AntigravityThinkingConfig#extractVariantThinkingConfig} via the JsonCodec SPI. */
+    /**
+     * Exercises {@link AntigravityThinkingConfig#extractVariantThinkingConfig} via the JsonCodec SPI.
+     *
+     * @param providerOptionsJson the app's own provider options, as JSON
+     * @param generationConfigJson the generation config, as JSON
+     * @return what {@link AntigravityThinkingConfig#extractVariantThinkingConfig} answers
+     */
     @JSExport
     public static String extractVariantThinkingConfig(String providerOptionsJson, String generationConfigJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -331,7 +441,15 @@ public final class AntigravityProviderJs {
     private static final AntigravityThinkingBlocks.ImageSink DATA_URL_SINK =
             (mimeType, data) -> data == null ? null : "data:" + mimeType + ";base64," + data;
 
-    /** Exercises {@link AntigravityThinkingBlocks#deepFilterThinkingBlocks} (keepThinking threaded, cache getter). */
+    /**
+     * Exercises {@link AntigravityThinkingBlocks#deepFilterThinkingBlocks} (keepThinking threaded, cache getter).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @param sessionId the session the cache is keyed by
+     * @param isClaudeModel whether the request is for a Claude model
+     * @param keepThinking whether thinking blocks stay in the request
+     * @return what {@link AntigravityThinkingBlocks#deepFilterThinkingBlocks} answers
+     */
     @JSExport
     public static String deepFilterThinkingBlocks(String payloadJson, String sessionId, boolean isClaudeModel, boolean keepThinking) {
         JsonCodec json = new SimpleJsonCodec();
@@ -339,7 +457,12 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityThinkingBlocks.deepFilterThinkingBlocks(payload, sessionId, NO_CACHE, isClaudeModel, keepThinking));
     }
 
-    /** Exercises {@link AntigravityThinkingBlocks#transformThinkingParts} with the injected parser + image sink. */
+    /**
+     * Exercises {@link AntigravityThinkingBlocks#transformThinkingParts} with the injected parser + image sink.
+     *
+     * @param responseJson the upstream response, as JSON
+     * @return what {@link AntigravityThinkingBlocks#transformThinkingParts} answers
+     */
     @JSExport
     public static String transformThinkingParts(String responseJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -349,33 +472,58 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityResponseParse -----------------------------------------------------------------
 
-    /** Exercises {@link AntigravityResponseParse#parseAntigravityApiBody} (cloudcode-pa array shape) via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#parseAntigravityApiBody} (cloudcode-pa array shape) via JsonCodec.
+     *
+     * @param rawText the upstream body
+     * @return what {@link AntigravityResponseParse#parseAntigravityApiBody} answers
+     */
     @JSExport
     public static String parseAntigravityApiBody(String rawText) {
         JsonCodec json = new SimpleJsonCodec();
         return json.stringify(AntigravityResponseParse.parseAntigravityApiBody(json, rawText));
     }
 
-    /** Exercises {@link AntigravityResponseParse#extractUsageFromSsePayload} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#extractUsageFromSsePayload} via JsonCodec.
+     *
+     * @param payload the whole SSE body
+     * @return what {@link AntigravityResponseParse#extractUsageFromSsePayload} answers
+     */
     @JSExport
     public static String extractUsageFromSsePayload(String payload) {
         JsonCodec json = new SimpleJsonCodec();
         return json.stringify(AntigravityResponseParse.extractUsageFromSsePayload(json, payload));
     }
 
-    /** Exercises {@link AntigravityResponseParse#isEmptyResponseBody} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#isEmptyResponseBody} via JsonCodec.
+     *
+     * @param text the text
+     * @return what {@link AntigravityResponseParse#isEmptyResponseBody} answers
+     */
     @JSExport
     public static boolean isEmptyResponseBody(String text) {
         return AntigravityResponseParse.isEmptyResponseBody(new SimpleJsonCodec(), text);
     }
 
-    /** Exercises {@link AntigravityResponseParse#isMeaningfulSseLine} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#isMeaningfulSseLine} via JsonCodec.
+     *
+     * @param line one upstream SSE line
+     * @return what {@link AntigravityResponseParse#isMeaningfulSseLine} answers
+     */
     @JSExport
     public static boolean isMeaningfulSseLine(String line) {
         return AntigravityResponseParse.isMeaningfulSseLine(new SimpleJsonCodec(), line);
     }
 
-    /** Exercises {@link AntigravityResponseParse#recursivelyParseJsonStrings} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#recursivelyParseJsonStrings} via JsonCodec.
+     *
+     * @param objJson the tree to walk, as JSON
+     * @return what {@link AntigravityResponseParse#recursivelyParseJsonStrings} answers
+     */
     @JSExport
     public static String recursivelyParseJsonStrings(String objJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -383,7 +531,14 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityResponseParse.recursivelyParseJsonStrings(json, obj));
     }
 
-    /** Exercises {@link AntigravityResponseParse#rewriteAntigravityPreviewAccessError} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityResponseParse#rewriteAntigravityPreviewAccessError} via JsonCodec.
+     *
+     * @param bodyJson the request body, as JSON
+     * @param status the HTTP status
+     * @param requestedModel the model the caller asked for
+     * @return what {@link AntigravityResponseParse#rewriteAntigravityPreviewAccessError} answers
+     */
     @JSExport
     public static String rewriteAntigravityPreviewAccessError(String bodyJson, int status, String requestedModel) {
         JsonCodec json = new SimpleJsonCodec();
@@ -391,7 +546,13 @@ public final class AntigravityProviderJs {
                 asMap(json.parse(bodyJson)), status, requestedModel));
     }
 
-    /** Exercises {@link AntigravityResponseParse#createSyntheticErrorResponse} (Clock-sourced id) -> JSON. */
+    /**
+     * Exercises {@link AntigravityResponseParse#createSyntheticErrorResponse} (Clock-sourced id) -> JSON.
+     *
+     * @param errorMessage the upstream's error text
+     * @param requestedModel the model the caller asked for
+     * @return what {@link AntigravityResponseParse#createSyntheticErrorResponse} answers
+     */
     @JSExport
     public static String createSyntheticErrorResponse(String errorMessage, String requestedModel) {
         JsonCodec json = new SimpleJsonCodec();
@@ -406,7 +567,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityToolPairing -------------------------------------------------------------------
 
-    /** Exercises {@link AntigravityToolPairing#fixToolResponseGrouping} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityToolPairing#fixToolResponseGrouping} via JsonCodec.
+     *
+     * @param contentsJson the conversation's contents, as a JSON array
+     * @return what {@link AntigravityToolPairing#fixToolResponseGrouping} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String fixToolResponseGrouping(String contentsJson) {
@@ -416,7 +582,12 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityToolPairing.fixToolResponseGrouping(contents));
     }
 
-    /** Exercises {@link AntigravityToolPairing#validateAndFixClaudeToolPairing} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityToolPairing#validateAndFixClaudeToolPairing} via JsonCodec.
+     *
+     * @param messagesJson the conversation's messages, as a JSON array
+     * @return what {@link AntigravityToolPairing#validateAndFixClaudeToolPairing} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String validateAndFixClaudeToolPairing(String messagesJson) {
@@ -426,7 +597,12 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityToolPairing.validateAndFixClaudeToolPairing(messages));
     }
 
-    /** Exercises {@link AntigravityToolPairing#injectParameterSignatures} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityToolPairing#injectParameterSignatures} via JsonCodec.
+     *
+     * @param toolsJson the tools, as a JSON array
+     * @return what {@link AntigravityToolPairing#injectParameterSignatures} answers
+     */
     @JSExport
     @SuppressWarnings("unchecked")
     public static String injectParameterSignatures(String toolsJson) {
@@ -436,7 +612,13 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityToolPairing.injectParameterSignatures(json, tools));
     }
 
-    /** Exercises {@link AntigravityToolPairing#applyToolPairingFixes} (mutates payload) via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityToolPairing#applyToolPairingFixes} (mutates payload) via JsonCodec.
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @param isClaude whether the request is for a Claude model
+     * @return what {@link AntigravityToolPairing#applyToolPairingFixes} answers
+     */
     @JSExport
     public static String applyToolPairingFixes(String payloadJson, boolean isClaude) {
         JsonCodec json = new SimpleJsonCodec();
@@ -451,7 +633,12 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityIrBridge (core-ir) ------------------------------------------------------------
 
-    /** Exercises {@link AntigravityIrBridge#supportsThinking}. */
+    /**
+     * Exercises {@link AntigravityIrBridge#supportsThinking}.
+     *
+     * @param model the model id
+     * @return what {@link AntigravityIrBridge#supportsThinking} answers
+     */
     @JSExport
     public static boolean supportsThinking(String model) {
         return AntigravityIrBridge.supportsThinking(model);
@@ -461,8 +648,12 @@ public final class AntigravityProviderJs {
      * The request-encode half of the TS {@code handleIr} boundary: {@code irJson} is ALREADY a decoded
      * IR (the caller ran {@code AnthropicTranslator.decodeRequest} itself), so this applies only
      * antigravity's own thinking-budget resolution and the neutral IR-&gt;Gemini encode, without a
-     * second Anthropic decode. Mirrors {@link AntigravityHostSeams}'s {@code HostIrRequestPreparer} on
+     * second Anthropic decode. Mirrors {@code AntigravityHostSeams}'s {@code HostIrRequestPreparer} on
      * the JVM side.
+     *
+     * @param irJson the decoded IR request, as JSON
+     * @param model the model the request will be served as
+     * @return the upstream request body, as JSON
      */
     @JSExport
     public static String resolveThinkingBudgetAndEncodeGemini(String irJson, String model) {
@@ -474,19 +665,34 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityStreamTransform ---------------------------------------------------------------
 
-    /** Exercises {@link AntigravityStreamTransform#hashString} (DJB2, {@code >>> 0}, base16). */
+    /**
+     * Exercises {@link AntigravityStreamTransform#hashString} (DJB2, {@code >>> 0}, base16).
+     *
+     * @param str the text to hash
+     * @return what {@link AntigravityStreamTransform#hashString} answers
+     */
     @JSExport
     public static String hashString(String str) {
         return AntigravityStreamTransform.hashString(str != null ? str : "");
     }
 
-    /** Exercises {@link AntigravityStreamTransform#transformStreamingPayload} (identity transform) via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityStreamTransform#transformStreamingPayload} (identity transform) via JsonCodec.
+     *
+     * @param payload the whole SSE body
+     * @return what {@link AntigravityStreamTransform#transformStreamingPayload} answers
+     */
     @JSExport
     public static String transformStreamingPayload(String payload) {
         return AntigravityStreamTransform.transformStreamingPayload(new SimpleJsonCodec(), payload, r -> r);
     }
 
-    /** Exercises {@link AntigravityStreamTransform#deduplicateThinkingText} (data-URL image sink) via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityStreamTransform#deduplicateThinkingText} (data-URL image sink) via JsonCodec.
+     *
+     * @param responseJson the upstream response, as JSON
+     * @return what {@link AntigravityStreamTransform#deduplicateThinkingText} answers
+     */
     @JSExport
     public static String deduplicateThinkingText(String responseJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -495,7 +701,13 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityStreamTransform.deduplicateThinkingText(response, buffer, null, DATA_URL_SINK));
     }
 
-    /** Exercises {@link AntigravityStreamTransform#transformSseLine} (cache + identity transform) via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityStreamTransform#transformSseLine} (cache + identity transform) via JsonCodec.
+     *
+     * @param line one upstream SSE line
+     * @param sessionKey the key the signature is stored under
+     * @return what {@link AntigravityStreamTransform#transformSseLine} answers
+     */
     @JSExport
     public static String transformSseLine(String line, String sessionKey) {
         JsonCodec json = new SimpleJsonCodec();
@@ -511,13 +723,23 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityFingerprint / AntigravityRequestKeys / AntigravityRequestSignatures -----------
 
-    /** Exercises {@link AntigravityFingerprint#platformToDisplayName}. */
+    /**
+     * Exercises {@link AntigravityFingerprint#platformToDisplayName}.
+     *
+     * @param platform the host platform name, as the runtime reports it
+     * @return what {@link AntigravityFingerprint#platformToDisplayName} answers
+     */
     @JSExport
     public static String platformToDisplayName(String platform) {
         return AntigravityFingerprint.platformToDisplayName(platform);
     }
 
-    /** Exercises {@link AntigravityFingerprint#buildFingerprintHeaders} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityFingerprint#buildFingerprintHeaders} via JsonCodec.
+     *
+     * @param fingerprintJson the account fingerprint, as JSON
+     * @return what {@link AntigravityFingerprint#buildFingerprintHeaders} answers
+     */
     @JSExport
     public static String buildFingerprintHeaders(String fingerprintJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -525,13 +747,26 @@ public final class AntigravityProviderJs {
         return json.stringify(AntigravityFingerprint.buildFingerprintHeaders(fp));
     }
 
-    /** Exercises {@link AntigravityRequestKeys#buildSignatureSessionKey}. */
+    /**
+     * Exercises {@link AntigravityRequestKeys#buildSignatureSessionKey}.
+     *
+     * @param sessionId the session the cache is keyed by
+     * @param model the model id
+     * @param conv what identifies the conversation, or empty for the default
+     * @param proj the project the request is billed to
+     * @return what {@link AntigravityRequestKeys#buildSignatureSessionKey} answers
+     */
     @JSExport
     public static String buildSignatureSessionKey(String sessionId, String model, String conv, String proj) {
         return AntigravityRequestKeys.buildSignatureSessionKey(sessionId, model, conv, proj);
     }
 
-    /** Exercises {@link AntigravityRequestKeys#resolveConversationKey} (sha256 seed via stub Hasher). */
+    /**
+     * Exercises {@link AntigravityRequestKeys#resolveConversationKey} (sha256 seed via stub Hasher).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @return what {@link AntigravityRequestKeys#resolveConversationKey} answers
+     */
     @JSExport
     public static String resolveConversationKey(String payloadJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -539,14 +774,25 @@ public final class AntigravityProviderJs {
         return key == null ? null : key;
     }
 
-    /** Exercises {@link AntigravityRequestSignatures#injectDebugThinking} via JsonCodec. */
+    /**
+     * Exercises {@link AntigravityRequestSignatures#injectDebugThinking} via JsonCodec.
+     *
+     * @param responseJson the upstream response, as JSON
+     * @param debugText the thinking placeholder to inject, or empty for none
+     * @return what {@link AntigravityRequestSignatures#injectDebugThinking} answers
+     */
     @JSExport
     public static String injectDebugThinking(String responseJson, String debugText) {
         JsonCodec json = new SimpleJsonCodec();
         return json.stringify(AntigravityRequestSignatures.injectDebugThinking(json.parse(responseJson), debugText));
     }
 
-    /** Exercises {@link AntigravityRequestSignatures#sanitizeRequestPayloadForAntigravity} (mutates). */
+    /**
+     * Exercises {@link AntigravityRequestSignatures#sanitizeRequestPayloadForAntigravity} (mutates).
+     *
+     * @param payloadJson the upstream payload, as JSON
+     * @return what {@link AntigravityRequestSignatures#sanitizeRequestPayloadForAntigravity} answers
+     */
     @JSExport
     public static String sanitizeRequestPayload(String payloadJson) {
         JsonCodec json = new SimpleJsonCodec();
@@ -572,7 +818,11 @@ public final class AntigravityProviderJs {
         };
     }
 
-    /** Exercises {@link AntigravityRequestPrep#generateSyntheticProjectId} (fixed Random + counter ids). */
+    /**
+     * Exercises {@link AntigravityRequestPrep#generateSyntheticProjectId} (fixed Random + counter ids).
+     *
+     * @return what {@link AntigravityRequestPrep#generateSyntheticProjectId} answers
+     */
     @JSExport
     public static String generateSyntheticProjectId() {
         return AntigravityRequestPrep.generateSyntheticProjectId(counterIds(), FIXED_RANDOM);
@@ -581,6 +831,15 @@ public final class AntigravityProviderJs {
     /**
      * Exercises the full {@link AntigravityRequestPrep#prepare} spine (JSON in -> JSON out), proving the
      * request-preparation pipeline + all its reused ported helpers transpile. Deterministic stub seams.
+     *
+     * @param url the request url
+     * @param method the request method
+     * @param headersJson the headers, as a JSON object
+     * @param body the request body
+     * @param accessToken the account's access token
+     * @param projectId the project the request is billed to
+     * @param headerStyle which header set the endpoint expects
+     * @return what {@link AntigravityRequestPrep#prepare} answers
      */
     @JSExport
     @SuppressWarnings("unchecked")
@@ -660,25 +919,47 @@ public final class AntigravityProviderJs {
 
     // ---- AntigravityHandleRouting / AntigravityProjectContext / Orchestrator ----------------------
 
-    /** Exercises {@link AntigravityHandleRouting#isAutoModel}. */
+    /**
+     * Exercises {@link AntigravityHandleRouting#isAutoModel}.
+     *
+     * @param model the model id
+     * @return what {@link AntigravityHandleRouting#isAutoModel} answers
+     */
     @JSExport
     public static boolean isAutoModel(String model) {
         return AntigravityHandleRouting.isAutoModel(model);
     }
 
-    /** Exercises {@link AntigravityHandleRouting#rewriteModelInUrl}. */
+    /**
+     * Exercises {@link AntigravityHandleRouting#rewriteModelInUrl}.
+     *
+     * @param url the request url
+     * @param model the model id
+     * @return what {@link AntigravityHandleRouting#rewriteModelInUrl} answers
+     */
     @JSExport
     public static String rewriteModelInUrl(String url, String model) {
         return AntigravityHandleRouting.rewriteModelInUrl(url, model);
     }
 
-    /** Exercises {@link AntigravityHandleRouting#retryAfterMsFromMessage}. */
+    /**
+     * Exercises {@link AntigravityHandleRouting#retryAfterMsFromMessage}.
+     *
+     * @param message the upstream's error text
+     * @return what {@link AntigravityHandleRouting#retryAfterMsFromMessage} answers
+     */
     @JSExport
     public static String retryAfterMsFromMessage(String message) {
         return String.valueOf(AntigravityHandleRouting.retryAfterMsFromMessage(message));
     }
 
-    /** Exercises {@link AntigravityProjectContext#detectCodeAssistPlatform} via the Platform seam. */
+    /**
+     * Exercises {@link AntigravityProjectContext#detectCodeAssistPlatform} via the Platform seam.
+     *
+     * @param platform the host platform name, as the runtime reports it
+     * @param arch the host architecture, as the runtime reports it
+     * @return what {@link AntigravityProjectContext#detectCodeAssistPlatform} answers
+     */
     @JSExport
     public static String detectCodeAssistPlatform(String platform, String arch) {
         return AntigravityProjectContext.detectCodeAssistPlatform(new AntigravityProjectContext.Platform() {
@@ -694,7 +975,12 @@ public final class AntigravityProviderJs {
         });
     }
 
-    /** Exercises {@link AntigravityProjectContext#ensureProjectContext} short-circuit path (JSON out). */
+    /**
+     * Exercises {@link AntigravityProjectContext#ensureProjectContext} short-circuit path (JSON out).
+     *
+     * @param refresh the packed refresh string
+     * @return what {@link AntigravityProjectContext#ensureProjectContext} answers
+     */
     @JSExport
     public static String ensureProjectContextManaged(String refresh) {
         JsonCodec json = new SimpleJsonCodec();
@@ -722,8 +1008,14 @@ public final class AntigravityProviderJs {
         return json.stringify(out);
     }
 
-    /** JS {@code (jsRandom, jsUuid) => string}: {@link AntigravityRequestPrep#generateSyntheticProjectId}
-     *  (real seams; the ad-hoc verify-ping ids + fetchModels' fallback). */
+    /**
+     * JS {@code (jsRandom, jsUuid) => string}: {@link AntigravityRequestPrep#generateSyntheticProjectId}
+     * (real seams; the ad-hoc verify-ping ids + fetchModels' fallback).
+     *
+     * @param jsRandom the host's entropy
+     * @param jsUuid the host's id minting
+     * @return the synthetic project id
+     */
     @JSExport
     public static String generateSyntheticProjectIdProd(JsRandomFn jsRandom, JsUuidFn jsUuid) {
         Random random = () -> jsRandom.next();
@@ -743,8 +1035,15 @@ public final class AntigravityProviderJs {
      * the returned {@code meta} reflects the post-mutation state, and the host persists {@code
      * syntheticProjectId}/{@code managedProjectId} into its own account store. Preparer/executor/modelCache
      * are never invoked by {@code resolveProjectId}, so they are unreachable stubs.
-     *
      * @return {@code Promise<string>} resolving to JSON {@code {projectId, meta}}
+     *
+     * @param accountJson the account, as JSON
+     * @param access the account's access token
+     * @param jsRandom the host's entropy
+     * @param jsUuid the host's id minting
+     * @param jsProjectLoader the host's managed-project fetch
+     * @param jsProjectOnboarder the host's managed-project provisioning
+     * @param configJson the platform, architecture and optional fixed clock, as a JSON object
      */
     @JSExport
     public static JSPromise<JSString> resolveProjectIdProd(
@@ -831,6 +1130,8 @@ public final class AntigravityProviderJs {
      * Drives a full {@link AntigravityHandleOrchestrator#handle} through the no-account terminal
      * branch under TeaVM (proves the orchestrator + its JsonCodec body builders + attemptModel
      * transpile), returning the synthetic 503 body. Seams are inline anonymous impls.
+     *
+     * @return what {@link AntigravityHandleOrchestrator#handle} answers
      */
     @JSExport
     public static String handleNoAccountSmoke() {
@@ -898,6 +1199,29 @@ public final class AntigravityProviderJs {
 
     // ---- The async entry (multi-@Async composition) ---------------------------------------------
 
+    /** JS {@code () => number} (production: {@code Math.random}) -> the {@link Random} SPI. */
+    @JSFunctor
+    public interface JsRandomFn extends JSObject {
+        /**
+         * The next random value.
+         *
+         * @return a value in the half-open unit interval
+         */
+        double next();
+    }
+
+    /** JS {@code () => string} (production: {@code crypto.randomUUID}) -> the {@link
+     *  AntigravityRequestPrep.IdGenerator} feeding {@code generateSyntheticProjectId}. */
+    @JSFunctor
+    public interface JsUuidFn extends JSObject {
+        /**
+         * A fresh identifier.
+         *
+         * @return the identifier
+         */
+        JSString uuid();
+    }
+
     /**
      * The async entry: runs the FULL {@link AntigravityHandleOrchestrator#handle} decision loop with
      * host transport, account rotation and project-context discovery supplied as JS async/sync
@@ -920,22 +1244,11 @@ public final class AntigravityProviderJs {
      * @param jsProjectOnboarder async {@code onboardManagedProject}
      * @param jsPreparer        sync request preparer ({@code prepareAntigravityRequest} stand-in)
      * @param autoCandidatesJson {@code getAutoCandidates(PROVIDER_ID)} as a JSON array, or {@code null}
+     * @param jsRandom          the host's entropy
+     * @param jsUuid            the host's id minting
      * @return a {@code Promise<string>} resolving with the serialized {@link
      *         AntigravityHandleOrchestrator.HandleDecision} (a discriminated union keyed by {@code kind})
      */
-    /** JS {@code () => number} (production: {@code Math.random}) -> the {@link Random} SPI. */
-    @JSFunctor
-    public interface JsRandomFn extends JSObject {
-        double next();
-    }
-
-    /** JS {@code () => string} (production: {@code crypto.randomUUID}) -> the {@link
-     *  AntigravityRequestPrep.IdGenerator} feeding {@code generateSyntheticProjectId}. */
-    @JSFunctor
-    public interface JsUuidFn extends JSObject {
-        JSString uuid();
-    }
-
     @JSExport
     public static JSPromise<JSString> handleAntigravityRequestAsync(
             String inputsJson,
@@ -1112,12 +1425,25 @@ public final class AntigravityProviderJs {
     /** JS {@code (input) => string} (production: sha256 hex) -> the {@link AntigravityRequestKeys.Hasher} SPI. */
     @JSFunctor
     public interface JsHasherFn extends JSObject {
+        /**
+         * The sha256 of one string.
+         *
+         * @param input what to hash
+         * @return the digest, as lowercase hex
+         */
         JSString hash(JSString input);
     }
 
     /** JS {@code (sessionId, text) => string|null} -> the {@link AntigravityThinkingBlocks.CachedSignatureLookup} SPI. */
     @JSFunctor
     public interface JsCacheLookupFn extends JSObject {
+        /**
+         * The signature the cache holds for one thinking text.
+         *
+         * @param sessionId the session the cache is keyed by
+         * @param text the thinking text
+         * @return the signature, or {@code null} when nothing is held
+         */
         JSString get(JSString sessionId, JSString text);
     }
 
@@ -1127,19 +1453,53 @@ public final class AntigravityProviderJs {
      * JSON {@code {text,signature}} string (or {@code null}/{@code "null"}/empty for a miss).
      */
     public interface JsSignatureStoreFns extends JSObject {
+        /**
+         * The pair held under one key.
+         *
+         * @param key the signature key
+         * @return the text and signature as JSON, or {@code null} when nothing is held
+         */
         JSString get(JSString key);
 
+        /**
+         * Whether a key holds a signature.
+         *
+         * @param key the signature key
+         * @return true when one is held
+         */
         boolean has(JSString key);
 
+        /**
+         * Drops whatever one key holds.
+         *
+         * @param key the signature key
+         */
         void delete(JSString key);
 
+        /**
+         * Records the signature a thinking block was returned with.
+         *
+         * @param sessionKey the key to hold it under
+         * @param text the thinking text the signature covers
+         * @param signature the signature the upstream returned
+         */
         void set(JSString sessionKey, JSString text, JSString signature);
     }
 
-    /** {@code crypto.randomUUID}-derived id pair for {@link AntigravityStreamMapper.IdGenerator}, grouped like {@link JsSignatureStoreFns}. */
+    /** {@code crypto.randomUUID}-derived id pair for {@link AntigravityGeminiSseBridge.IdGenerator}, grouped like {@link JsSignatureStoreFns}. */
     public interface JsIdsFns extends JSObject {
+        /**
+         * A fresh id for one assistant message.
+         *
+         * @return the message id
+         */
         JSString newMessageId();
 
+        /**
+         * A fresh id for one tool call.
+         *
+         * @return the tool-call id
+         */
         JSString newToolId();
     }
 
@@ -1151,6 +1511,27 @@ public final class AntigravityProviderJs {
      * claudePromptAutoCaching} booleans (defaults true/false) and the per-attempt {@code
      * endpointOverride} (empty/{@code null} for "use default") exactly as {@code
      * prepareAntigravityRequest}'s callers do.
+     *
+     * @param url the request url
+     * @param method the request method
+     * @param headersJson the headers, as a JSON object
+     * @param body the request body
+     * @param accessToken the account's access token
+     * @param projectId the project the request is billed to
+     * @param headerStyle which header set the endpoint expects
+     * @param fingerprintJson the account fingerprint, as JSON
+     * @param keepThinking whether thinking blocks stay in the request
+     * @param pluginSessionId the host's session id, which keys the signature cache
+     * @param endpointOverride the endpoint this attempt must use, or empty for the default
+     * @param claudeToolHardening whether Claude tool schemas are hardened
+     * @param claudePromptAutoCaching whether prompt caching markers are added
+     * @param cliFirst whether the free lane is preferred
+     * @param jsRandom the host's entropy
+     * @param jsUuid the host's id minting
+     * @param jsHasher the host's sha256, returning full hex
+     * @param jsCacheLookup the host's signature-cache read
+     * @param jsSignatureStore the host's signature store
+     * @return what {@link AntigravityThinkingRecovery} answers
      */
     @JSExport
     public static String prepareAntigravityRequestProd(
@@ -1234,9 +1615,19 @@ public final class AntigravityProviderJs {
 
     /** Stateful JS handle over one {@link AntigravityGeminiSseBridge} instance; {@link #newIrStreamMapper}'s return. */
     public interface JsIrStreamMapperHandle extends JSObject {
-        /** Raw Gemini SSE text chunk in, a JSON array of enriched {@code IrStreamEvent}s out. */
+        /**
+         * The IR events one raw chunk yields.
+         *
+         * @param chunk the upstream SSE text, which may end mid-line
+         * @return the events, as a JSON array
+         */
         JSString handle(JSString chunk);
 
+        /**
+         * The IR events left over once the upstream closes.
+         *
+         * @return the events, as a JSON array
+         */
         JSString finish();
     }
 
@@ -1245,6 +1636,10 @@ public final class AntigravityProviderJs {
      * model-overwritten {@code IrStreamEvent}s from {@link AntigravityGeminiSseBridge#handleIrEvents}/
      * {@code #finishIrEvents}, serialized as a neutral JSON array, for {@code javaStream.ts}'s
      * {@code makeIrStream} to enqueue directly onto an {@code IrEventStream}.
+     *
+     * @param model the model id
+     * @param jsIds the host's id minting
+     * @return what {@link AntigravityGeminiSseBridge#handleIrEvents} answers
      */
     @JSExport
     public static JsIrStreamMapperHandle newIrStreamMapper(String model, JsIdsFns jsIds) {
@@ -1288,6 +1683,10 @@ public final class AntigravityProviderJs {
      * Exports {@link AntigravityStreamTransform#cacheThinkingSignaturesFromResponse} (a fresh per-call
      * {@link AntigravityStreamTransform.ThoughtBuffer}; the JVM signature also requires a
      * {@code signatureSessionKey}, so this export takes one too).
+     *
+     * @param responseJson the upstream response, as JSON
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param jsSignatureStore the host's signature store
      */
     @JSExport
     public static void cacheSignaturesFromResponse(String responseJson, String signatureSessionKey, JsSignatureStoreFns jsSignatureStore) {
@@ -1308,12 +1707,26 @@ public final class AntigravityProviderJs {
      */
     @JSFunctor
     public interface JsImageSinkFn extends JSObject {
+        /**
+         * Writes one inline image and answers with what should stand in its place.
+         *
+         * @param mimeType the image's media type
+         * @param base64Data the image bytes, base64 encoded
+         * @return a link to the written file, or {@code null} when there was nothing to write
+         */
         JSString save(JSString mimeType, JSString base64Data);
     }
 
     /** JS {@code (sessionKey, text, signature) => void}; production: {@code cacheSignature} (cache.ts), the on-disk signature cache write. */
     @JSFunctor
     public interface JsCacheSignatureFn extends JSObject {
+        /**
+         * Tells the host a signature is worth keeping on disk.
+         *
+         * @param sessionKey the key to hold it under
+         * @param text the thinking text the signature covers
+         * @param signature the signature the upstream returned
+         */
         void onCacheSignature(JSString sessionKey, JSString text, JSString signature);
     }
 
@@ -1324,8 +1737,19 @@ public final class AntigravityProviderJs {
      * matching TS.
      */
     public interface JsThoughtDedupFns extends JSObject {
+        /**
+         * Whether a thought has already been shown.
+         *
+         * @param hash the thinking text's hash
+         * @return true when it was shown before
+         */
         boolean has(JSString hash);
 
+        /**
+         * Records that a thought has been shown.
+         *
+         * @param hash the thinking text's hash
+         */
         void add(JSString hash);
     }
 
@@ -1377,6 +1801,14 @@ public final class AntigravityProviderJs {
      * {@code isDebugTuiEnabled()}/{@code getKeepThinking()} placeholder (empty/{@code null} for
      * "none"); {@code jsImageSink} bridges the real {@code processImageData}.
      * Returns {@code {status, headers, body}} JSON for the host to build the final {@code Response}.
+     *
+     * @param bodyText the upstream body
+     * @param status the upstream status
+     * @param headersJson the upstream headers, as a JSON object
+     * @param requestedModel the model the caller asked for, or empty
+     * @param debugText the thinking placeholder to inject, or empty for none
+     * @param jsImageSink the host's image writer, answering with a link or null
+     * @return the status, headers and body to answer with, as JSON
      */
     @JSExport
     public static String transformServeBodyProd(
@@ -1421,6 +1853,12 @@ public final class AntigravityProviderJs {
      * per-stream closures); {@link #newResponseSseTransformer}'s return.
      */
     public interface JsResponseSseHandle extends JSObject {
+        /**
+         * What the host should emit in place of one upstream line.
+         *
+         * @param line the upstream SSE line, without its terminator
+         * @return the line to emit
+         */
         JSString handle(JSString line);
     }
 
@@ -1437,6 +1875,15 @@ public final class AntigravityProviderJs {
      * dedup set. The host passes {@code null} here for every non-Gemini-3 {@code effectiveModel},
      * exactly mirroring TS's own {@code effectiveModel && isGemini3Model(effectiveModel) ?
      * sessionDisplayedThinkingHashes : undefined} gate; this method never re-derives that gate itself.
+     *
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param debugText the thinking placeholder to inject, or empty for none
+     * @param cacheSignatures whether this model's signatures are worth storing
+     * @param jsSignatureStore the host's signature store
+     * @param jsCacheSignature the host's on-disk signature-cache write
+     * @param jsImageSink the host's image writer, answering with a link or null
+     * @param jsThoughtDedup the host's already-shown thought hashes, or null to dedupe nothing
+     * @return what {@link #prepareAntigravityRequestProd} answers
      */
     @JSExport
     public static JsResponseSseHandle newResponseSseTransformer(

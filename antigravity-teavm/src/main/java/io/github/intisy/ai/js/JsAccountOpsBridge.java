@@ -44,6 +44,12 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
      */
     @JSFunctor
     public interface JsAcquireFn extends JSObject {
+        /**
+         * Takes the next account that can serve one lane.
+         *
+         * @param lane the lane to serve on
+         * @return the account and its access token as JSON, or {@code null} when none is free
+         */
         JSPromise<JSString> acquire(JSString lane);
     }
 
@@ -56,18 +62,61 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
      * missing next-available).
      */
     public interface JsAccountFns extends JSObject {
+        /**
+         * When a lane's soonest account comes back.
+         *
+         * @param lane the lane being asked about
+         * @return the epoch-millisecond time as JSON, or {@code "null"} when nothing is waiting
+         */
         JSString nextAvailableAt(JSString lane);
 
+        /**
+         * One attempt failed for a reason that is not a rate limit.
+         *
+         * @param accountId the account that failed
+         * @param lane the lane it failed on
+         * @param attempt which attempt this was, counting from one
+         * @param message what went wrong
+         */
         void reportError(JSString accountId, JSString lane, int attempt, JSString message);
 
+        /**
+         * One attempt hit the upstream rate limit.
+         *
+         * @param accountId the account that was limited
+         * @param lane the lane it was limited on
+         * @param resetMs when the limit resets, in epoch milliseconds
+         */
         void reportRateLimit(JSString accountId, JSString lane, double resetMs);
 
+        /**
+         * One attempt served the request.
+         *
+         * @param accountId the account that served it
+         */
         void reportSuccess(JSString accountId);
 
+        /**
+         * An attempt failed in a way that implicates the outbound address rather than the account.
+         *
+         * @param accountId the account the attempt used, whose proxy the host knows
+         * @param ipSuspected whether the address is the likely cause
+         */
         void reportProxyRateLimit(JSString accountId, boolean ipSuspected);
 
+        /**
+         * Every account the host currently holds.
+         *
+         * @return the accounts, as a JSON array
+         */
         JSString list();
 
+        /**
+         * Persists the fields the orchestrator changed on one account.
+         *
+         * @param accountId the account to write back
+         * @param updatedAccountJson the whole account after the change, as JSON
+         */
         void mutate(JSString accountId, JSString updatedAccountJson);
     }
 
@@ -78,6 +127,13 @@ public final class JsAccountOpsBridge implements AntigravityHandleOrchestrator.A
     // orchestrator as Acquired.account, so mutate() applies the mutator to the SAME instance.
     private final Map<String, Map<String, Object>> knownAccounts = new LinkedHashMap<>();
 
+    /**
+     * One bridge over the host's account rotation and reporting.
+     *
+     * @param jsAcquire the host's account rotation
+     * @param jsOps what the loop tells the host about each account it used
+     * @param json the codec each account crosses the boundary through
+     */
     public JsAccountOpsBridge(JsAcquireFn jsAcquire, JsAccountFns jsOps, JsonCodec json) {
         this.jsAcquire = jsAcquire;
         this.jsOps = jsOps;

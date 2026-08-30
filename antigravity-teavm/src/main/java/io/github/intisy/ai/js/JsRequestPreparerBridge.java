@@ -22,8 +22,24 @@ import java.util.Map;
  */
 public final class JsRequestPreparerBridge implements AntigravityHandleOrchestrator.RequestPreparer {
 
+    /** The host's request preparation, as one JS function. */
     @JSFunctor
     public interface JsPrepareFn extends JSObject {
+        /**
+         * One request, prepared for one account and endpoint.
+         *
+         * @param url the request url
+         * @param bodyText the request body
+         * @param method the request method
+         * @param headersJson the caller's headers, as a JSON object
+         * @param access the account's access token
+         * @param projectId the project the request is billed to
+         * @param endpoint the endpoint this attempt uses
+         * @param headerStyle which header set that endpoint expects
+         * @param accountJson the whole account, as JSON
+         * @return an opaque handle plus the transform parameters as JSON, or {@code null} when
+         *         preparing threw
+         */
         JSString prepare(JSString url, JSString bodyText, JSString method, JSString headersJson,
                          JSString access, JSString projectId, JSString endpoint, JSString headerStyle,
                          JSString accountJson);
@@ -32,6 +48,12 @@ public final class JsRequestPreparerBridge implements AntigravityHandleOrchestra
     private final JsPrepareFn jsPrepare;
     private final JsonCodec json;
 
+    /**
+     * One bridge over the host's request preparation.
+     *
+     * @param jsPrepare the host's preparation
+     * @param json the codec each request crosses the boundary through
+     */
     public JsRequestPreparerBridge(JsPrepareFn jsPrepare, JsonCodec json) {
         this.jsPrepare = jsPrepare;
         this.json = json;

@@ -27,14 +27,29 @@ import java.util.Map;
  */
 public final class JsProjectLoaderBridge implements AntigravityProjectContext.ProjectLoader {
 
+    /** The host's managed-project fetch, as one JS function. */
     @JSFunctor
     public interface JsLoadFn extends JSObject {
+        /**
+         * What the upstream says about one account's managed project.
+         *
+         * @param accessToken the account's access token
+         * @param projectId the project to ask about, or empty to let the upstream choose
+         * @param proxy the outbound proxy, or empty for a direct connection
+         * @return the payload as JSON, or {@code null} when every endpoint failed
+         */
         JSPromise<JSString> load(JSString accessToken, JSString projectId, JSString proxy);
     }
 
     private final JsLoadFn jsLoad;
     private final JsonCodec json;
 
+    /**
+     * One bridge over the host's managed-project fetch.
+     *
+     * @param jsLoad the host's fetch
+     * @param json the codec each payload crosses the boundary through
+     */
     public JsProjectLoaderBridge(JsLoadFn jsLoad, JsonCodec json) {
         this.jsLoad = jsLoad;
         this.json = json;

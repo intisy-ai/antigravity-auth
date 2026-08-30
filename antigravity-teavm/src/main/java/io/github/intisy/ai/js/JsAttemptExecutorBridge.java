@@ -51,12 +51,25 @@ public final class JsAttemptExecutorBridge implements AntigravityHandleOrchestra
      */
     @JSFunctor
     public interface JsExecFn extends JSObject {
+        /**
+         * Sends one prepared request.
+         *
+         * @param accountId the account it is sent for
+         * @param preparedRefJson the host's own opaque handle to what it prepared
+         * @return what the upstream answered, as JSON, without its bytes
+         */
         JSPromise<JSString> execute(JSString accountId, JSString preparedRefJson);
     }
 
     private final JsExecFn jsExec;
     private final JsonCodec json;
 
+    /**
+     * One bridge over the host's transport.
+     *
+     * @param jsExec the host's transport
+     * @param json the codec each outcome crosses the boundary through
+     */
     public JsAttemptExecutorBridge(JsExecFn jsExec, JsonCodec json) {
         this.jsExec = jsExec;
         this.json = json;
