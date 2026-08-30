@@ -48,37 +48,83 @@ public final class AntigravityStreamTransform {
 
     /** Injected {@code transformThinkingParts} callback ({@code (response) => transformed}). */
     public interface ThinkingPartsTransform {
+        /**
+         * One response with its thinking blocks rewritten into the shape a surface renders.
+         *
+         * @param response the response to rewrite
+         * @return the rewritten response
+         */
         Object transform(Object response);
     }
 
     /** Injected {@code signatureStore.set(sessionKey, {text, signature})} write. */
     public interface SignatureStore {
+        /**
+         * Records the signature a thinking block was returned with.
+         *
+         * @param sessionKey the key to hold it under
+         * @param text the thinking text the signature covers
+         * @param signature the signature the upstream returned
+         */
         void set(String sessionKey, String text, String signature);
     }
 
     /** Injected optional {@code onCacheSignature(sessionKey, text, signature)} callback. */
     public interface CacheSignatureCallback {
+        /**
+         * Tells the host a signature is worth keeping on disk.
+         *
+         * @param sessionKey the key to hold it under
+         * @param text the thinking text the signature covers
+         * @param signature the signature the upstream returned
+         */
         void onCacheSignature(String sessionKey, String text, String signature);
     }
 
     /** Injected optional {@code onInjectDebug(response, debugText) => response} callback. */
     public interface InjectDebug {
+        /**
+         * One response with a placeholder thinking block added, so a debug view has one to show.
+         *
+         * @param response the response to rewrite
+         * @param debugText the placeholder text
+         * @return the rewritten response
+         */
         Object inject(Object response, String debugText);
     }
 
     /** {@code createThoughtBuffer()}: a {@code Map<number,string>} wrapper (get/set/clear). */
     public interface ThoughtBuffer {
+        /**
+         * The text accumulated for one candidate.
+         *
+         * @param index which candidate
+         * @return its text so far, or {@code null} when there is none
+         */
         String get(int index);
 
+        /**
+         * Records the text accumulated for one candidate.
+         *
+         * @param index which candidate
+         * @param text the text so far
+         */
         void set(int index, String text);
 
+        /** Drops everything accumulated, at the end of a stream. */
         void clear();
     }
 
     /** Mutable {@code { injected: boolean }} debug-state cursor passed through {@link #transformSseLine}. */
     public static final class DebugState {
+        /** Whether the placeholder has already been injected into this stream. */
         public boolean injected;
 
+        /**
+         * One stream's debug cursor.
+         *
+         * @param injected whether the placeholder has already been injected
+         */
         public DebugState(boolean injected) {
             this.injected = injected;
         }
@@ -91,6 +137,11 @@ public final class AntigravityStreamTransform {
 
     // ---- createThoughtBuffer ----------------------------------------------
 
+    /**
+     * A fresh buffer for one stream's accumulated thinking text.
+     *
+     * @return the buffer
+     */
     public static ThoughtBuffer createThoughtBuffer() {
         return new MapThoughtBuffer();
     }
@@ -116,7 +167,12 @@ public final class AntigravityStreamTransform {
 
     // ---- hashString -------------------------------------------------------
 
-    /** DJB2, {@code (hash >>> 0).toString(16)}: JS int32 truncation of the {@code << 5} operand only. */
+    /**
+     * The hash a thinking text is deduplicated by.
+     *
+     * @param str the text to hash
+     * @return the digest, as hex
+     */
     public static String hashString(String str) {
         double hash = 5381;
         for (int i = 0; i < str.length(); i++) {
@@ -144,7 +200,14 @@ public final class AntigravityStreamTransform {
 
     // ---- transformStreamingPayload ----------------------------------------
 
-    /** Split on {@code \n}, re-stringify {@code parsed.response} (if present) via {@code transform}. */
+    /**
+     * A whole buffered SSE payload with every line's response rewritten.
+     *
+     * @param json the codec the lines are parsed and written with
+     * @param payload the whole SSE body
+     * @param transform what rewrites each line's response
+     * @return the rewritten payload
+     */
     public static String transformStreamingPayload(JsonCodec json, String payload, ThinkingPartsTransform transform) {
         String[] lines = payload.split("\n", -1);
         StringBuilder result = new StringBuilder();
@@ -176,6 +239,12 @@ public final class AntigravityStreamTransform {
     /**
      * {@code displayedThinkingHashes} may be {@code null}; {@code imageSink} is the
      * {@link AntigravityThinkingBlocks.ImageSink} for the inlineData branch.
+     *
+     * @param response the response to rewrite
+     * @param sentBuffer what has already been sent for each candidate
+     * @param displayedThinkingHashes what has already been shown, or {@code null} to dedupe nothing
+     * @param imageSink where an inline image is written
+     * @return the rewritten response
      */
     public static Object deduplicateThinkingText(Object response, ThoughtBuffer sentBuffer,
                                                  Set<String> displayedThinkingHashes,
@@ -318,7 +387,25 @@ public final class AntigravityStreamTransform {
 
     // ---- transformSseLine -----------------------------------------------
 
-    /** Options/callbacks are the injected seams below. */
+    /**
+     * What the host should emit in place of one upstream line.
+     *
+     * @param json the codec the line is parsed and written with
+     * @param line the upstream SSE line
+     * @param signatureStore the host's signature store
+     * @param thoughtBuffer what has been accumulated for each candidate
+     * @param sentThinkingBuffer what has already been sent for each candidate
+     * @param onCacheSignature told when a signature is worth keeping on disk
+     * @param onInjectDebug adds the debug placeholder, when there is one
+     * @param transformThinkingParts rewrites the thinking blocks for display
+     * @param imageSink where an inline image is written
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param debugText the placeholder to inject, or {@code null} for none
+     * @param cacheSignatures whether this model's signatures are worth storing
+     * @param displayedThinkingHashes what has already been shown, or {@code null} to dedupe nothing
+     * @param debugState whether the placeholder has already been injected
+     * @return the line to emit
+     */
     public static String transformSseLine(JsonCodec json, String line,
                                           SignatureStore signatureStore, ThoughtBuffer thoughtBuffer,
                                           ThoughtBuffer sentThinkingBuffer,
@@ -357,7 +444,15 @@ public final class AntigravityStreamTransform {
 
     // ---- cacheThinkingSignaturesFromResponse ----------------------------
 
-    /** candidates[] index keying + content[] CLAUDE_BUFFER_KEY=0. */
+    /**
+     * Stores every signature a buffered response carried, so a later turn can reuse them.
+     *
+     * @param response the response to read
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param signatureStore the host's signature store
+     * @param thoughtBuffer what has been accumulated for each candidate
+     * @param onCacheSignature told when a signature is worth keeping on disk
+     */
     public static void cacheThinkingSignaturesFromResponse(Object response, String signatureSessionKey,
                                                            SignatureStore signatureStore, ThoughtBuffer thoughtBuffer,
                                                            CacheSignatureCallback onCacheSignature) {

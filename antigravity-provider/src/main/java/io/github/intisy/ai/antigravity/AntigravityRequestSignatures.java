@@ -43,10 +43,27 @@ public final class AntigravityRequestSignatures {
 
     /** {@code defaultSignatureStore} reads ({@code get} returns {@code {text,signature}} or null). */
     public interface SignatureStore {
+        /**
+         * The pair held under one key.
+         *
+         * @param key the signature key
+         * @return the text and signature, or {@code null} when nothing is held
+         */
         Map<String, Object> get(String key);
 
+        /**
+         * Whether a key holds a signature.
+         *
+         * @param key the signature key
+         * @return true when one is held
+         */
         boolean has(String key);
 
+        /**
+         * Drops whatever one key holds.
+         *
+         * @param key the signature key
+         */
         void delete(String key);
     }
 
@@ -61,6 +78,13 @@ public final class AntigravityRequestSignatures {
 
     // ---- injectDebugThinking -----------------------------------------------
 
+    /**
+     * A response with a placeholder thinking block added, so a debug view has one to show.
+     *
+     * @param response the response to rewrite
+     * @param debugText the placeholder text
+     * @return the rewritten response, or the input unchanged when it is not an object
+     */
     public static Object injectDebugThinking(Object response, String debugText) {
         if (!(response instanceof Map)) {
             return response;
@@ -147,6 +171,11 @@ public final class AntigravityRequestSignatures {
 
     // ---- stripInjectedDebugFromRequestPayload -------------------------------
 
+    /**
+     * Removes the placeholder thinking blocks a debug view added, before the request goes upstream.
+     *
+     * @param payload the request body, rewritten in place
+     */
     public static void stripInjectedDebugFromRequestPayload(Map<String, Object> payload) {
         if (payload.get("contents") instanceof List) {
             List<Object> out = new ArrayList<>();
@@ -193,6 +222,12 @@ public final class AntigravityRequestSignatures {
 
     // ---- isValidRequestPart ------------------------------------------------
 
+    /**
+     * Whether a part carries anything the upstream will accept.
+     *
+     * @param part the part to judge
+     * @return true when it names at least one field the upstream reads
+     */
     public static boolean isValidRequestPart(Object part) {
         if (!(part instanceof Map)) {
             return false;
@@ -210,6 +245,11 @@ public final class AntigravityRequestSignatures {
 
     // ---- sanitizeRequestPayloadForAntigravity ------------------------------
 
+    /**
+     * The request body with every part the upstream would reject removed.
+     *
+     * @param payload the request body, rewritten in place
+     */
     public static void sanitizeRequestPayloadForAntigravity(Map<String, Object> payload) {
         if (payload.get("contents") instanceof List) {
             List<Object> newContents = new ArrayList<>();
@@ -297,6 +337,12 @@ public final class AntigravityRequestSignatures {
 
     // ---- part predicates ---------------------------------------------------
 
+    /**
+     * Whether a part is a tool call.
+     *
+     * @param part the part to judge
+     * @return true when it names a call in any of the spellings the upstream uses
+     */
     public static boolean isGeminiToolUsePart(Object part) {
         if (!(part instanceof Map)) {
             return false;
@@ -305,6 +351,12 @@ public final class AntigravityRequestSignatures {
         return JsCoercion.isTruthy(p.get("functionCall")) || JsCoercion.isTruthy(p.get("tool_use")) || JsCoercion.isTruthy(p.get("toolUse"));
     }
 
+    /**
+     * Whether a part is a thinking block.
+     *
+     * @param part the part to judge
+     * @return true when it is
+     */
     public static boolean isGeminiThinkingPart(Object part) {
         if (!(part instanceof Map)) {
             return false;
@@ -325,6 +377,14 @@ public final class AntigravityRequestSignatures {
 
     // ---- hasCachedMatchingSignature ----------------------------------------
 
+    /**
+     * Whether a part already carries the signature the cache holds for its text.
+     *
+     * @param part the part to judge
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @return true when the part's signature is the cached one
+     */
     public static boolean hasCachedMatchingSignature(Object part, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         if (!(part instanceof Map)) {
             return false;
@@ -346,6 +406,13 @@ public final class AntigravityRequestSignatures {
 
     // ---- ensureThoughtSignature --------------------------------------------
 
+    /**
+     * A part with a signature on it, so the upstream accepts the thinking block it carries.
+     *
+     * @param part the part to rewrite
+     * @param sessionId the session the cache is keyed by
+     * @return the part with a signature, or the input unchanged when it needs none
+     */
     public static Object ensureThoughtSignature(Object part, String sessionId) {
         if (!(part instanceof Map)) {
             return part;
@@ -374,6 +441,14 @@ public final class AntigravityRequestSignatures {
 
     // ---- hasSignedThinkingPart ---------------------------------------------
 
+    /**
+     * Whether a part is a thinking block the upstream will accept.
+     *
+     * @param part the part to judge
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @return true when it is signed
+     */
     public static boolean hasSignedThinkingPart(Object part, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         if (!(part instanceof Map)) {
             return false;
@@ -437,6 +512,12 @@ public final class AntigravityRequestSignatures {
 
     // ---- hasToolUse* / hasSignedThinking* ----------------------------------
 
+    /**
+     * Whether any Gemini-shaped content calls a tool.
+     *
+     * @param contents the conversation's contents
+     * @return true when at least one part is a tool call
+     */
     public static boolean hasToolUseInContents(List<Object> contents) {
         for (Object content : contents) {
             if (!(content instanceof Map) || !(JsCoercion.asMap(content).get("parts") instanceof List)) {
@@ -451,6 +532,14 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
+    /**
+     * Whether any Gemini-shaped content carries a signed thinking block.
+     *
+     * @param contents the conversation's contents
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @return true when at least one part is a signed thinking block
+     */
     public static boolean hasSignedThinkingInContents(List<Object> contents, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         for (Object content : contents) {
             if (!(content instanceof Map) || !(JsCoercion.asMap(content).get("parts") instanceof List)) {
@@ -465,6 +554,12 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
+    /**
+     * Whether any Claude-shaped message calls a tool.
+     *
+     * @param messages the conversation's messages
+     * @return true when at least one block is a tool call
+     */
     public static boolean hasToolUseInMessages(List<Object> messages) {
         for (Object message : messages) {
             if (!(message instanceof Map) || !(JsCoercion.asMap(message).get("content") instanceof List)) {
@@ -482,6 +577,14 @@ public final class AntigravityRequestSignatures {
         return false;
     }
 
+    /**
+     * Whether any Claude-shaped message carries a signed thinking block.
+     *
+     * @param messages the conversation's messages
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @return true when at least one block is a signed thinking block
+     */
     public static boolean hasSignedThinkingInMessages(List<Object> messages, String sessionId, AntigravityThinkingBlocks.CachedSignatureLookup lookup) {
         for (Object message : messages) {
             if (!(message instanceof Map) || !(JsCoercion.asMap(message).get("content") instanceof List)) {
@@ -498,6 +601,15 @@ public final class AntigravityRequestSignatures {
 
     // ---- ensureThinkingBeforeToolUseInContents -----------------------------
 
+    /**
+     * Gemini-shaped contents with a signed thinking block in front of every tool call.
+     *
+     * @param contents the conversation's contents
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param lookup the host's signature-cache read
+     * @param store the host's signature store
+     * @return a new list; the input is never mutated
+     */
     public static List<Object> ensureThinkingBeforeToolUseInContents(
             List<Object> contents, String signatureSessionKey,
             AntigravityThinkingBlocks.CachedSignatureLookup lookup, SignatureStore store) {
@@ -555,6 +667,15 @@ public final class AntigravityRequestSignatures {
 
     // ---- ensureThinkingBeforeToolUseInMessages -----------------------------
 
+    /**
+     * Claude-shaped messages with a signed thinking block in front of every tool call.
+     *
+     * @param messages the conversation's messages
+     * @param signatureSessionKey the key this session's signatures are stored under
+     * @param lookup the host's signature-cache read
+     * @param store the host's signature store
+     * @return a new list; the input is never mutated
+     */
     public static List<Object> ensureThinkingBeforeToolUseInMessages(
             List<Object> messages, String signatureSessionKey,
             AntigravityThinkingBlocks.CachedSignatureLookup lookup, SignatureStore store) {

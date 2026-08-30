@@ -23,29 +23,50 @@ public final class AntigravityAuth {
 
     // ---- isOAuthAuth ----------------------------------------------------------------------------
 
-    /** True when {@code auth.type === "oauth"}. */
+    /**
+     * Whether stored auth is an OAuth credential rather than another kind.
+     *
+     * @param auth the stored auth tree
+     * @return true when it names the oauth type
+     */
     public static boolean isOAuthAuth(Map<String, Object> auth) {
         return auth != null && "oauth".equals(auth.get("type"));
     }
 
     // ---- parseRefreshParts ------------------------------------------------------------------------
 
-    /** Shape {@code {refreshToken, projectId?, managedProjectId?}}. */
+    /** The three segments a stored refresh string packs together. */
     public static final class RefreshParts {
+        /** The OAuth refresh token, which is the durable credential. */
         public String refreshToken;
-        /** {@code null} represents an empty segment (coerced to absent). */
+        /** The project the account discovered, or {@code null} for an empty segment. */
         public String projectId;
+        /** The managed project the account was onboarded to, or {@code null} for an empty segment. */
         public String managedProjectId;
 
+        /** An empty set of parts, for a caller that fills them in itself. */
         public RefreshParts() {
         }
 
+        /**
+         * One set of parts.
+         *
+         * @param refreshToken the OAuth refresh token
+         * @param projectId the discovered project, or {@code null}
+         * @param managedProjectId the onboarded managed project, or {@code null}
+         */
         public RefreshParts(String refreshToken, String projectId, String managedProjectId) {
             this.refreshToken = refreshToken;
             this.projectId = projectId;
             this.managedProjectId = managedProjectId;
         }
 
+        /**
+         * Whether another object is a set of parts with the same three segments.
+         *
+         * @param o the object to compare against
+         * @return true when every segment matches
+         */
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof RefreshParts)) return false;
@@ -58,6 +79,7 @@ public final class AntigravityAuth {
             return a == null ? b == null : a.equals(b);
         }
 
+        /** {@return a hash over the three segments, consistent with equality} */
         @Override
         public int hashCode() {
             return java.util.Objects.hash(refreshToken, projectId, managedProjectId);
@@ -69,6 +91,9 @@ public final class AntigravityAuth {
      * applies only when the split array is SHORTER than the destructured index, not when a segment is
      * itself empty, so {@code split("\\|", -1)} (which preserves trailing empty segments, unlike
      * Java's default split) is required to match JS's {@code String.split}.
+     *
+     * @param refresh the packed refresh string
+     * @return its three segments, with an empty one read as absent
      */
     public static RefreshParts parseRefreshParts(String refresh) {
         String[] parts = (refresh == null ? "" : refresh).split("\\|", -1);
@@ -86,6 +111,9 @@ public final class AntigravityAuth {
      * (or {@code refreshToken|projectId|managedProjectId} when a managed project id is present). An
      * explicit empty-string {@code projectId} is kept as-is, but an empty-string {@code
      * managedProjectId} is DROPPED.
+     *
+     * @param parts the segments to pack
+     * @return the packed refresh string
      */
     public static String formatRefreshParts(RefreshParts parts) {
         String projectSegment = parts.projectId != null ? parts.projectId : "";
@@ -101,7 +129,9 @@ public final class AntigravityAuth {
      * Determines whether an access token is expired or missing, with a 60s buffer for clock skew.
      * {@code auth.expires} must be a {@code Number} (a numeric string is rejected too).
      *
+     * @param auth the stored auth tree
      * @param clock injected in place of {@code Date.now()}, for deterministic parity tests.
+     * @return true when the token is missing or within the buffer of expiring
      */
     public static boolean accessTokenExpired(Map<String, Object> auth, Clock clock) {
         Object access = auth == null ? null : auth.get("access");
@@ -122,6 +152,7 @@ public final class AntigravityAuth {
      *
      * @param requestTimeMs   the local time when the request was initiated
      * @param expiresInSeconds the duration returned by the server (may be any JSON-parsed value)
+     * @return the epoch-millisecond time the token expires
      */
     public static long calculateTokenExpiry(long requestTimeMs, Object expiresInSeconds) {
         double seconds = expiresInSeconds instanceof Number ? ((Number) expiresInSeconds).doubleValue() : 3600;

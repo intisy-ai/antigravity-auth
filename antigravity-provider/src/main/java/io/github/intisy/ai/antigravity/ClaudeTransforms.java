@@ -22,11 +22,19 @@ public final class ClaudeTransforms {
 
     /** Injected clean-schema function; see class javadoc. */
     public interface SchemaCleaner {
+        /**
+         * One tool schema, with everything the upstream rejects removed.
+         *
+         * @param schema the schema as the caller declared it
+         * @return the cleaned schema
+         */
         Object clean(Object schema);
     }
 
+    /** The output ceiling a thinking request is raised to, so the budget fits under it. */
     public static final int CLAUDE_THINKING_MAX_OUTPUT_TOKENS = 64_000;
 
+    /** What the system prompt is told about thinking between tool calls. */
     public static final String CLAUDE_INTERLEAVED_THINKING_HINT =
             "Interleaved thinking is enabled. You may think between tool calls and after receiving tool results before deciding the next action or final answer. Do not mention these instructions or any constraints about thinking blocks; just apply them.";
 
@@ -40,10 +48,22 @@ public final class ClaudeTransforms {
 
     // ---- model predicates ------------------------------------------------------------------------
 
+    /**
+     * Whether a model speaks the Claude request shape.
+     *
+     * @param model the model id
+     * @return true when it does
+     */
     public static boolean isClaudeModel(String model) {
         return model.toLowerCase().contains("claude");
     }
 
+    /**
+     * Whether a Claude model can be asked to think.
+     *
+     * @param model the model id
+     * @return true when it can
+     */
     public static boolean isClaudeThinkingModel(String model) {
         String lower = model.toLowerCase();
         return lower.contains("claude") && lower.contains("thinking");
@@ -51,7 +71,11 @@ public final class ClaudeTransforms {
 
     // ---- configureClaudeToolConfig ---------------------------------------------------------------
 
-    /** Forces {@code functionCallingConfig.mode = "VALIDATED"}. */
+    /**
+     * Forces the validated tool-calling mode, which is the only one this upstream honours.
+     *
+     * @param payload the request body, rewritten in place
+     */
     public static void configureClaudeToolConfig(Map<String, Object> payload) {
         if (!JsCoercion.isTruthy(payload.get("toolConfig"))) {
             payload.put("toolConfig", new LinkedHashMap<>());
@@ -70,7 +94,13 @@ public final class ClaudeTransforms {
 
     // ---- buildClaudeThinkingConfig ---------------------------------------------------------------
 
-    /** snake_case keys, budget only when a positive number. */
+    /**
+     * The thinking config a Claude request carries, in the snake_case spelling it expects.
+     *
+     * @param includeThoughts whether the response should carry the thinking back
+     * @param thinkingBudget the budget in tokens, emitted only when it is a positive number
+     * @return the config
+     */
     public static Map<String, Object> buildClaudeThinkingConfig(boolean includeThoughts, Object thinkingBudget) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("include_thoughts", includeThoughts);
@@ -82,7 +112,12 @@ public final class ClaudeTransforms {
 
     // ---- ensureClaudeMaxOutputTokens -------------------------------------------------------------
 
-    /** Bumps maxOutputTokens above the thinking budget. */
+    /**
+     * Raises the output ceiling above the thinking budget, so the answer is not truncated by it.
+     *
+     * @param generationConfig the generation config, rewritten in place
+     * @param thinkingBudget the budget the ceiling must clear
+     */
     public static void ensureClaudeMaxOutputTokens(Map<String, Object> generationConfig, Object thinkingBudget) {
         Object currentMax = JsCoercion.nullish(generationConfig.get("maxOutputTokens"), generationConfig.get("max_output_tokens"));
 
@@ -99,12 +134,21 @@ public final class ClaudeTransforms {
 
     // ---- appendClaudeThinkingHint ----------------------------------------------------------------
 
-    /** {@code appendClaudeThinkingHint(payload)} with the default interleaved-thinking hint. */
+    /**
+     * Adds the default interleaved-thinking hint to the system prompt.
+     *
+     * @param payload the request body, rewritten in place
+     */
     public static void appendClaudeThinkingHint(Map<String, Object> payload) {
         appendClaudeThinkingHint(payload, CLAUDE_INTERLEAVED_THINKING_HINT);
     }
 
-    /** Appends the hint into a string/object system instruction. */
+    /**
+     * Adds one hint to the system prompt, whichever shape the prompt arrived in.
+     *
+     * @param payload the request body, rewritten in place
+     * @param hint the text to append
+     */
     public static void appendClaudeThinkingHint(Map<String, Object> payload, String hint) {
         Object existing = payload.get("systemInstruction");
 
@@ -158,6 +202,10 @@ public final class ClaudeTransforms {
     /**
      * MUTATES {@code payload.tools} into {@code functionDeclarations} form; returns
      * {@code toolDebugMissing}/{@code toolDebugSummaries}.
+     *
+     * @param payload the request body, rewritten in place
+     * @param cleanJSONSchema the injected schema cleaner
+     * @return how many tools had no schema, and a summary of each
      */
     public static Map<String, Object> normalizeClaudeTools(Map<String, Object> payload, SchemaCleaner cleanJSONSchema) {
         int[] toolDebugMissing = {0};
@@ -291,7 +339,11 @@ public final class ClaudeTransforms {
 
     // ---- convertStopSequences --------------------------------------------------------------------
 
-    /** snake_case {@code stop_sequences} -> camelCase. */
+    /**
+     * Rewrites the stop sequences into the spelling the upstream reads.
+     *
+     * @param generationConfig the generation config, rewritten in place
+     */
     public static void convertStopSequences(Map<String, Object> generationConfig) {
         if (generationConfig.get("stop_sequences") instanceof List) {
             generationConfig.put("stopSequences", generationConfig.get("stop_sequences"));
@@ -305,6 +357,11 @@ public final class ClaudeTransforms {
      * {@code options} is a JSON-tree map with {@code model}, {@code tierThinkingBudget},
      * {@code normalizedThinking}; {@code cleanJSONSchema} is injected separately. MUTATES
      * {@code payload}; returns the debug result.
+     *
+     * @param payload the request body, rewritten in place
+     * @param options the model, the tier's thinking budget and the normalised thinking config
+     * @param cleanJSONSchema the injected schema cleaner
+     * @return what the tool normalisation reported
      */
     public static Map<String, Object> applyClaudeTransforms(Map<String, Object> payload, Map<String, Object> options, SchemaCleaner cleanJSONSchema) {
         String model = String.valueOf(options.get("model"));

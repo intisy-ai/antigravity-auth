@@ -27,9 +27,11 @@ import java.util.regex.Pattern;
  */
 public final class AntigravityHandleRouting {
 
-    // endpoint fallback order (prod -> daily -> autopush).
+    /** The endpoint every request is tried against first. */
     public static final String ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+    /** The first fallback, tried when production refuses. */
     public static final String ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+    /** The last fallback. */
     public static final String ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
 
     // effort-variant ordering.
@@ -46,13 +48,24 @@ public final class AntigravityHandleRouting {
 
     // ---- isRateLimitStatus ----------------------------------------------------------------------
 
+    /**
+     * Whether a status means the upstream rate-limited the request.
+     *
+     * @param status the HTTP status
+     * @return true when it is a rate limit rather than another failure
+     */
     public static boolean isRateLimitStatus(int status) {
         return status == 429 || status == 503 || status == 529;
     }
 
     // ---- isAutoModel ----------------------------------------------------------------------------
 
-    /** {@code String(model||"").replace(/^antigravity-/i,"")} then {@code ==="auto" || startsWith("auto-")}. */
+    /**
+     * Whether a request asked for automatic model selection rather than a specific model.
+     *
+     * @param model the model id
+     * @return true when it names the automatic selection
+     */
     public static boolean isAutoModel(Object model) {
         String raw = JsCoercion.isTruthy(model) ? String.valueOf(model) : "";
         String stripped = AUTO_PREFIX.matcher(raw).replaceFirst("");
@@ -61,7 +74,13 @@ public final class AntigravityHandleRouting {
 
     // ---- rewriteModelInUrl ----------------------------------------------------------------------
 
-    /** Replaces the FIRST {@code /models/<id>} segment with {@code /models/<model>} (JS replace = first only). */
+    /**
+     * The request url with the model it will actually be served as.
+     *
+     * @param url the url the caller built
+     * @param model the model to name instead
+     * @return the rewritten url
+     */
     public static String rewriteModelInUrl(Object url, String model) {
         return MODELS_REWRITE.matcher(String.valueOf(url)).replaceFirst(Matcher.quoteReplacement("/models/" + model));
     }
@@ -71,6 +90,12 @@ public final class AntigravityHandleRouting {
     /**
      * The requested model id: {@code ctxModel} wins outright; else the {@code /models/<id>} URL
      * segment (percent-decoded); else {@code body.model}; else {@code "antigravity-auto"}.
+     *
+     * @param url the request url
+     * @param bodyText the request body
+     * @param ctxModel the model the handler context named, which wins outright
+     * @param json the codec the body is parsed with
+     * @return the model the request asked for
      */
     @SuppressWarnings("unchecked")
     public static String modelFromRequest(Object url, String bodyText, String ctxModel, JsonCodec json) {
@@ -98,6 +123,10 @@ public final class AntigravityHandleRouting {
      * / {@code .thinkingConfig}, or the Claude bridge's {@code generationConfig.thinkingConfig}. A
      * numeric {@code thinkingBudget} maps to low/medium/high by budget thresholds. Returns {@code
      * null} when none is present. Wrapped bodies ({@code parsed.request}) are unwrapped first.
+     *
+     * @param bodyText the request body
+     * @param json the codec the body is parsed with
+     * @return the level the caller asked for, or {@code null} when it asked for none
      */
     @SuppressWarnings("unchecked")
     public static String requestedThinkingLevel(String bodyText, JsonCodec json) {
@@ -135,7 +164,12 @@ public final class AntigravityHandleRouting {
 
     /** {@code readModelCache(PROVIDER_ID).models[modelId].variants} (the disk read stays host-side). */
     public interface ModelCacheLookup {
-        /** The catalog entry's {@code variants} map for {@code modelId}, or {@code null}. */
+        /**
+         * The effort variants the catalog holds for one model.
+         *
+         * @param modelId the model id
+         * @return its variants, or {@code null} when the catalog holds none
+         */
         Map<String, Object> variantsFor(String modelId);
     }
 
@@ -147,6 +181,13 @@ public final class AntigravityHandleRouting {
      * else the lowest. Returns {@code modelId} unchanged when there are no variants / no requested
      * level / an unknown level / no usable variant. {@code json} is threaded so the inner
      * {@code JSON.parse} (inside {@code requestedThinkingLevel}) stays on the SPI.
+     *
+     * @param modelId the model the request asked for
+     * @param bodyText the request body, which the requested level is read from
+     * @param cache the host's catalog read
+     * @param json the codec the body is parsed with
+     * @param log where the chosen variant is reported
+     * @return the backend model id to serve, or the requested one when no variant applies
      */
     @SuppressWarnings("unchecked")
     public static String resolveEffortVariant(String modelId, String bodyText, ModelCacheLookup cache, JsonCodec json, Logger log) {
@@ -184,6 +225,12 @@ public final class AntigravityHandleRouting {
 
     // ---- endpointsFor ---------------------------------------------------------------------------
 
+    /**
+     * Which endpoints a request may be tried against, in order.
+     *
+     * @param headerStyle which header set the request carries
+     * @return the endpoints, most preferred first
+     */
     public static List<String> endpointsFor(String headerStyle) {
         if ("gemini-cli".equals(headerStyle)) {
             return new ArrayList<>(Arrays.asList(ANTIGRAVITY_ENDPOINT_PROD));
@@ -199,6 +246,9 @@ public final class AntigravityHandleRouting {
      * {@code meta.cachedQuota}. A pool counts as exhausted when its {@code remainingFraction} is 0
      * or absent. Returns 0 when unknown. Uses {@link
      * AntigravityQuotaParser#parseDateToEpochMillis} as the {@code Date.parse} stand-in.
+     *
+     * @param accounts every account the host holds
+     * @return the soonest reset, in epoch milliseconds, or 0 when none is known
      */
     @SuppressWarnings("unchecked")
     public static long soonestQuotaReset(List<Map<String, Object>> accounts) {
@@ -230,6 +280,10 @@ public final class AntigravityHandleRouting {
      * Reconstructs the {@code OAuthAuthDetails} the project/transform code expects from a stored
      * account + a fresh access token. Returns a plain {@code {type,access,expires,refresh}} map;
      * {@code refresh} packs the project ids via {@link AntigravityAuth#formatRefreshParts}.
+     *
+     * @param account the stored account
+     * @param access a fresh access token
+     * @return the auth tree the project and transform code reads
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> buildAuth(Map<String, Object> account, String access) {
@@ -254,13 +308,17 @@ public final class AntigravityHandleRouting {
 
     /** One per-account version-drift mutation the host applies via {@code manager.mutate}. */
     public static final class VersionDrift {
+        /** Which account this mutation is for. */
         public final String accountId;
         /** First-sight: only schedule {@code nextVersionDriftAt}, change nothing else. */
         public final boolean scheduleOnly;
+        /** When the account is next due a drift check, in epoch milliseconds. */
         public final long nextVersionDriftAt;
         /** Drift only: the new {@code userAgent}/{@code version}/{@code versionPickedAt} (null when scheduleOnly). */
         public final String userAgent;
+        /** The version the new user agent presents, or {@code null} when only scheduling. */
         public final String version;
+        /** When that version was picked, or {@code null} when only scheduling. */
         public final Long versionPickedAt;
 
         VersionDrift(String accountId, boolean scheduleOnly, long nextVersionDriftAt,
@@ -281,6 +339,12 @@ public final class AntigravityHandleRouting {
      * AntigravityVersions#driftVersion} and reschedules. Accounts without a {@code
      * meta.fingerprint.userAgent} are skipped. Returns the ordered per-account mutations for the
      * host to apply.
+     *
+     * @param accounts the accounts to consider
+     * @param now the current time, in epoch milliseconds
+     * @param random the host's entropy
+     * @param versionList the pool to pick from
+     * @return the mutations in order, for the host to apply
      */
     @SuppressWarnings("unchecked")
     public static List<VersionDrift> driftAccountVersions(List<Map<String, Object>> accounts, long now,
@@ -317,7 +381,12 @@ public final class AntigravityHandleRouting {
 
     // ---- reset-after regex + percent-decode helpers ---------------------------------------------
 
-    /** {@code /reset(?:s)?\s+(?:after|in)\s+(\d+)\s*s/i} on the error message -> ms, or 0. */
+    /**
+     * How long the upstream's own error text says to wait.
+     *
+     * @param message the upstream error text
+     * @return the wait in milliseconds, or 0 when the text names none
+     */
     public static long retryAfterMsFromMessage(String message) {
         if (message == null || message.isEmpty()) return 0;
         Matcher m = RESET_AFTER.matcher(message);

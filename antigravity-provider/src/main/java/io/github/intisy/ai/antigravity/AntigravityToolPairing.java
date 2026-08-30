@@ -73,6 +73,9 @@ public final class AntigravityToolPairing {
      * Groups Gemini functionCalls with their functionResponses, recovering from stripped/mismatched ids
      * (exact id -> name -> {@code unknown_function} -> first available), and synthesizing recovered
      * placeholders when no response survives.
+     *
+     * @param contents the conversation's contents
+     * @return a new list in which every call is grouped with its response
      */
     @SuppressWarnings("unchecked")
     public static List<Object> fixToolResponseGrouping(List<Object> contents) {
@@ -253,6 +256,9 @@ public final class AntigravityToolPairing {
     /**
      * The set of Anthropic {@code tool_use} ids that have no matching {@code tool_result}, in
      * first-seen order.
+     *
+     * @param messages the conversation's messages
+     * @return the unanswered call ids, in first-seen order
      */
     public static Set<String> findOrphanedToolUseIds(List<Object> messages) {
         Set<String> toolUseIds = new LinkedHashSet<>();
@@ -304,6 +310,9 @@ public final class AntigravityToolPairing {
     /**
      * Injects placeholder {@code tool_result} blocks for orphaned {@code tool_use}s, merged into the
      * following user message when present, else a new user message after the assistant turn.
+     *
+     * @param messages the conversation's messages
+     * @return a new list in which every call is answered
      */
     @SuppressWarnings("unchecked")
     public static List<Object> fixClaudeToolPairing(List<Object> messages) {
@@ -448,6 +457,9 @@ public final class AntigravityToolPairing {
     /**
      * Gentle placeholder fix first; if orphans remain, the nuclear option removes the orphaned
      * {@code tool_use} blocks (and now-empty assistant turns).
+     *
+     * @param messages the conversation's messages
+     * @return a new list the upstream will accept
      */
     public static List<Object> validateAndFixClaudeToolPairing(List<Object> messages) {
         if (messages == null || messages.isEmpty()) {
@@ -465,7 +477,13 @@ public final class AntigravityToolPairing {
 
     // ---- injectParameterSignatures + formatTypeHint ----------------
 
-    /** Uses the default signature template. */
+    /**
+     * Tool descriptions carrying an explicit parameter signature, using the default template.
+     *
+     * @param json the codec the build reads and writes JSON with
+     * @param tools the tools as the caller declared them
+     * @return a new list
+     */
     public static List<Object> injectParameterSignatures(JsonCodec json, List<Object> tools) {
         return injectParameterSignatures(json, tools, DEFAULT_SIGNATURE_TEMPLATE);
     }
@@ -474,6 +492,11 @@ public final class AntigravityToolPairing {
      * Appends an explicit "STRICT PARAMETERS: ..." signature (built from each declaration's parameter
      * schema) to tool descriptions, to curb parameter hallucination. Declarations already carrying the
      * marker, or with no properties/schema, are left untouched.
+     *
+     * @param json the codec the build reads and writes JSON with
+     * @param tools the tools as the caller declared them
+     * @param promptTemplate the wording the signature is appended in
+     * @return a new list
      */
     @SuppressWarnings("unchecked")
     public static List<Object> injectParameterSignatures(JsonCodec json, List<Object> tools, String promptTemplate) {
@@ -621,6 +644,9 @@ public final class AntigravityToolPairing {
      * Prepends a tool-hardening system instruction to {@code payload.systemInstruction} (unshift into
      * existing parts / wrap a string / create fresh), skipping when the "CRITICAL TOOL USAGE
      * INSTRUCTIONS" marker is already present. Mutates {@code payload}.
+     *
+     * @param payload the request body, rewritten in place
+     * @param instructionText the instruction to prepend
      */
     @SuppressWarnings("unchecked")
     public static void injectToolHardeningInstruction(Map<String, Object> payload, String instructionText) {
@@ -679,8 +705,11 @@ public final class AntigravityToolPairing {
 
     /** Result of {@link #assignToolIdsToContents}: the id-stamped contents, the name->ids queue map, and the counter. */
     public static final class AssignResult {
+        /** The contents with an id stamped on every call that had none. */
         public final Object contents;
+        /** The ids assigned per function name, which the response matching then drains. */
         public final Map<String, List<String>> pendingCallIdsByName;
+        /** How many ids were minted, so a later pass continues the sequence. */
         public final int toolCallCounter;
 
         AssignResult(Object contents, Map<String, List<String>> pendingCallIdsByName, int toolCallCounter) {
@@ -694,6 +723,9 @@ public final class AntigravityToolPairing {
      * Stamps a deterministic {@code tool-call-<n>} id onto every functionCall missing one, tracking the
      * assigned ids per function name for later response matching. Returns a NEW contents array (or the
      * raw value unchanged when it is not an array).
+     *
+     * @param contentsRaw the conversation's contents
+     * @return the stamped contents, the ids assigned per name, and how many were minted
      */
     @SuppressWarnings("unchecked")
     public static AssignResult assignToolIdsToContents(Object contentsRaw) {
@@ -748,6 +780,10 @@ public final class AntigravityToolPairing {
      * Fills each id-less functionResponse's id from the pending queue for its function name (FIFO),
      * returning a NEW contents array (or the raw value unchanged when it is not an array). Mutates the
      * pending queues (shift).
+     *
+     * @param contentsRaw the conversation's contents
+     * @param pendingCallIdsByName the ids awaiting a response, drained as they are matched
+     * @return the contents with every response carrying the id of the call it answers
      */
     @SuppressWarnings("unchecked")
     public static Object matchResponseIdsToContents(Object contentsRaw, Map<String, List<String>> pendingCallIdsByName) {
@@ -791,7 +827,9 @@ public final class AntigravityToolPairing {
 
     /** Result of {@link #applyToolPairingFixes}: which of the two array shapes was rewritten. */
     public static final class PairingFixResult {
+        /** Whether the Gemini-shaped contents were rewritten. */
         public final boolean contentsFixed;
+        /** Whether the Claude-shaped messages were rewritten. */
         public final boolean messagesFixed;
 
         PairingFixResult(boolean contentsFixed, boolean messagesFixed) {
@@ -803,6 +841,11 @@ public final class AntigravityToolPairing {
     /**
      * For Claude requests, runs the full contents[] id-assign -> response-match -> grouping pipeline
      * and/or the messages[] pairing fix, mutating {@code payload}.
+     *
+     * @param json the codec the fixes read and write JSON with
+     * @param payload the request body, rewritten in place
+     * @param isClaude whether the request is for a Claude model
+     * @return which of the two shapes was rewritten
      */
     @SuppressWarnings("unchecked")
     public static PairingFixResult applyToolPairingFixes(JsonCodec json, Map<String, Object> payload, boolean isClaude) {

@@ -27,6 +27,12 @@ public final class AntigravityRequestKeys {
 
     /** sha256-hex SPI for {@code hashConversationSeed} ({@code crypto.createHash("sha256")...digest("hex")}). */
     public interface Hasher {
+        /**
+         * The sha256 of one string.
+         *
+         * @param input what to hash
+         * @return the digest, as lowercase hex
+         */
         String sha256Hex(String input);
     }
 
@@ -35,6 +41,15 @@ public final class AntigravityRequestKeys {
 
     // ---- buildSignatureSessionKey ---------------------------------------------
 
+    /**
+     * The key one session's thinking signatures are stored under.
+     *
+     * @param sessionId the host's session id
+     * @param model the model the request is served as, or blank for an unknown one
+     * @param conversationKey what identifies the conversation, or blank for the default
+     * @param projectKey what identifies the project, or blank for the default
+     * @return the composite key
+     */
     public static String buildSignatureSessionKey(String sessionId, String model, String conversationKey, String projectKey) {
         String modelKey = (model != null && !model.trim().isEmpty()) ? model.toLowerCase() : "unknown";
         String projectPart = (projectKey != null && !projectKey.trim().isEmpty()) ? projectKey.trim() : "default";
@@ -44,7 +59,13 @@ public final class AntigravityRequestKeys {
 
     // ---- hashConversationSeed ----------------------------------------------
 
-    /** sha256 hex of {@code seed}, truncated to 16 chars (the {@code .slice(0,16)}). */
+    /**
+     * The short digest a conversation seed is identified by.
+     *
+     * @param hasher the host's sha256
+     * @param seed the text to identify the conversation from
+     * @return the first sixteen hex characters of its digest
+     */
     public static String hashConversationSeed(Hasher hasher, String seed) {
         String hex = hasher.sha256Hex(seed);
         return hex.length() > 16 ? hex.substring(0, 16) : hex;
@@ -52,6 +73,12 @@ public final class AntigravityRequestKeys {
 
     // ---- extractTextFromContent --------------------------------------------
 
+    /**
+     * The plain text a content value carries, whatever shape it arrived in.
+     *
+     * @param content a string, or a list of parts
+     * @return the joined text, empty when there is none
+     */
     public static String extractTextFromContent(Object content) {
         if (content instanceof String) {
             return (String) content;
@@ -110,6 +137,16 @@ public final class AntigravityRequestKeys {
 
     // ---- resolveConversationKey -------------------------------------------
 
+    /**
+     * What identifies the conversation one request belongs to.
+     *
+     * <p>A caller that names a conversation wins; otherwise the system prompt and the first
+     * messages are hashed into a stable seed, so the same conversation keeps its key across turns.
+     *
+     * @param hasher the host's sha256
+     * @param payload the request body
+     * @return the conversation key, or {@code null} when nothing identifies one
+     */
     public static String resolveConversationKey(Hasher hasher, Map<String, Object> payload) {
         Object[] candidates = {
                 payload.get("conversationId"),
@@ -155,6 +192,13 @@ public final class AntigravityRequestKeys {
 
     // ---- resolveConversationKeyFromRequests --------------------------------
 
+    /**
+     * The first conversation key any of several request bodies yields.
+     *
+     * @param hasher the host's sha256
+     * @param requestObjects the bodies to try, in order
+     * @return the first key found, or {@code null} when none of them identifies a conversation
+     */
     public static String resolveConversationKeyFromRequests(Hasher hasher, List<Map<String, Object>> requestObjects) {
         for (Map<String, Object> req : requestObjects) {
             String key = resolveConversationKey(hasher, req);
@@ -167,6 +211,13 @@ public final class AntigravityRequestKeys {
 
     // ---- resolveProjectKey ------------------------------------------------
 
+    /**
+     * What identifies the project a request is billed to.
+     *
+     * @param candidate the preferred value
+     * @param fallback what to use when the preferred one is blank
+     * @return the trimmed key, or the default when neither names one
+     */
     public static String resolveProjectKey(Object candidate, Object fallback) {
         if (candidate instanceof String && !((String) candidate).trim().isEmpty()) {
             return ((String) candidate).trim();

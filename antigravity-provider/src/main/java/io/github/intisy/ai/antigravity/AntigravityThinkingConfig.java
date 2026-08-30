@@ -40,7 +40,12 @@ public final class AntigravityThinkingConfig {
 
     // ---- isThinkingCapableModel ------------------------------------------------------------------
 
-    /** Name contains "thinking", "gemini-3", or "opus". */
+    /**
+     * Whether a model can be asked to think.
+     *
+     * @param modelName the model id
+     * @return true when its name marks it as one that can
+     */
     public static boolean isThinkingCapableModel(String modelName) {
         String lower = modelName.toLowerCase();
         return lower.contains("thinking") || lower.contains("gemini-3") || lower.contains("opus");
@@ -53,6 +58,11 @@ public final class AntigravityThinkingConfig {
      * requestPayload) else the Anthropic-style {@code thinking} option
      * ({@code {type:"enabled", budgetTokens}}). Returns a {@code {includeThoughts, thinkingBudget}}
      * map, or {@code null}.
+     *
+     * @param requestPayload the request body
+     * @param rawGenerationConfig the generation config, when the caller sent one separately
+     * @param extraBody the extra body fields a caller may attach a config to
+     * @return the thinking config found, or {@code null} when none of the three carries one
      */
     public static Map<String, Object> extractThinkingConfig(
             Map<String, Object> requestPayload,
@@ -99,6 +109,10 @@ public final class AntigravityThinkingConfig {
      * budget-based {@code thinkingConfig.thinkingBudget}), plus {@code googleSearch}, falling back to
      * {@code generationConfig.thinkingConfig}. Returns the variant map, or {@code null} when it would
      * be empty.
+     *
+     * @param providerOptions the app's own provider options
+     * @param generationConfig the generation config, read when the options carry nothing
+     * @return the variant config, or {@code null} when it would be empty
      */
     public static Map<String, Object> extractVariantThinkingConfig(
             Map<String, Object> providerOptions,
@@ -163,6 +177,12 @@ public final class AntigravityThinkingConfig {
      * {@code {includeThoughts:true, thinkingBudget:DEFAULT}}; otherwise the user config passes through.
      * {@code isClaudeModel}/{@code hasAssistantHistory} are unused here (signature validation is
      * handled by the block filters).
+     *
+     * @param userConfig what the caller asked for, or {@code null}
+     * @param isThinkingModel whether the model can think at all
+     * @param isClaudeModel unused here, kept so every caller passes the same four
+     * @param hasAssistantHistory unused here, for the same reason
+     * @return the config to send, or {@code null} when the model cannot think
      */
     public static Map<String, Object> resolveThinkingConfig(
             Map<String, Object> userConfig,
@@ -185,6 +205,9 @@ public final class AntigravityThinkingConfig {
      * {@code includeThoughts} is only allowed when the budget is a finite positive number. Reads
      * camelCase OR snake_case keys; emits camelCase. Returns {@code null} when neither field carries
      * a usable value.
+     *
+     * @param config the config in whichever spelling it arrived in
+     * @return the camelCase form, or {@code null} when neither field carries a usable value
      */
     public static Map<String, Object> normalizeThinkingConfig(Object config) {
         if (!JsCoercion.isTruthy(config) || !(config instanceof Map)) {

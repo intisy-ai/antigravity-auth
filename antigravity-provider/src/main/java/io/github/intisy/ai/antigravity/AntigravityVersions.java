@@ -21,6 +21,7 @@ public final class AntigravityVersions {
 
     // Curated fallback (newest-first), used both as the caller's default pool and as normalize()'s
     // always-present floor set.
+    /** Real releases to pick from, so the pool is never empty or stuck on one value. */
     public static final List<String> FALLBACK_VERSIONS = Collections.unmodifiableList(java.util.Arrays.asList(
             "2.1.1", "2.0.4", "2.0.3", "2.0.2", "2.0.1",
             "1.23.2", "1.22.2", "1.21.9", "1.21.6", "1.20.6",
@@ -42,6 +43,10 @@ public final class AntigravityVersions {
      * Compares two dotted-triple version strings component-wise (major, then minor, then patch).
      * A non-numeric component coerces to {@code 0} (matches JS's {@code Number("x") || 0}, since
      * {@code NaN} is falsy); a missing (short) component also coerces to {@code 0}.
+     *
+     * @param a the left version
+     * @param b the right version
+     * @return negative when the left is older, positive when it is newer, zero when they match
      */
     public static int cmpSemver(String a, String b) {
         int[] pa = semverParts(a);
@@ -80,6 +85,9 @@ public final class AntigravityVersions {
     /**
      * Merges a fetched version list with {@link #FALLBACK_VERSIONS}, keeping only valid semver
      * strings from the input, deduping, and sorting newest-first.
+     *
+     * @param versions what the release feed answered, which may be {@code null}
+     * @return the merged pool, newest first
      */
     public static List<String> normalize(List<String> versions) {
         LinkedHashSet<String> set = new LinkedHashSet<>();
@@ -96,7 +104,12 @@ public final class AntigravityVersions {
 
     // ---- getNewestVersion ------------------------------------------------------------------------
 
-    /** {@code versionList[0] || FALLBACK_VERSIONS[0]}, falling back on an empty OR falsy-first-entry list. */
+    /**
+     * The newest version in a pool.
+     *
+     * @param versionList the pool, which may be empty or start with a blank entry
+     * @return its first real entry, or the newest curated release
+     */
     public static String getNewestVersion(List<String> versionList) {
         if (versionList != null && !versionList.isEmpty() && JsCoercion.isTruthy(versionList.get(0))) {
             return versionList.get(0);
@@ -110,6 +123,11 @@ public final class AntigravityVersions {
      * Weighted-random pick toward newer, restricted to versions {@code >= min} (min {@code null}
      * or empty = any), drawn from a geometric distribution over the top {@link #CONSIDER_NEWEST}
      * entries of {@code versionList} (assumed already sorted newest-first).
+     *
+     * @param versionList the pool to pick from
+     * @param min the lowest version worth picking, or {@code null} for no floor
+     * @param random the host's entropy
+     * @return the chosen version
      */
     public static String pickVersion(List<String> versionList, String min, Random random) {
         List<String> pool = versionList.size() > CONSIDER_NEWEST
@@ -143,6 +161,10 @@ public final class AntigravityVersions {
      * Per-account delay (ms) until the next User-Agent version-drift check, randomized so accounts
      * never update in lockstep. An account with no stored version yet migrates SOON (0-7 days); an
      * already-versioned account re-drifts on a wide 14-35 day window.
+     *
+     * @param hasVersion whether the account already carries a version
+     * @param random the host's entropy
+     * @return how long until the next check, in milliseconds
      */
     public static long nextVersionDriftDelay(boolean hasVersion, Random random) {
         long min = hasVersion ? 14 * DAY_MS : 0;
@@ -158,6 +180,11 @@ public final class AntigravityVersions {
      * absolute newest if the weighted pick would otherwise regress, which can only happen when
      * {@code current} is itself newer than every entry in the top-{@link #CONSIDER_NEWEST} pool, so
      * {@code min} filtering yields no match and the unfiltered pick lands below {@code current}).
+     *
+     * @param current the version the account presents today, or blank for a new account
+     * @param versionList the pool to pick from
+     * @param random the host's entropy
+     * @return the version to move to, never older than the current one
      */
     public static String driftVersion(String current, List<String> versionList, Random random) {
         if (current == null || current.isEmpty()) return pickVersion(versionList, null, random);

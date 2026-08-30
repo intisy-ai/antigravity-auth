@@ -33,6 +33,9 @@ public final class AntigravityQuotaParser {
     /**
      * True only when EVERY known quota pool reports zero (or no numeric) remaining capacity.
      * Returns {@code false} for an empty/absent pool map: "no pools yet" is NOT "all exhausted".
+     *
+     * @param cachedQuota the account's cached per-pool quota
+     * @return true when no pool has capacity left
      */
     public static boolean allPoolsExhausted(Map<String, Object> cachedQuota) {
         if (cachedQuota == null || cachedQuota.isEmpty()) return false;
@@ -52,6 +55,10 @@ public final class AntigravityQuotaParser {
      * rate-limit backoffs: a single transient lane limit must not flag the whole account
      * rate-limited while other pools still have quota. Falls back to the lane check before the
      * first quota fetch (no {@code cachedQuota} yet).
+     *
+     * @param account the stored account
+     * @param now the current time, in epoch milliseconds
+     * @return the status word a surface shows
      */
     @SuppressWarnings("unchecked")
     public static String antigravityStatus(Map<String, Object> account, long now) {
@@ -84,6 +91,8 @@ public final class AntigravityQuotaParser {
      * @return an epoch-ms timestamp, {@code now}, or {@link Double#POSITIVE_INFINITY} for a disabled
      *         account. The return type is {@code double} since Java has no numeric "Infinity"
      *         sentinel compatible with {@code long}.
+     * @param account the stored account
+     * @param now the current time, in epoch milliseconds
      */
     @SuppressWarnings("unchecked")
     public static double antigravityAvailableAt(Map<String, Object> account, long now) {
@@ -119,6 +128,9 @@ public final class AntigravityQuotaParser {
      * Maps a stored account's cached per-family quota to the display shape
      * {@code [{label, remainingFraction, resetTime}]}. Returns {@code null} when there is no cached
      * quota at all.
+     *
+     * @param account the stored account
+     * @return the bars to render, or {@code null} when nothing has been fetched yet
      */
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> antigravityQuota(Map<String, Object> account) {
@@ -140,7 +152,12 @@ public final class AntigravityQuotaParser {
 
     // ---- familyLabel -----------------------------------------------------------------------------
 
-    /** Friendly family name for a model. Returns {@code null} for internal/unknown models. */
+    /**
+     * Which family a model's quota is pooled under.
+     *
+     * @param modelName the model id
+     * @return the family label, or {@code null} for a model no family claims
+     */
     public static String familyLabel(Object modelName) {
         String lower = String.valueOf(modelName).toLowerCase();
         if (lower.contains("claude")) return "Claude";
@@ -156,6 +173,9 @@ public final class AntigravityQuotaParser {
      * account exhaustion. Unknown quota -&gt; false (never blame the proxy). Maps this account's
      * cachedQuota pools into {@link QuotaHealth.Pool}s and defers the decision to the single-source
      * {@link QuotaHealth#hasCapacity}.
+     *
+     * @param account the stored account
+     * @return true when at least one pool still has capacity; unknown reads as false
      */
     @SuppressWarnings("unchecked")
     public static boolean accountHasQuota(Map<String, Object> account) {
@@ -186,6 +206,7 @@ public final class AntigravityQuotaParser {
      *
      * @return a map of family label -&gt; {@code {remainingFraction: Double, resetTime: String}},
      *         or {@code null} when no model contributed to any family.
+     * @param models the upstream model list, keyed by model id
      */
     public static Map<String, Object> aggregateQuotaFamilies(Map<String, Object> models) {
         Map<String, Map<String, Object>> perFamily = new LinkedHashMap<>();

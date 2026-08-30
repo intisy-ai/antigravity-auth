@@ -21,14 +21,14 @@ import java.util.regex.Pattern;
  */
 public final class AntigravityModelResolver {
 
-    // Claude & Gemini 2.5 Pro use numeric budgets.
+    /** How many thinking tokens each tier gets, for the models that take a numeric budget. */
     public static final Map<String, Map<String, Integer>> THINKING_TIER_BUDGETS;
 
-    // Gemini 3 uses thinkingLevel STRINGS instead of numeric budgets.
+    /** The levels the newer models take in place of a numeric budget. */
     public static final List<String> GEMINI_3_THINKING_LEVELS =
             Collections.unmodifiableList(Arrays.asList("minimal", "low", "medium", "high"));
 
-    // user-friendly name -> API model name.
+    /** What a caller may name a model, and the id the upstream knows it by. */
     public static final Map<String, String> MODEL_ALIASES;
 
     static {
@@ -107,7 +107,12 @@ public final class AntigravityModelResolver {
         return GEMINI_3_PRO_REGEX.matcher(model).find();
     }
 
-    /** {@code resolveModelWithTier(requestedModel)} with default (empty) options. */
+    /**
+     * The upstream model and thinking config for a requested model, with the metered lane preferred.
+     *
+     * @param requestedModel the model the caller asked for
+     * @return the resolved model and its thinking config
+     */
     public static Map<String, Object> resolveModelWithTier(String requestedModel) {
         return resolveModelWithTier(requestedModel, false);
     }
@@ -115,6 +120,10 @@ public final class AntigravityModelResolver {
     /**
      * Resolves the actual upstream model + thinking config for a requested model name.
      * {@code cliFirst} controls whether gemini-cli quota is preferred over antigravity quota.
+     *
+     * @param requestedModel the model the caller asked for
+     * @param cliFirst whether the free lane is preferred
+     * @return the resolved model and its thinking config
      */
     public static Map<String, Object> resolveModelWithTier(String requestedModel, boolean cliFirst) {
         boolean isAntigravity = QUOTA_PREFIX_REGEX.matcher(requestedModel).find();
@@ -221,6 +230,9 @@ public final class AntigravityModelResolver {
     /**
      * Returns the routing family {@code "claude"|"gemini-flash"|"gemini-pro"}, distinct from
      * {@link CrossModelSanitizer#getModelFamily} which returns {@code "claude"|"gemini"|"unknown"}.
+     *
+     * @param model the model id
+     * @return the family its routing is decided by
      */
     public static String getModelFamily(String model) {
         String lower = model.toLowerCase();
@@ -229,7 +241,12 @@ public final class AntigravityModelResolver {
         return "gemini-pro";
     }
 
-    /** Maps a numeric thinking budget to the closest Gemini-3 thinking level. */
+    /**
+     * The thinking level closest to a numeric budget, for a model that takes a level.
+     *
+     * @param budget the budget in tokens
+     * @return the level name
+     */
     public static String budgetToGemini3Level(int budget) {
         if (budget <= 8192) return "low";
         if (budget <= 16384) return "medium";
@@ -239,6 +256,10 @@ public final class AntigravityModelResolver {
     /**
      * {@code resolveModelForHeaderStyle(requestedModel, headerStyle)} with {@code cliFirst} defaulted
      * to {@code false} (pre-wiring behavior, preserved for callers that don't route the config flag).
+     *
+     * @param requestedModel the model the caller asked for
+     * @param headerStyle which endpoint's header set the request will carry
+     * @return the resolved model and its thinking config
      */
     public static Map<String, Object> resolveModelForHeaderStyle(String requestedModel, String headerStyle) {
         return resolveModelForHeaderStyle(requestedModel, headerStyle, false);
@@ -249,6 +270,11 @@ public final class AntigravityModelResolver {
      * {@code "antigravity"} or {@code "gemini-cli"}. {@code cliFirst} is threaded into every inner
      * {@link #resolveModelWithTier} call so gemini-cli routing preference reaches the live
      * per-request resolve path.
+     *
+     * @param requestedModel the model the caller asked for
+     * @param headerStyle which endpoint's header set the request will carry
+     * @param cliFirst whether the free lane is preferred
+     * @return the resolved model and its thinking config
      */
     public static Map<String, Object> resolveModelForHeaderStyle(String requestedModel, String headerStyle, boolean cliFirst) {
         String lower = requestedModel.toLowerCase();
@@ -293,7 +319,12 @@ public final class AntigravityModelResolver {
         return resolveModelWithTier(requestedModel, cliFirst);
     }
 
-    /** {@code resolveModelWithVariant(requestedModel)} with no variant config. */
+    /**
+     * The resolved model with no per-variant override applied.
+     *
+     * @param requestedModel the model the caller asked for
+     * @return the resolved model and its thinking config
+     */
     public static Map<String, Object> resolveModelWithVariant(String requestedModel) {
         return resolveModelWithVariant(requestedModel, null);
     }
@@ -301,6 +332,10 @@ public final class AntigravityModelResolver {
     /**
      * Resolves a model, applying an optional per-variant override. {@code variantConfig} is
      * a JSON-tree map (keys {@code thinkingBudget}, {@code googleSearch}) or {@code null}.
+     *
+     * @param requestedModel the model the caller asked for
+     * @param variantConfig the override to apply, or {@code null} for none
+     * @return the resolved model and its thinking config
      */
     public static Map<String, Object> resolveModelWithVariant(String requestedModel, Map<String, Object> variantConfig) {
         Map<String, Object> base = resolveModelWithTier(requestedModel);

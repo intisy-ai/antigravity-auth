@@ -48,7 +48,12 @@ public final class AntigravityIrBridge {
 
     // ---- supportsThinking ------------------------------------------------------------------------
 
-    /** {@code String(model || "").toLowerCase()} includes "thinking" or "gemini-3". */
+    /**
+     * Whether a model can be asked to think at all.
+     *
+     * @param model the model id
+     * @return true when its name marks it as a thinking model
+     */
     public static boolean supportsThinking(Object model) {
         String lower = (JsCoercion.isTruthy(model) ? jsStr(model) : "").toLowerCase();
         return lower.contains("thinking") || lower.contains("gemini-3");
@@ -56,7 +61,13 @@ public final class AntigravityIrBridge {
 
     // ---- IR -> Gemini encode ----------------------------------------------------------------------
 
-    /** Encodes an {@link IrRequest} to a Gemini {@code generateContent} body via core-ir's {@link GeminiTranslator}. */
+    /**
+     * The upstream request body one IR request encodes to.
+     *
+     * @param routingJson the codec the encode reads and writes JSON with
+     * @param ir the request to encode
+     * @return the Gemini generateContent body
+     */
     public static String encodeIrToGemini(JsonCodec routingJson, IrRequest ir) {
         io.github.intisy.ai.ir.spi.JsonCodec irJson = new IrJsonCodecAdapter(routingJson);
         return new GeminiTranslator(irJson).encodeRequest(ir);
@@ -75,6 +86,9 @@ public final class AntigravityIrBridge {
      * <p>{@code output_config} has no neutral IR field (it is not a real Anthropic Messages API
      * key), so {@code AnthropicRequestCodec} stashes it verbatim in {@code IrRequest#extensions}
      * exactly like any other unrecognized top-level field, which is where this reads it from.
+     *
+     * @param ir the request, whose thinking block is rewritten in place
+     * @param model the model the request will be served as
      */
     public static void resolveThinkingBudget(IrRequest ir, Object model) {
         boolean thinkingOff = ir.thinking != null && !ir.thinking.enabled;

@@ -51,16 +51,36 @@ public final class AntigravityThinkingBlocks {
 
     /** Signature-cache getter ({@code (sessionId, text) => string | undefined}). */
     public interface CachedSignatureLookup {
+        /**
+         * The signature the cache holds for one thinking text.
+         *
+         * @param sessionId the session the cache is keyed by
+         * @param text the thinking text
+         * @return the signature, or {@code null} when nothing is held
+         */
         String get(String sessionId, String text);
     }
 
     /** Injected {@code recursivelyParseJsonStrings}; see class javadoc. */
     public interface JsonStringParser {
+        /**
+         * A value with its JSON-stringified members expanded.
+         *
+         * @param value the tree to expand
+         * @return the expanded tree
+         */
         Object parse(Object value);
     }
 
     /** Injected {@code processImageData} (fs write); returns the replacement text or null. */
     public interface ImageSink {
+        /**
+         * Writes one inline image and answers with what should stand in its place.
+         *
+         * @param mimeType the image's media type
+         * @param data the image bytes, base64 encoded
+         * @return a link to the written file, or {@code null} when there was nothing to write
+         */
         String process(Object mimeType, Object data);
     }
 
@@ -410,7 +430,16 @@ public final class AntigravityThinkingBlocks {
 
     // ---- filterUnsignedThinkingBlocks ----------------------------
 
-    /** Gemini {@code parts} + Anthropic {@code content} shapes. */
+    /**
+     * Contents with every thinking block the upstream would reject removed.
+     *
+     * @param contents the conversation's contents, in either shape
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @param isClaudeModel whether the request is for a Claude model
+     * @param keepThinking whether signed thinking blocks stay
+     * @return a new list
+     */
     public static List<Object> filterUnsignedThinkingBlocks(
             List<Object> contents, String sessionId, CachedSignatureLookup lookup, boolean isClaudeModel, boolean keepThinking) {
 
@@ -460,7 +489,16 @@ public final class AntigravityThinkingBlocks {
 
     // ---- filterMessagesThinkingBlocks ----------------------------
 
-    /** Anthropic {@code messages[]} payloads. */
+    /**
+     * Claude-shaped messages with every thinking block the upstream would reject removed.
+     *
+     * @param messages the conversation's messages
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @param isClaudeModel whether the request is for a Claude model
+     * @param keepThinking whether signed thinking blocks stay
+     * @return a new list
+     */
     public static List<Object> filterMessagesThinkingBlocks(
             List<Object> messages, String sessionId, CachedSignatureLookup lookup, boolean isClaudeModel, boolean keepThinking) {
 
@@ -496,7 +534,16 @@ public final class AntigravityThinkingBlocks {
 
     // ---- deepFilterThinkingBlocks --------------------------------
 
-    /** Walks the payload, MUTATING {@code contents}/{@code messages} in place. */
+    /**
+     * The whole request body filtered, whichever of the two shapes it carries.
+     *
+     * @param payload the request body, rewritten in place
+     * @param sessionId the session the cache is keyed by
+     * @param lookup the host's signature-cache read
+     * @param isClaudeModel whether the request is for a Claude model
+     * @param keepThinking whether signed thinking blocks stay
+     * @return the same payload, for chaining
+     */
     public static Object deepFilterThinkingBlocks(
             Object payload, String sessionId, CachedSignatureLookup lookup, boolean isClaudeModel, boolean keepThinking) {
         walk(payload, sessionId, lookup, isClaudeModel, keepThinking, new ArrayList<>());
@@ -547,6 +594,11 @@ public final class AntigravityThinkingBlocks {
      * Converts Anthropic {@code content[]} + Gemini {@code candidates[]} thinking blocks into reasoning
      * format and aggregates {@code reasoning_content}. {@code parser}/{@code imageSink} are the injected
      * {@code functionCall}/{@code inlineData} seams.
+     *
+     * @param response the response to rewrite
+     * @param parser the injected JSON-string expansion
+     * @param imageSink where an inline image is written
+     * @return the rewritten response
      */
     public static Object transformThinkingParts(Object response, JsonStringParser parser, ImageSink imageSink) {
         if (!(response instanceof Map)) {

@@ -53,7 +53,12 @@ public final class AntigravitySchemaCleaner {
 
     // ---- cleanJSONSchemaForAntigravity -----------------------------------------------------------
 
-    /** The full 12-phase pipeline, returning a new tree. */
+    /**
+     * One tool schema, with everything the upstream rejects removed.
+     *
+     * @param schema the schema as the caller declared it
+     * @return a new tree; anything that is neither an object nor an array is answered unchanged
+     */
     public static Object clean(Object schema) {
         if (!(schema instanceof Map) && !(schema instanceof List)) {
             return schema;

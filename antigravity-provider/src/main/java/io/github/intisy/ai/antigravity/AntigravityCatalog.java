@@ -22,16 +22,33 @@ import java.util.regex.Pattern;
  */
 public final class AntigravityCatalog {
 
+    /** What every metered model id is prefixed with, so the two lanes never collide. */
     public static final String MODEL_ID_PREFIX = "antigravity-";
 
-    // The separate Gemini CLI free quota pool (bare ids -> gemini-cli lane/headers); stable public
-    // Gemini models, not part of the antigravity agent ranking.
+    /**
+     * One model of the free Gemini CLI pool.
+     *
+     * @implNote A bare id selects the free lane and its headers. These are stable public models
+     * rather than agent models, so they take no part in the metered ranking.
+     */
     public static final class GeminiCliModel {
+        /** The bare model id, which is what selects the free lane. */
         public final String id;
+        /** What a surface shows for it. */
         public final String name;
+        /** How many tokens it accepts. */
         public final long context;
+        /** How many tokens it produces. */
         public final long output;
 
+        /**
+         * One free-pool model.
+         *
+         * @param id the bare model id
+         * @param name its display name
+         * @param context its input token limit
+         * @param output its output token limit
+         */
         public GeminiCliModel(String id, String name, long context, long output) {
             this.id = id;
             this.name = name;
@@ -40,6 +57,7 @@ public final class AntigravityCatalog {
         }
     }
 
+    /** The free pool's models, which are stable public Gemini models rather than agent models. */
     public static final List<GeminiCliModel> GEMINI_CLI_MODELS = Collections.unmodifiableList(Arrays.asList(
             new GeminiCliModel("gemini-2.5-flash", "Gemini 2.5 Flash", 1048576, 65536),
             new GeminiCliModel("gemini-2.5-pro", "Gemini 2.5 Pro", 1048576, 65536),
@@ -57,7 +75,12 @@ public final class AntigravityCatalog {
 
     // ---- rankedAgentModelIds ---------------------------------------------------------------------
 
-    /** Flattens {@code payload.agentModelSorts} into a single ranked id list (dedup, first-seen order). */
+    /**
+     * The agent models in the order the upstream recommends them.
+     *
+     * @param payload the upstream model payload
+     * @return the ids, deduplicated in first-seen order
+     */
     @SuppressWarnings("unchecked")
     public static List<String> rankedAgentModelIds(Map<String, Object> payload) {
         List<String> ids = new ArrayList<>();
@@ -83,10 +106,17 @@ public final class AntigravityCatalog {
 
     /** Result of splitting a display name into its effort-tag-stripped base and (optional) effort level. */
     public static final class EffortTag {
+        /** The display name with the effort tag removed. */
         public final String base;
         /** {@code null} when the display name carries no recognized trailing effort tag. */
         public final String level;
 
+        /**
+         * One split display name.
+         *
+         * @param base the name without its effort tag
+         * @param level the effort level, or {@code null} when there was no tag
+         */
         public EffortTag(String base, String level) {
             this.base = base;
             this.level = level;
@@ -98,6 +128,9 @@ public final class AntigravityCatalog {
      * name; {@code "extra low"} normalizes to {@code "minimal"} (via {@code replace(/\s+/g, "-")}).
      * A NO-SPACE {@code "extralow"} has no space to collapse, so it normalizes to the literal
      * {@code "extralow"}, NOT {@code "minimal"}; this is an intentional quirk, not a bug.
+     *
+     * @param displayName the model's display name
+     * @return the name without its tag, and the level the tag named
      */
     public static EffortTag effortTagOf(String displayName) {
         Matcher m = EFFORT_TAG.matcher(displayName);
@@ -110,7 +143,13 @@ public final class AntigravityCatalog {
 
     // ---- buildModelEntry -------------------------------------------------------------------------
 
-    /** Builds one catalog entry from a single {@code fetchAvailableModels} model info record. */
+    /**
+     * One catalog entry, from one model the upstream listed.
+     *
+     * @param rawId the backend model id
+     * @param info what the upstream said about it
+     * @return the entry a surface renders
+     */
     public static Map<String, Object> buildModelEntry(String rawId, Map<String, Object> info) {
         Object displayNameObj = info.get("displayName");
         String name = (JsCoercion.isTruthy(displayNameObj) ? String.valueOf(displayNameObj) : rawId) + " (Antigravity)";
@@ -175,6 +214,7 @@ public final class AntigravityCatalog {
      * @return a plain map with keys {@code "models"} (the full catalog, keyed by prefixed id),
      *         {@code "ranking"} (prefixed ids in recommended order, the Auto-routing source),
      *         and {@code "defaultModelId"} (the default agent model's prefixed id, or {@code null}).
+     * @param payload the upstream model payload
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> buildAntigravityCatalog(Map<String, Object> payload) {

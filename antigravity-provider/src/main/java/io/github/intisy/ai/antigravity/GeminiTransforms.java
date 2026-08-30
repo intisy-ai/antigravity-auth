@@ -41,7 +41,12 @@ public final class GeminiTransforms {
 
     // ---- toGeminiSchema --------------------------------------------------------------------------
 
-    /** JSON Schema -> Gemini Schema (uppercased types, stripped fields). */
+    /**
+     * One JSON schema in the shape this upstream accepts.
+     *
+     * @param schema the schema as the caller declared it
+     * @return the rewritten schema, or the input unchanged when it is not an object
+     */
     @SuppressWarnings("unchecked")
     public static Object toGeminiSchema(Object schema) {
         if (!JsCoercion.isTruthy(schema) || !(schema instanceof Map)) {
@@ -114,19 +119,43 @@ public final class GeminiTransforms {
 
     // ---- model predicates ------------------------------------------------------------------------
 
+    /**
+     * Whether a model speaks the Gemini request shape.
+     *
+     * @param model the model id
+     * @return true when it does
+     */
     public static boolean isGeminiModel(String model) {
         String lower = model.toLowerCase();
         return lower.contains("gemini") && !lower.contains("claude");
     }
 
+    /**
+     * Whether a model is a third-generation one, which takes a thinking level rather than a budget.
+     *
+     * @param model the model id
+     * @return true when it is
+     */
     public static boolean isGemini3Model(String model) {
         return model.toLowerCase().contains("gemini-3");
     }
 
+    /**
+     * Whether a model is a 2.5 one, which takes a numeric thinking budget.
+     *
+     * @param model the model id
+     * @return true when it is
+     */
     public static boolean isGemini25Model(String model) {
         return model.toLowerCase().contains("gemini-2.5");
     }
 
+    /**
+     * Whether a model produces images rather than text.
+     *
+     * @param model the model id
+     * @return true when it does
+     */
     public static boolean isImageGenerationModel(String model) {
         String lower = model.toLowerCase();
         return lower.contains("image") || lower.contains("imagen");
@@ -134,7 +163,13 @@ public final class GeminiTransforms {
 
     // ---- thinking config builders ----------------------------------------------------------------
 
-    /** camelCase {@code thinkingLevel} string. */
+    /**
+     * The thinking config a third-generation model carries, which names a level rather than a budget.
+     *
+     * @param includeThoughts whether the response should carry the thinking back
+     * @param thinkingLevel the level to ask for
+     * @return the config
+     */
     public static Map<String, Object> buildGemini3ThinkingConfig(boolean includeThoughts, String thinkingLevel) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("includeThoughts", includeThoughts);
@@ -142,7 +177,13 @@ public final class GeminiTransforms {
         return config;
     }
 
-    /** camelCase numeric {@code thinkingBudget}, only emitted when it is a positive number. */
+    /**
+     * The thinking config a 2.5 model carries, which names a numeric budget.
+     *
+     * @param includeThoughts whether the response should carry the thinking back
+     * @param thinkingBudget the budget in tokens, emitted only when it is a positive number
+     * @return the config
+     */
     public static Map<String, Object> buildGemini25ThinkingConfig(boolean includeThoughts, Object thinkingBudget) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("includeThoughts", includeThoughts);
@@ -156,6 +197,10 @@ public final class GeminiTransforms {
      * {@code aspectRatioEnv} is the value of {@code OPENCODE_IMAGE_ASPECT_RATIO} ({@code null} when
      * unset); it defaults to {@code "1:1"}, and an invalid value is logged via the injected
      * {@link Logger}.
+     *
+     * @param aspectRatioEnv the aspect ratio the environment asked for, or {@code null} when unset
+     * @param logger where an invalid value is reported
+     * @return the image generation config
      */
     public static Map<String, Object> buildImageGenerationConfig(String aspectRatioEnv, Logger logger) {
         String aspectRatio = JsCoercion.isTruthy(aspectRatioEnv) ? aspectRatioEnv : "1:1";
@@ -180,6 +225,9 @@ public final class GeminiTransforms {
     /**
      * MUTATES {@code payload.tools} in place; returns a map with {@code toolDebugMissing} (Integer)
      * and {@code toolDebugSummaries} (List&lt;String&gt;).
+     *
+     * @param payload the request body, rewritten in place
+     * @return how many tools had no schema, and a summary of each
      */
     public static Map<String, Object> normalizeGeminiTools(Map<String, Object> payload) {
         int[] toolDebugMissing = {0};
@@ -316,6 +364,10 @@ public final class GeminiTransforms {
      * MUTATES {@code payload.tools}; returns a map with {@code wrappedFunctionCount}/{@code
      * passthroughToolCount} (Integers). The "web_search + functionDeclarations can't combine" warning
      * goes through the injected {@link Logger}.
+     *
+     * @param payload the request body, rewritten in place
+     * @param logger where the combination warning is reported
+     * @return how many tools were wrapped and how many passed through
      */
     public static Map<String, Object> wrapToolsAsFunctionDeclarations(Map<String, Object> payload, Logger logger) {
         if (!(payload.get("tools") instanceof List) || JsCoercion.asList(payload.get("tools")).isEmpty()) {
@@ -420,6 +472,12 @@ public final class GeminiTransforms {
      * {@code options} is a JSON-tree map with {@code model}, {@code tierThinkingBudget},
      * {@code tierThinkingLevel}, {@code normalizedThinking}, {@code googleSearch}. MUTATES
      * {@code payload}; returns the combined debug/wrap result map.
+     *
+     * @param payload the request body, rewritten in place
+     * @param options the model, the tier's thinking budget or level, the normalised thinking config
+     *                and whether search is enabled
+     * @param logger where the tool warnings are reported
+     * @return what the tool normalisation and wrapping reported
      */
     public static Map<String, Object> applyGeminiTransforms(Map<String, Object> payload, Map<String, Object> options, Logger logger) {
         String model = String.valueOf(options.get("model"));
@@ -500,7 +558,12 @@ public final class GeminiTransforms {
 
     // ---- expandMultiFunctionCallModelTurns -------------------------------------------------------
 
-    /** Strict call -> response -> call -> response. */
+    /**
+     * Contents split so every tool call is answered before the next one is made.
+     *
+     * @param contents the conversation's contents
+     * @return a new list in strict call and response order
+     */
     public static List<Object> expandMultiFunctionCallModelTurns(List<Object> contents) {
         if (contents == null || contents.isEmpty()) {
             return contents;
@@ -614,7 +677,12 @@ public final class GeminiTransforms {
         return m;
     }
 
-    /** Enforces strict user/model alternation + roles. */
+    /**
+     * Contents rewritten so the roles strictly alternate, which is what the upstream requires.
+     *
+     * @param contentsIn the conversation's contents
+     * @return a new list
+     */
     public static List<Object> sanitizeGeminiContents(List<Object> contentsIn) {
         if (contentsIn == null || contentsIn.isEmpty()) {
             return contentsIn;
@@ -742,7 +810,12 @@ public final class GeminiTransforms {
 
     // ---- fixGeminiToolPairing --------------------------------------------------------------------
 
-    /** Injects placeholder responses for unmatched calls. */
+    /**
+     * Contents with a placeholder response added for every tool call nothing answered.
+     *
+     * @param contents the conversation's contents
+     * @return a new list in which every call is paired
+     */
     public static List<Object> fixGeminiToolPairing(List<Object> contents) {
         if (contents == null || contents.isEmpty()) {
             return contents;

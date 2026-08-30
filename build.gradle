@@ -47,6 +47,30 @@ subprojects {
         options.encoding = "UTF-8"
     }
 
+    tasks.withType(Javadoc).configureEach {
+        // javadoc reads sources with the platform charset like javac does, and the same non-ASCII
+        // literals that forced UTF-8 above make it fail outright rather than warn.
+        options.encoding = "UTF-8"
+        options.charSet = "UTF-8"
+        options.docEncoding = "UTF-8"
+        options.addBooleanOption("Xdoclint:all", true)
+        // javadoc stops listing after 100 of each kind by default, which silently under-reports the gap.
+        options.addStringOption("Xmaxwarns", "10000")
+        options.addStringOption("Xmaxerrs", "10000")
+        // doclint reports a missing comment as a WARNING, and failOnError only fails on errors, so
+        // without this the task passes over an entirely undocumented module.
+        options.addBooleanOption("Werror", true)
+        options.tags = [
+            "apiNote:a:API Note:",
+            "implSpec:a:Implementation Requirements:",
+            "implNote:a:Implementation Note:",
+        ]
+        failOnError = true
+    }
+
+    // check does not run javadoc by default, so without this a doclint finding fails no build.
+    tasks.named("check") { dependsOn tasks.named("javadoc") }
+
     dependencies {
         testImplementation "org.junit.jupiter:junit-jupiter:5.10.1"
     }

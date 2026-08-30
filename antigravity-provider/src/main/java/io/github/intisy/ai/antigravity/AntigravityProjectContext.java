@@ -20,7 +20,7 @@ import java.util.Map;
  */
 public final class AntigravityProjectContext {
 
-    // fallback project id when Antigravity returns none.
+    /** What a request is billed to when the upstream names no project of its own. */
     public static final String ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
     private AntigravityProjectContext() {
@@ -30,30 +30,53 @@ public final class AntigravityProjectContext {
 
     /** {@code process.platform}/{@code process.arch} (detectCodeAssistPlatform). */
     public interface Platform {
-        /** {@code process.platform}: {@code "win32"}/{@code "darwin"}/{@code "linux"}/other. */
+        /** {@return the platform name, as the runtime reports it} */
         String platform();
 
-        /** {@code process.arch}: {@code "arm64"} or anything else. */
+        /** {@return the architecture, as the runtime reports it} */
         String arch();
     }
 
     /** {@code loadManagedProject(accessToken, projectId, proxy)}: the fetch loop stays host. */
     public interface ProjectLoader {
-        /** The parsed {@code loadCodeAssist} payload (a {@code Map}), or {@code null} on every-endpoint failure. */
+        /**
+         * What the upstream says about one account's managed project.
+         *
+         * @param accessToken the account's access token
+         * @param projectId the project to ask about, or blank to let the upstream choose
+         * @param proxy the outbound proxy, or blank for a direct connection
+         * @return the parsed payload, or {@code null} when every endpoint failed
+         */
         Map<String, Object> load(String accessToken, String projectId, String proxy);
     }
 
     /** {@code onboardManagedProject(accessToken, tierId, projectId, proxy)}: the fetch loop stays host. */
     public interface ProjectOnboarder {
-        /** The provisioned managed project id, or {@code null} when provisioning did not complete. */
+        /**
+         * Provisions a managed project for one account.
+         *
+         * @param accessToken the account's access token
+         * @param tierId the tier to provision under
+         * @param projectId the project to provision, or blank to let the upstream choose
+         * @param proxy the outbound proxy, or blank for a direct connection
+         * @return the provisioned project id, or {@code null} when provisioning did not complete
+         */
         String onboard(String accessToken, String tierId, String projectId, String proxy);
     }
 
     /** {@code ProjectContextResult}: {@code {auth, effectiveProjectId}}. */
     public static final class ProjectContextResult {
+        /** The auth tree, whose refresh string carries any newly discovered project. */
         public final Map<String, Object> auth;
+        /** The project the account's requests are billed to. */
         public final String effectiveProjectId;
 
+        /**
+         * One resolution's outcome.
+         *
+         * @param auth the auth tree, possibly rewritten
+         * @param effectiveProjectId the project to bill to
+         */
         public ProjectContextResult(Map<String, Object> auth, String effectiveProjectId) {
             this.auth = auth;
             this.effectiveProjectId = effectiveProjectId;
@@ -66,6 +89,9 @@ public final class AntigravityProjectContext {
      * The {@code ClientMetadata.Platform} enum value ({@code WINDOWS_AMD64}/{@code DARWIN_ARM64}/
      * {@code LINUX_AMD64}/...) from {@code process.platform}+{@code process.arch}. "WINDOWS"/"MACOS"
      * alone are NOT valid enum values (they 400 the request), so the arch suffix is mandatory.
+     *
+     * @param platform the host platform and architecture
+     * @return the enum value the upstream validates against
      */
     public static String detectCodeAssistPlatform(Platform platform) {
         String arch = "arm64".equals(platform.arch()) ? "ARM64" : "AMD64";
@@ -78,7 +104,13 @@ public final class AntigravityProjectContext {
 
     // ---- buildMetadata --------------------------------------------------------------------------
 
-    /** {@code {ideType:"ANTIGRAVITY", platform, pluginType:"GEMINI", [duetProject]}}. */
+    /**
+     * The client metadata every project request carries.
+     *
+     * @param projectId the project to name, or blank to name none
+     * @param platform the host platform and architecture
+     * @return the metadata block
+     */
     public static Map<String, Object> buildMetadata(String projectId, Platform platform) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("ideType", "ANTIGRAVITY");
@@ -90,7 +122,12 @@ public final class AntigravityProjectContext {
 
     // ---- getDefaultTierId -----------------------------------------------------------------------
 
-    /** The default tier id: the first {@code isDefault} tier's id, else the first tier's id, else {@code null}. */
+    /**
+     * Which tier a project is provisioned under.
+     *
+     * @param allowedTiers the tiers the upstream offered
+     * @return the default tier's id, the first one's when none is marked, or {@code null} for none
+     */
     @SuppressWarnings("unchecked")
     public static String getDefaultTierId(List<Object> allowedTiers) {
         if (allowedTiers == null || allowedTiers.isEmpty()) return null;
@@ -107,7 +144,12 @@ public final class AntigravityProjectContext {
 
     // ---- extractManagedProjectId ----------------------------------------------------------------
 
-    /** The {@code cloudaicompanionProject} id from a {@code loadCodeAssist} payload (string or {@code .id}). */
+    /**
+     * The managed project the upstream reported, in whichever shape it reported it.
+     *
+     * @param payload the parsed upstream payload
+     * @return the project id, or {@code null} when it named none
+     */
     @SuppressWarnings("unchecked")
     public static String extractManagedProjectId(Map<String, Object> payload) {
         if (payload == null) return null;
@@ -122,7 +164,12 @@ public final class AntigravityProjectContext {
 
     // ---- getCacheKey ----------------------------------------------------------------------------
 
-    /** {@code auth.refresh?.trim() || undefined}: the refresh string, trimmed, or {@code null}. */
+    /**
+     * What a resolved project context is cached under.
+     *
+     * @param auth the stored auth tree
+     * @return its refresh string, trimmed, or {@code null} when it carries none
+     */
     public static String getCacheKey(Map<String, Object> auth) {
         Object refresh = auth != null ? auth.get("refresh") : null;
         if (!(refresh instanceof String)) return null;
@@ -145,6 +192,14 @@ public final class AntigravityProjectContext {
      * </ol>
      * "Persist" rewrites {@code auth.refresh} via {@link AntigravityAuth#formatRefreshParts},
      * keeping the original refresh token + project id and appending the discovered managed id.
+     *
+     * @param auth the stored auth tree, whose refresh string is rewritten when a project is found
+     * @param proxy the outbound proxy, or {@code null} for a direct connection
+     * @param fallbackProjectIdOption what to bill to when nothing is discovered
+     * @param loader the host's managed-project fetch
+     * @param onboarder the host's managed-project provisioning
+     * @param platform the host platform and architecture
+     * @return the auth tree and the project to bill to
      */
     @SuppressWarnings("unchecked")
     public static ProjectContextResult ensureProjectContext(Map<String, Object> auth, String proxy,

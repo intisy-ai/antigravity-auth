@@ -66,8 +66,11 @@ import java.util.regex.Pattern;
  */
 public final class AntigravityRequestPrep {
 
+    /** The url action that marks a request as streaming. */
     public static final String STREAM_ACTION = "streamGenerateContent";
+    /** Where a metered-lane request goes when no attempt overrode it. */
     public static final String ANTIGRAVITY_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+    /** Where a free-lane request goes when no attempt overrode it. */
     public static final String GEMINI_CLI_ENDPOINT = "https://cloudcode-pa.googleapis.com";
     /** hardcoded fallback when Antigravity returns no project (applied upstream). */
     public static final String ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
@@ -110,29 +113,62 @@ public final class AntigravityRequestPrep {
 
     /** {@code crypto.randomUUID()} SPI ({@code requestId} + synthetic-project id part). */
     public interface IdGenerator {
+        /**
+         * A fresh identifier, for the request id and the synthetic project id.
+         *
+         * @return the identifier
+         */
         String randomUuid();
     }
 
     /** The {@code thinking-recovery.ts} trio (a separate file, injected here). */
     public interface ThinkingRecovery {
+        /**
+         * What the conversation looks like from the thinking blocks' point of view.
+         *
+         * @param contents the conversation's contents
+         * @return the state the other two methods read
+         */
         Object analyzeConversationState(List<Object> contents);
 
+        /**
+         * Whether the conversation would be rejected for a missing thinking block.
+         *
+         * @param state what the analysis reported
+         * @return true when it needs recovering
+         */
         boolean needsThinkingRecovery(Object state);
 
+        /**
+         * Contents with the open tool loop closed, so a thinking block may follow.
+         *
+         * @param contents the conversation's contents
+         * @return a new list
+         */
         List<Object> closeToolLoopForThinking(List<Object> contents);
     }
 
     /** Injected seams + config flags (everything the TS reads from module globals / edges). */
     public static final class Deps {
+        /** The codec every parse and write in the pipeline goes through. */
         public JsonCodec json;
+        /** The host's id minting. */
         public IdGenerator ids;
+        /** The host's entropy. */
         public Random random;
+        /** The host's sha256. */
         public AntigravityRequestKeys.Hasher hasher;
+        /** The host's signature-cache read. */
         public AntigravityThinkingBlocks.CachedSignatureLookup cachedSignatureLookup;
+        /** The host's signature store. */
         public AntigravityRequestSignatures.SignatureStore signatureStore;
+        /** The thinking-recovery pass, which is internal rather than a host seam. */
         public ThinkingRecovery thinkingRecovery;
+        /** Where the pipeline's diagnostics go. */
         public Logger logger;
+        /** Whether thinking blocks stay in the request. */
         public boolean keepThinking;
+        /** The host's session id, which keys the signature cache. */
         public String pluginSessionId;
         /** getRandomizedHeaders(headerStyle, requestedModel) result (User-Agent used as fallback). */
         public Map<String, Object> selectedHeaders;
@@ -140,38 +176,67 @@ public final class AntigravityRequestPrep {
 
     /** The already-extracted request primitives + option flags. */
     public static final class Input {
+        /** The request url. */
         public String url;
+        /** The request method. */
         public String method;
+        /** The caller's headers. */
         public Map<String, Object> headers;
+        /** The request body. */
         public String body;
+        /** The account's access token. */
         public String accessToken;
+        /** The project the request is billed to. */
         public String projectId;
+        /** The endpoint this attempt must use, or {@code null} for the default. */
         public String endpointOverride;
+        /** Which header set the endpoint expects. */
         public String headerStyle;
+        /** Whether to close an open tool loop even when the analysis would not. */
         public boolean forceThinkingRecovery;
-        public Boolean claudeToolHardening;      // options?.claudeToolHardening (default true)
-        public boolean claudePromptAutoCaching;  // options?.claudePromptAutoCaching (default false)
-        public boolean cliFirst;                 // config.cli_first: prefer gemini-cli routing (default false)
-        public Map<String, Object> fingerprint;  // options?.fingerprint ?? getSessionFingerprint() (resolved by shell)
-        public String imageAspectRatio;          // process.env.OPENCODE_IMAGE_ASPECT_RATIO
+        /** Whether Claude tool schemas are hardened; defaults to true when unset. */
+        public Boolean claudeToolHardening;
+        /** Whether prompt caching markers are added. */
+        public boolean claudePromptAutoCaching;
+        /** Whether the free lane is preferred over the metered one. */
+        public boolean cliFirst;
+        /** The account's device fingerprint, which the shell resolves. */
+        public Map<String, Object> fingerprint;
+        /** The aspect ratio an image request asks for, which the shell reads from the environment. */
+        public String imageAspectRatio;
     }
 
     /** The plain result handed back to the TS shell. */
     public static final class PrepareResult {
+        /** The url to send to. */
         public Object request;
+        /** The headers to send. */
         public Map<String, Object> headers;
+        /** The body to send. */
         public Object body;
+        /** Whether the upstream will stream its answer. */
         public boolean streaming;
+        /** The model the caller asked for. */
         public String requestedModel;
+        /** The model it will actually be served as. */
         public String effectiveModel;
+        /** The project it is billed to. */
         public String projectId;
+        /** The endpoint it goes to. */
         public String endpoint;
+        /** The key this session's signatures are stored under. */
         public String sessionId;
+        /** How many tools carried no schema, for a debug view. */
         public Integer toolDebugMissing;
+        /** A one-line summary of those tools, for a debug view. */
         public String toolDebugSummary;
+        /** The tools as sent, for a debug view. */
         public String toolDebugPayload;
+        /** Whether a signed thinking block must be warmed up before this request can serve. */
         public boolean needsSignedThinkingWarmup;
+        /** Which header set the request carries. */
         public String headerStyle;
+        /** What the thinking recovery did, when it did anything. */
         public String thinkingRecoveryMessage;
     }
 
@@ -180,6 +245,13 @@ public final class AntigravityRequestPrep {
 
     // ---- generateSyntheticProjectId -------------------------------------------------------------
 
+    /**
+     * A project id for an account with no discovered managed project.
+     *
+     * @param ids the host's id minting
+     * @param random the host's entropy
+     * @return the synthetic project id
+     */
     public static String generateSyntheticProjectId(IdGenerator ids, Random random) {
         String[] adjectives = {"useful", "bright", "swift", "calm", "bold"};
         String[] nouns = {"fuze", "wave", "spark", "flow", "core"};
@@ -192,6 +264,13 @@ public final class AntigravityRequestPrep {
 
     // ---- prepareAntigravityRequest --------------------------------------------------------------
 
+    /**
+     * One request, prepared for one account and endpoint.
+     *
+     * @param in the request primitives and the option flags
+     * @param deps the injected host seams
+     * @return what to send, and what the response transform will need
+     */
     @SuppressWarnings("unchecked")
     public static PrepareResult prepare(Input in, Deps deps) {
         final String headerStyle = in.headerStyle;

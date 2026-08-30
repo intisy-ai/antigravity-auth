@@ -26,17 +26,28 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
 
     private final JsonCodec json;
 
+    /**
+     * One recovery pass over a conversation.
+     *
+     * @param json the codec every other seam class in this package takes, kept for that symmetry
+     */
     public AntigravityThinkingRecovery(JsonCodec json) {
         this.json = json;
     }
 
     /** Conversation-state snapshot. */
     public static final class ConversationState {
+        /** Whether the conversation is mid tool loop, where a missing thinking block matters. */
         public boolean inToolLoop;
+        /** Where the current turn starts, or -1 when there is no turn yet. */
         public int turnStartIdx = -1;
+        /** Whether the current turn already carries a thinking block. */
         public boolean turnHasThinking;
+        /** Where the last model message is, or -1 when there is none. */
         public int lastModelIdx = -1;
+        /** Whether that last model message carries a thinking block. */
         public boolean lastModelHasThinking;
+        /** Whether that last model message calls any tool. */
         public boolean lastModelHasToolCalls;
     }
 
@@ -134,7 +145,12 @@ public final class AntigravityThinkingRecovery implements AntigravityRequestPrep
 
     // ---- looksLikeCompactedThinkingTurn ----------------------------
 
-    /** Compacted-turn detection heuristic. */
+    /**
+     * Whether a message looks like a turn whose thinking was compacted away.
+     *
+     * @param msgObj the message to judge
+     * @return true when it has the shape a compaction leaves behind
+     */
     public boolean looksLikeCompactedThinkingTurn(Object msgObj) {
         Map<String, Object> msg = asMsg(msgObj);
         if (msg == null) {

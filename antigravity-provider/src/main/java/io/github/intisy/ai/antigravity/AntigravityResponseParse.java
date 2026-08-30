@@ -69,6 +69,10 @@ public final class AntigravityResponseParse {
      * returning the first array element that is a non-null object (Map OR List, i.e. JS
      * {@code typeof x === "object" && x !== null}). A non-array object is returned as-is; anything
      * else (or a parse failure) yields {@code null}.
+     *
+     * @param json the codec the parse reads JSON with
+     * @param rawText the upstream body
+     * @return the object it carries, or {@code null} when it carries none
      */
     public static Object parseAntigravityApiBody(JsonCodec json, String rawText) {
         Object parsed;
@@ -98,6 +102,9 @@ public final class AntigravityResponseParse {
      * Reads {@code body.response.usageMetadata} and returns a map with only the finite-number token
      * counts present (each undefined field is left ABSENT, matching {@code JSON.stringify}). Returns
      * {@code null} when there is no usageMetadata object.
+     *
+     * @param body the parsed upstream body
+     * @return the token counts it reported, or {@code null} when it reported none
      */
     public static Map<String, Object> extractUsageMetadata(Map<String, Object> body) {
         Object response = body != null ? body.get("response") : null;
@@ -132,6 +139,10 @@ public final class AntigravityResponseParse {
     /**
      * Scans {@code data:} SSE lines for the first parseable chunk whose {@code response.usageMetadata}
      * yields usage. Non-{@code data:} lines, empty payloads and unparseable JSON are skipped.
+     *
+     * @param json the codec the parse reads JSON with
+     * @param payload the whole SSE body
+     * @return the token counts the first chunk that reports any carries, or {@code null}
      */
     public static Map<String, Object> extractUsageFromSsePayload(JsonCodec json, String payload) {
         String[] lines = payload.split("\n", -1);
@@ -166,6 +177,11 @@ public final class AntigravityResponseParse {
     /**
      * For a 404 tied to an Antigravity/Claude/Opus model, appends the preview-access enrollment hint
      * to the error message and returns a NEW body; otherwise {@code null}.
+     *
+     * @param body the parsed upstream body
+     * @param status the upstream status
+     * @param requestedModel the model the caller asked for
+     * @return a new body carrying the hint, or {@code null} when the hint does not apply
      */
     public static Map<String, Object> rewriteAntigravityPreviewAccessError(
             Map<String, Object> body, int status, String requestedModel) {
@@ -224,6 +240,10 @@ public final class AntigravityResponseParse {
      * {@code true} when the JSON body carries no usable content: no Gemini candidates/parts, no OpenAI
      * choices/message content, or an empty wrapped {@code response}. Any parse failure (including a
      * {@code null} literal, whose property read throws in JS) is treated as empty.
+     *
+     * @param json the codec the parse reads JSON with
+     * @param text the upstream body
+     * @return true when it carries nothing usable
      */
     public static boolean isEmptyResponseBody(JsonCodec json, String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -328,6 +348,10 @@ public final class AntigravityResponseParse {
      * {@code true} only for a {@code data: } line whose JSON carries at least one candidate part with
      * non-empty text or a functionCall (recursing through a wrapped {@code response}). {@code [DONE]},
      * empty, non-{@code data: } and unparseable lines are not meaningful.
+     *
+     * @param json the codec the parse reads JSON with
+     * @param line one SSE line
+     * @return true when it carries content rather than framing
      */
     public static boolean isMeaningfulSseLine(JsonCodec json, String line) {
         if (!line.startsWith("data: ")) {
@@ -389,6 +413,10 @@ public final class AntigravityResponseParse {
      * Recursively expands JSON-stringified values in the tree (default {@link #SKIP_PARSE_KEYS}
      * preserved verbatim), unescapes lone control-char escapes, and auto-corrects double-encoded JSON
      * with trailing junk. Public entry uses the default skip set with no current key.
+     *
+     * @param json the codec the parse reads JSON with
+     * @param obj the tree to expand
+     * @return the expanded tree
      */
     public static Object recursivelyParseJsonStrings(JsonCodec json, Object obj) {
         return recursivelyParseJsonStrings(json, obj, SKIP_PARSE_KEYS, null);
@@ -490,8 +518,11 @@ public final class AntigravityResponseParse {
      * Response} lowercases them on read. The SSE body/status are the byte-exact contract.
      */
     public static final class SyntheticResponse {
+        /** The status the host answers with. */
         public final int status;
+        /** The headers the host answers with, in the casing the contract fixes. */
         public final Map<String, String> headers;
+        /** The SSE body, which is the byte-exact part of the contract. */
         public final String body;
 
         SyntheticResponse(int status, Map<String, String> headers, String body) {
@@ -505,6 +536,12 @@ public final class AntigravityResponseParse {
      * Builds a fake-success (200) Anthropic SSE stream that carries {@code errorMessage} as assistant
      * text, so the host session is not locked by a raw 400/500. The synthetic message id's
      * {@code Date.now()} is sourced from the injected {@link Clock}.
+     *
+     * @param json the codec the build writes JSON with
+     * @param clock the injected clock, which the synthetic message id is minted from
+     * @param errorMessage what to show the user as assistant text
+     * @param requestedModel the model the caller asked for
+     * @return the response to answer with
      */
     public static SyntheticResponse createSyntheticErrorResponse(
             JsonCodec json, Clock clock, String errorMessage, String requestedModel) {
@@ -592,6 +629,9 @@ public final class AntigravityResponseParse {
      * or {@code null}. The polymorphic {@code getErrorMessage} unwrapping (error-object/{@code .data}/
      * {@code .error} nesting, {@code JSON.stringify} fallback) is not reproduced: the one call site
      * always passes the already-extracted message string.
+     *
+     * @param message the upstream error text
+     * @return the recoverable error type, or {@code null} when it names none
      */
     public static String detectErrorType(String message) {
         String m = message != null ? message.toLowerCase() : "";

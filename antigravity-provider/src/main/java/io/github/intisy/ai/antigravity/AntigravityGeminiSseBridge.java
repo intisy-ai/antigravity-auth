@@ -63,8 +63,18 @@ public final class AntigravityGeminiSseBridge {
 
     /** Injected id source: {@code msg_...} minted once per stream, {@code toolu_...} per functionCall. */
     public interface IdGenerator {
+        /**
+         * A fresh id for one assistant message.
+         *
+         * @return the message id
+         */
         String newMessageId();
 
+        /**
+         * A fresh id for one tool call.
+         *
+         * @return the tool-call id
+         */
         String newToolId();
     }
 
@@ -77,6 +87,13 @@ public final class AntigravityGeminiSseBridge {
     private boolean mintedMessageId = false;
     private Integer openBlockIndex = null;
 
+    /**
+     * One stream's decode, held open across its chunks.
+     *
+     * @param routingJson the codec the decode reads JSON with
+     * @param ids the host's id minting
+     * @param model the model to stamp on every event
+     */
     public AntigravityGeminiSseBridge(JsonCodec routingJson, IdGenerator ids, String model) {
         io.github.intisy.ai.ir.spi.JsonCodec irJson = new IrJsonCodecAdapter(routingJson);
         this.decoder = new GeminiTranslator(irJson).newStreamDecoder();
@@ -87,6 +104,9 @@ public final class AntigravityGeminiSseBridge {
     /**
      * Feeds one raw Gemini SSE text chunk through the decoder and returns the id-minted/
      * model-overwritten {@link IrStreamEvent}s, for the IR-native {@code handleIr} boundary.
+     *
+     * @param chunk the upstream SSE text, which may end mid-line
+     * @return the events it yields
      */
     public List<IrStreamEvent> handleIrEvents(String chunk) {
         return enrichAll(decoder.decode(chunk));
@@ -98,6 +118,8 @@ public final class AntigravityGeminiSseBridge {
      * first if NOTHING valid ever arrived), then closes out with {@code message_delta}/{@code
      * message_stop} unless that already happened (a well-formed stream closes itself inside {@link
      * #handleIrEvents}).
+     *
+     * @return the events left to emit once the upstream closes
      */
     public List<IrStreamEvent> finishIrEvents() {
         List<IrStreamEvent> out = new ArrayList<>();
@@ -177,12 +199,26 @@ public final class AntigravityGeminiSseBridge {
      * into a single, aggregated {@link IrResponse}, for a caller working at the neutral IR
      * boundary. {@code handleIr} has no wire response to fall back to, so a decode failure must
      * surface as a thrown error.
+     *
+     * @param routingJson the codec the decode reads JSON with
+     * @param requestedModel the model the caller asked for
+     * @param upstreamGeminiSse the buffered upstream response
+     * @return the aggregated response
      */
     public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
                                                     HttpResponse upstreamGeminiSse) {
         return bufferedGeminiSseToIr(routingJson, requestedModel, upstreamGeminiSse, RANDOM_IDS);
     }
 
+    /**
+     * The same decode, with the id minting supplied rather than random, so a test is deterministic.
+     *
+     * @param routingJson the codec the decode reads JSON with
+     * @param requestedModel the model the caller asked for
+     * @param upstreamGeminiSse the buffered upstream response
+     * @param ids the id minting to use
+     * @return the aggregated response
+     */
     public static IrResponse bufferedGeminiSseToIr(JsonCodec routingJson, String requestedModel,
                                                     HttpResponse upstreamGeminiSse, IdGenerator ids) {
         if (upstreamGeminiSse == null) {

@@ -29,7 +29,14 @@ public final class AntigravityResponseTransform {
     private AntigravityResponseTransform() {
     }
 
-    /** 3-arg convenience overload: no debug-text injection, no image persistence. */
+    /**
+     * One served response, transformed with no debug text and nowhere to persist an image.
+     *
+     * @param json the codec the transform reads and writes JSON with
+     * @param upstream the response as the upstream sent it
+     * @param params what the request that produced it needs the transform to know
+     * @return the response to answer with
+     */
     public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
                                                AntigravityHandleOrchestrator.TransformParams params) {
         return transformServe(json, upstream, params, null, NO_OP_IMAGE_SINK);
@@ -39,6 +46,13 @@ public final class AntigravityResponseTransform {
      * Transforms one {@code SERVE}-decision upstream response. A non-JSON/event-stream content type
      * is returned verbatim; any exception during the transform falls back to returning {@code upstream}
      * verbatim. {@code debugText} (nullable/empty for "none") and {@code imageSink} are injected seams.
+     *
+     * @param json the codec the transform reads and writes JSON with
+     * @param upstream the response as the upstream sent it
+     * @param params what the request that produced it needs the transform to know
+     * @param debugText the thinking placeholder to inject, or empty for none
+     * @param imageSink where an inline image is written, answering with a link to it
+     * @return the response to answer with
      */
     public static HttpResponse transformServe(JsonCodec json, HttpResponse upstream,
                                                AntigravityHandleOrchestrator.TransformParams params,

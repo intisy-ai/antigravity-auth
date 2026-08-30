@@ -16,7 +16,12 @@ public final class AntigravityFingerprint {
     private AntigravityFingerprint() {
     }
 
-    /** {@code "win32" -> "WINDOWS"}, else {@code "MACOS"}. */
+    /**
+     * What a platform is called in the headers the upstream reads.
+     *
+     * @param platform the platform name, as the runtime reports it
+     * @return the display name, which is the mac one for anything that is not windows
+     */
     public static String platformToDisplayName(String platform) {
         return "win32".equals(platform) ? "WINDOWS" : "MACOS";
     }
@@ -25,6 +30,9 @@ public final class AntigravityFingerprint {
      * {@code null -> {}}; else {@code {"User-Agent": fingerprint.userAgent}}. The returned map is fresh;
      * a {@code null}/absent {@code userAgent} passes straight through, though every valid fingerprint
      * carries one.
+     *
+     * @param fingerprint the account's stored fingerprint, or {@code null}
+     * @return the headers it contributes, which is a fresh map
      */
     public static Map<String, Object> buildFingerprintHeaders(Map<String, Object> fingerprint) {
         Map<String, Object> headers = new LinkedHashMap<>();

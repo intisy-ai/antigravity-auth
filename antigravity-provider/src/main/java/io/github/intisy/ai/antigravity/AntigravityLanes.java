@@ -28,7 +28,13 @@ public final class AntigravityLanes {
 
     // ---- jitter ----------------------------------------------------------------------------------
 
-    /** {@code Math.random() * maxMs - maxMs / 2}, a signed jitter centered on zero. */
+    /**
+     * A signed jitter centred on zero, so concurrent accounts never retry in lockstep.
+     *
+     * @param random the host's entropy
+     * @param maxMs the width of the window
+     * @return the offset, between minus and plus half the window
+     */
     public static double jitter(Random random, double maxMs) {
         return random.next() * maxMs - maxMs / 2;
     }
@@ -39,6 +45,9 @@ public final class AntigravityLanes {
      * Bare {@code gemini-*} ids are the separate (free) Gemini CLI quota pool; anything else
      * (including {@code antigravity-}-prefixed ids) is the antigravity pool. Accepts {@code Object}
      * (any JSON value) and requires a {@code String}.
+     *
+     * @param model the model id
+     * @return true when it belongs to the free pool
      */
     public static boolean isGeminiCliModel(Object model) {
         return model instanceof String && ((String) model).startsWith("gemini-");
@@ -49,6 +58,9 @@ public final class AntigravityLanes {
     /**
      * Partitions rate-limit state by REAL quota pool so exhausting one family never blocks
      * another: claude | gemini-pro | gemini-flash | gpt-oss | gemini-cli.
+     *
+     * @param model the model id
+     * @return the lane its rate-limit state is kept under
      */
     public static String laneFor(Object model) {
         String raw = JsCoercion.isTruthy(model) ? String.valueOf(model) : "";
@@ -62,6 +74,12 @@ public final class AntigravityLanes {
 
     // ---- headerStyleFor --------------------------------------------------------------------------
 
+    /**
+     * Which header set an endpoint expects for one model.
+     *
+     * @param model the model id
+     * @return the header style name
+     */
     public static String headerStyleFor(Object model) {
         return isGeminiCliModel(model) ? "gemini-cli" : "antigravity";
     }
@@ -72,6 +90,11 @@ public final class AntigravityLanes {
      * Classifies a rate-limit signal from an explicit {@code reason} code, an HTTP {@code status},
      * or (as a last resort) a free-text {@code message}. {@code status} uses {@code Integer} boxing
      * so a {@code null} status behaves like JS {@code undefined} (never equal to 529/503/500).
+     *
+     * @param reason the upstream's own reason code, when it sent one
+     * @param message the upstream's free text, read only when nothing else classifies
+     * @param status the HTTP status, or {@code null} when there was none
+     * @return the classified reason
      */
     public static String parseRateLimitReason(String reason, String message, Integer status) {
         if (status != null && (status == 529 || status == 503)) return "MODEL_CAPACITY_EXHAUSTED";
@@ -115,6 +138,12 @@ public final class AntigravityLanes {
      * {@code QUOTA_EXHAUSTED} table: a negative count (never produced by any real caller) would
      * otherwise index the array negatively, so it is clamped to avoid an {@code
      * ArrayIndexOutOfBoundsException}.
+     *
+     * @param reason the classified rate-limit reason
+     * @param consecutiveFailures how many attempts have failed in a row, or {@code null} for none
+     * @param retryAfterMs what the upstream asked for, which wins when it asked
+     * @param random the host's entropy, for the capacity reason's jitter
+     * @return how long to wait, in milliseconds
      */
     public static long calculateBackoffMs(String reason, Integer consecutiveFailures, Long retryAfterMs, Random random) {
         if (retryAfterMs != null && retryAfterMs > 0) return Math.max(retryAfterMs, MIN_BACKOFF_MS);
@@ -139,6 +168,16 @@ public final class AntigravityLanes {
 
     // ---- resetTimeFor ----------------------------------------------------------------------------
 
+    /**
+     * When a rate-limited lane comes back.
+     *
+     * @param reason the classified rate-limit reason
+     * @param consecutiveFailures how many attempts have failed in a row, or {@code null} for none
+     * @param retryAfterMs what the upstream asked for, which wins when it asked
+     * @param random the host's entropy
+     * @param clock the injected clock
+     * @return the epoch-millisecond time the lane is usable again
+     */
     public static long resetTimeFor(String reason, Integer consecutiveFailures, Long retryAfterMs, Random random, Clock clock) {
         return clock.now() + calculateBackoffMs(reason, consecutiveFailures, retryAfterMs, random);
     }
