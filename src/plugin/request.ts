@@ -4,6 +4,12 @@ import crypto from "node:crypto";
 
 const PLUGIN_SESSION_ID = `-${crypto.randomUUID()}`;
 
+/**
+ * Whether one model's thinking signatures are worth storing.
+ *
+ * @param model - the model id
+ * @returns true for the models whose upstream requires a signature back on the next turn
+ */
 export function shouldCacheThinkingSignatures(model?: string): boolean {
   if (typeof model !== "string") return false;
   const lower = model.toLowerCase();

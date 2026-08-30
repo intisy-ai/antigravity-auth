@@ -3,11 +3,16 @@
  */
 import { getNewestVersion } from "./plugin/versions.js";
 
-// Antigravity's single public installed-app OAuth client, the same one for every
-// user (non-confidential per RFC 8252; already public via the opencode-antigravity-auth
-// npm package). Not customizable; there is only ever this one client.
+/**
+ * The one installed-app OAuth client every user of this provider signs in through.
+ *
+ * @remarks
+ * Non-confidential per RFC 8252 and already public in the upstream package, so it is not a secret
+ * and is not customizable: there is only ever this client.
+ */
 export const ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
 
+/** The matching client secret, public for the same reason the id is. */
 export const ANTIGRAVITY_CLIENT_SECRET = "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";
 
 /**
@@ -32,7 +37,9 @@ export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
  * then fallback to autopush and prod if needed.
  */
 export const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+/** The last sandbox fallback. */
 export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
+/** Where regular accounts are licensed, and so where every request is tried first. */
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
 /**
@@ -58,11 +65,23 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
   ANTIGRAVITY_ENDPOINT_AUTOPUSH,
 ] as const;
 
-// The newest real released version (from the runtime-refreshed version pool), so
-// the quota/models headers don't advertise a stale hardcoded build. The per-account
-// serving User-Agent is picked separately (weighted) in fingerprint.ts.
+/**
+ * The version the quota and model requests advertise.
+ *
+ * @remarks
+ * The newest release in the runtime-refreshed pool, so these requests never advertise a stale
+ * hardcoded build. The per-account serving User-Agent is picked separately and weighted, in
+ * `fingerprint.ts`.
+ *
+ * @returns the version string
+ */
 export function getAntigravityVersion(): string { return getNewestVersion(); }
 
+/**
+ * The headers a quota or model request carries.
+ *
+ * @returns the header set, including the client metadata the upstream validates
+ */
 export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string } {
   return {
     "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${getAntigravityVersion()} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
@@ -71,15 +90,20 @@ export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string
   };
 }
 
+/** The headers a free-lane request carries, which claim the CLI rather than the IDE. */
 export const GEMINI_CLI_HEADERS = {
   "User-Agent": "google-api-nodejs-client/9.15.1",
   "X-Goog-Api-Client": "gl-node/22.17.0",
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
 
+/** The headers every upstream request carries, whichever lane it is on. */
 export type HeaderSet = {
+  /** What the request claims to be. */
   "User-Agent": string;
+  /** Which client library it claims to use. */
   "X-Goog-Api-Client"?: string;
+  /** The IDE and plugin identity the upstream validates. */
   "Client-Metadata"?: string;
 };
 

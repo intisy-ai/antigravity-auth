@@ -10,10 +10,35 @@ import { makeWriteLog } from "@intisy-ai/basekit";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
+/** Where one part of this provider writes its diagnostics, tagged with its own name. */
 export interface Logger {
+  /**
+   * A line only a debug run keeps.
+   *
+   * @param message - what happened
+   * @param extra - structured detail to log beside it
+   */
   debug(message: string, extra?: Record<string, unknown>): void;
+  /**
+   * A line worth keeping on an ordinary run.
+   *
+   * @param message - what happened
+   * @param extra - structured detail to log beside it
+   */
   info(message: string, extra?: Record<string, unknown>): void;
+  /**
+   * Something went wrong that the run recovered from.
+   *
+   * @param message - what happened
+   * @param extra - structured detail to log beside it
+   */
   warn(message: string, extra?: Record<string, unknown>): void;
+  /**
+   * Something went wrong that the run did not recover from.
+   *
+   * @param message - what happened
+   * @param extra - structured detail to log beside it
+   */
   error(message: string, extra?: Record<string, unknown>): void;
 }
 

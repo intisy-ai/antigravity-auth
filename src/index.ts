@@ -59,6 +59,13 @@ const README_SPEC = {
 
 // The readme registration name is the config NAME the driver reads (config/antigravity.json),
 // which the manifest states too; the plugin id stays antigravity-auth.
+/**
+ * The app-shaped plugin hook, which is what an app that invokes every export as a hook loads.
+ *
+ * @remarks
+ * The registration name is the config name the driver reads, which the manifest states too; the
+ * plugin id stays the package name.
+ */
 export const AntigravityProvider = await defineProviderPlugin({
   name: "antigravity",
   driver,

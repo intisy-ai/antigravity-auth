@@ -88,6 +88,10 @@ async function toCoreAccount(result: OauthExchangeResult): Promise<CoreAccount> 
 // account, the loopback listener, racing a paste against the browser) comes from basekit/auth.
 // What stays here is antigravity's own: binding a login proxy, the direct-retry when that
 // proxy cannot connect, and the access gate above.
+/**
+ * This provider's two login forms: the split begin and complete flow a surface drives, and the
+ * all-in-one form the account CLI uses.
+ */
 export const { loginFlow, login } = defineOAuthLogin({
   provider: PROVIDER_ID,
   instructions:

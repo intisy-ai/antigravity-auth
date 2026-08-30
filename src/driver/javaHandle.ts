@@ -106,6 +106,12 @@ const DEFAULT_MODEL = "antigravity-claude-sonnet-4-6";
 // The gemini-cli provider forces the free CLI quota lane for the request; the antigravity
 // provider (or a legacy caller with no HandlerCtx.provider) keeps the config default, so
 // existing antigravity serving is unchanged.
+/**
+ * Whether one request takes the free lane first.
+ *
+ * @param ctx - the handler context, whose resolved handler id names the lane
+ * @returns true when the free lane is forced by the handler, or preferred by the config
+ */
 export function laneCliFirstFor(ctx?: Pick<HandlerCtx, "handlerId">): boolean {
   if (ctx && ctx.handlerId === GEMINI_CLI_PROVIDER_ID) return true;
   return !!config.cli_first;
@@ -124,6 +130,20 @@ export function buildCatalogViaJava(payload: unknown): ProviderCatalog {
 // fetchModels' project-id resolution, routed through the same AntigravityHandleOrchestrator.resolveProjectId
 // the serve path uses. Fixed to one pre-selected `proxy` (fetchModels picks a proxy up front), unlike
 // the per-attempt-account proxy the serve loop resolves via a closure.
+/**
+ * The project id one account's requests are billed to, for the model fetch.
+ *
+ * @remarks
+ * Runs the same Java resolution the serving path does, so the two cannot disagree. Fixed to one
+ * proxy the caller already picked, unlike the serving loop which picks one per acquired account.
+ *
+ * @param manager - the account manager the discovered ids are written back through
+ * @param account - the account to resolve for
+ * @param access - its access token
+ * @param log - where the resolution reports what it did
+ * @param proxy - the outbound proxy, or `undefined` for a direct connection
+ * @returns the project id
+ */
 export async function resolveProjectIdViaJava(
   manager: AntigravityManager,
   account: CoreAccount,
@@ -162,9 +182,21 @@ function isRateLimitStatus(status: number): boolean {
 // config.request_jitter_max_ms: a small random pre-request delay to desynchronize concurrent requests
 // across accounts/sessions. Default 0 disables it. Exported so request-jitter.test.ts can exercise it
 // with a mocked config without standing up the full orchestrator harness.
+/**
+ * Waits.
+ *
+ * @param ms - how long, in milliseconds
+ * @returns a promise that settles once the time has passed
+ */
 export function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+/**
+ * Waits a small random moment before an outbound request, when the config asks for one.
+ *
+ * @remarks
+ * Desynchronizes concurrent requests across accounts and sessions. Disabled by default.
+ */
 export async function applyRequestJitter() {
   const maxMs = config.request_jitter_max_ms;
   if (!maxMs || maxMs <= 0) return;
@@ -280,6 +312,19 @@ export function prepareViaJava(
 // provider's IR<->upstream transport core: handleIrViaJavaOrchestrator encodes the decoded IR to a
 // Gemini request and hands it here. Exported so the regression harness can drive the SAME upstream
 // decision loop (quota rotation, terminal-error, synthetic project id) directly.
+/**
+ * Serves one upstream request through the whole attempt loop.
+ *
+ * @remarks
+ * The Java owns every decision; this owns what needs a host: the fetch and its proxy fallback,
+ * account acquisition and reporting over the shared manager, the project fetches, and building the
+ * final response. No response bytes ever cross into the Java.
+ *
+ * @param request - the upstream request, already encoded
+ * @param ctx - the handler context, whose log is written to on a failure
+ * @param laneCliFirst - whether to force the free lane, or `null` to let the config decide
+ * @returns the upstream response, retained verbatim so a stream stays intact, or a synthetic one
+ */
 export async function runGeminiViaJava(request: Request, ctx?: HandlerCtx, laneCliFirst?: boolean | null): Promise<Response> {
   const log = diagnostic(ctx);
   const cliFirst = laneCliFirst == null ? laneCliFirstFor(ctx) : laneCliFirst;
@@ -485,6 +530,17 @@ export async function runGeminiViaJava(request: Request, ctx?: HandlerCtx, laneC
 // Routes SERVE's response transform through Java. response.ok is always true here (the orchestrator
 // only ever emits SERVE on a 2xx attempt), so the non-ok error-body branch is intentionally not
 // reproduced.
+/**
+ * One served response, transformed by the Java.
+ *
+ * @remarks
+ * A non-JSON, non-event-stream response passes through unchanged. The orchestrator only ever serves
+ * a 2xx here, so the error-body branch of the original transform has no counterpart.
+ *
+ * @param response - the retained upstream response
+ * @param p - what the request that produced it needs the transform to know
+ * @returns the response to answer with
+ */
 export async function transformServeViaJava(response: Response, p: TransformParams): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";
   const isJsonResponse = contentType.includes("application/json");
@@ -591,6 +647,22 @@ function anthropicHandleIrError(status: number, errorType: string, message: stri
 // return, so they are thrown as the canonical HandleIrError (via anthropicHandleIrError) instead of
 // encoded into a Response, matching the handleIr contract, so the front door can reconstruct the real
 // status/headers/body.
+/**
+ * This provider's canonical-IR serving path.
+ *
+ * @remarks
+ * Takes an already app-wire-decoded request, runs only the IR to upstream core (this provider's
+ * thinking-budget resolution plus the neutral encode), and decodes the upstream stream back into IR
+ * events. No app-wire format code lives here. Always answers with a stream, because the upstream
+ * call is always a streaming one, which is what keeps the streaming end to end.
+ *
+ * A failure has no IR-shaped representation, so it is thrown as the typed transport error the
+ * front-door reconstructs a response from, rather than encoded into one here.
+ *
+ * @param ir - the decoded request
+ * @param ctx - the handler context, whose model names the lane and whose log takes the diagnostics
+ * @returns the response as a stream of IR events
+ */
 export async function handleIrViaJavaOrchestrator(ir: IrRequest, ctx?: HandlerCtx): Promise<ReadableStream<IrStreamEvent>> {
   const log = diagnostic(ctx);
   const model = (ctx && ctx.model) || DEFAULT_MODEL;

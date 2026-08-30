@@ -49,6 +49,7 @@ interface AntigravityTokenExchangeFailure {
   error: string;
 }
 
+/** What the token exchange came back with: the account, or why it could not be had. */
 export type AntigravityTokenExchangeResult =
   | AntigravityTokenExchangeSuccess
   | AntigravityTokenExchangeFailure;

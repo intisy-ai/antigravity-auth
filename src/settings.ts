@@ -4,6 +4,7 @@ import { COMMON_PROVIDER_CAPABILITIES, toCapabilitiesFields, retryBackoffCapabil
 import type { CapabilitySchema } from "@intisy-ai/basekit";
 import { ANTIGRAVITY_SETTINGS_SCHEMA, RETRY_KEYS } from "./driver/index.js";
 
+/** What a surface renders for this provider's settings, and which key each field writes. */
 export const ANTIGRAVITY_SETTINGS: CapabilitySchema = {
   fields: [
     ...COMMON_PROVIDER_CAPABILITIES,

@@ -43,6 +43,11 @@ function normalize(versions: string[]): string[] {
   return [...set].sort((a, b) => cmpSemver(b, a));
 }
 
+/**
+ * The version pool an account's User-Agent is picked from.
+ *
+ * @returns the pool, newest first
+ */
 export function getVersionList() {
   return versionList;
 }
@@ -51,12 +56,30 @@ export function getVersionList() {
 // (constants.ts's getAntigravityHeaders, used synchronously across ~7 call sites) would otherwise need
 // an async ripple (or a circular import back into driver/javaHandle.ts) for a one-line,
 // zero-correlation-risk accessor. The entropy-bearing pick/drift live in Java exclusively.
+/**
+ * The newest version in the pool.
+ *
+ * @remarks
+ * Deterministic and free of entropy, so it stays here rather than in the Java: its only caller
+ * resolves headers synchronously across several call sites, and routing it through the transpiled
+ * side would make all of them asynchronous for a one-line accessor.
+ *
+ * @returns the newest version, falling back to the curated pool when the live one is empty
+ */
 export function getNewestVersion() {
   return versionList[0] || FALLBACK_VERSIONS[0];
 }
 
 // Best-effort, throttled, non-blocking refresh of the pool from the release feed.
 // Never throws; on any failure the existing (curated) list stays in place.
+/**
+ * Refreshes the version pool from the public release feed, at most once every six hours.
+ *
+ * @remarks
+ * Never throws and never blocks a request: on any failure the existing pool stays in place.
+ *
+ * @param log - where the refresh reports what it found
+ */
 export async function refreshVersions(log?: (message: string) => void) {
   const now = Date.now();
   if (fetching || now - lastFetchAt < REFRESH_TTL_MS) return;

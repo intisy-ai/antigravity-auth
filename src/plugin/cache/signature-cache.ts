@@ -75,6 +75,13 @@ function getCacheFilePath(): string {
   return join(configSubDir, "antigravity-signature-cache.json");
 }
 
+/**
+ * The on-disk half of the thinking-signature cache.
+ *
+ * @remarks
+ * Holds entries in memory and flushes the dirty ones on an interval, so a signature survives a
+ * restart without a write on every turn. Inert until the config enables it.
+ */
 export class SignatureCache {
 
   private cache: Map<string, CacheEntry> = new Map();

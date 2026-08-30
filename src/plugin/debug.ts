@@ -153,10 +153,20 @@ function getDebugState(): DebugState {
   return debugState;
 }
 
+/**
+ * Whether this process writes debug logs at all.
+ *
+ * @returns true when it does
+ */
 export function isDebugEnabled(): boolean {
   return getDebugState().debugEnabled;
 }
 
+/**
+ * Whether those logs also reach the terminal panel.
+ *
+ * @returns true when they do
+ */
 export function isDebugTuiEnabled(): boolean {
   return getDebugState().debugTuiEnabled;
 }

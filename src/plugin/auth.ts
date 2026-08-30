@@ -5,6 +5,12 @@ import {
   calculateTokenExpiry as coreCalculateTokenExpiry,
 } from "@intisy-ai/basekit/auth";
 
+/**
+ * Whether stored auth is an OAuth credential rather than another kind.
+ *
+ * @param auth - the stored auth
+ * @returns true when it is, narrowing the type for the caller
+ */
 export function isOAuthAuth(auth: AuthDetails): auth is OAuthAuthDetails {
   return coreIsOAuthAuth(auth);
 }

@@ -11,4 +11,5 @@ import { driver } from "./driver/index.js";
 // own copy of basekit/auth's module-level emitter and needs its own one-time wiring.
 setActivityEmitter((spec: ActivitySpec, source: string) => emitEvent(spec, source));
 
+/** What the proxy front-door imports from this bundle to serve and manage this provider. */
 export const { handleIr, accounts, loginFlow, menu, menuModel } = providerHandlerExports(driver);

@@ -68,6 +68,13 @@ const PROVIDER_ID = "antigravity";
 // The free Gemini CLI quota pool, exposed as a second first-class provider sharing the
 // antigravity account pool. Its provider id, arriving as HandlerCtx.provider, forces the
 // gemini-cli lane per request (see javaHandle's laneCliFirst).
+/**
+ * The provider id the free Gemini CLI lane is registered under.
+ *
+ * @remarks
+ * A second first-class provider over the same account pool. Its id arriving as the resolved handler
+ * forces the free lane for that request.
+ */
 export const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
@@ -82,6 +89,7 @@ initSignatureCache(config.signature_cache); // constructs the disk-backed Signat
 
 // antigravity's own retry/backoff config key names + default values (60s/60s); the shape,
 // coercion, and settings presentation are shared via basekit/auth's provider-common.
+/** Which config keys this provider's retry backoff reads, for the shared helper that reads them. */
 export const RETRY_KEYS = { baseKey: "default_retry_after_seconds", maxKey: "max_backoff_seconds" };
 const RETRY_DEFAULTS = { baseSeconds: 60, maxSeconds: 60 };
 
@@ -193,10 +201,23 @@ async function wholeCatalog(ctx: FetchModelsCtx): Promise<ProviderCatalog | null
 // this provider meters carries its own id prefix, and what is left is the free gemini-cli
 // pool. Splitting here is what keeps each provider's model count its own, instead of filing
 // every model under whichever lane happened to do the fetch.
+/**
+ * Which of the two lanes a model belongs to.
+ *
+ * @param modelId - the model id, as the catalog spells it
+ * @returns the provider id that lane is registered under
+ */
 export function laneOf(modelId: string): string {
   return modelId.startsWith(PROVIDER_ID + "-") ? PROVIDER_ID : GEMINI_CLI_PROVIDER_ID;
 }
 
+/**
+ * One lane's half of the catalog the single upstream fetch answered with.
+ *
+ * @param catalog - the whole catalog, or `null` when the fetch found nothing
+ * @param lane - the provider id to keep the models of
+ * @returns that lane's catalog, or `null` when it has no models
+ */
 export function catalogForLane(catalog: ProviderCatalog | null, lane: string): ProviderCatalog | null {
   if (!catalog) return null;
   const models: Record<string, ProviderModel> = {};
@@ -244,6 +265,14 @@ const ACCOUNT_ROTATION_SETTINGS_GROUP = {
 // (above) and the retry/backoff pair (RETRY_KEYS, via basekit/auth's provider-common) are shared with
 // every basekit auth provider, so they stay out of this schema and are composed back in separately by
 // each consumer.
+/**
+ * This provider's own settings, grouped for display.
+ *
+ * @remarks
+ * One schema shared by the loader's settings menu and the dashboard's capabilities panel, so the two
+ * surfaces cannot drift out of key-set sync. The settings every provider shares are composed in
+ * separately by each consumer rather than repeated here.
+ */
 export const ANTIGRAVITY_SETTINGS_SCHEMA: ProviderSettingsSchema = [
   {
     title: "Rate limits",
@@ -284,6 +313,7 @@ export const ANTIGRAVITY_SETTINGS_SCHEMA: ProviderSettingsSchema = [
   },
 ];
 
+/** What this provider offers a host: its models, how to serve one, how to log in, and its settings. */
 export const driver: AntigravityDriver = {
   id: PROVIDER_ID,
   label: "Antigravity",

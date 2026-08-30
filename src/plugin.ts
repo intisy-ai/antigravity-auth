@@ -51,4 +51,5 @@ const plugin: Plugin = {
   deactivate() {},
 };
 
+/** The api plugin an in-process host loads from this bundle. */
 export default plugin;

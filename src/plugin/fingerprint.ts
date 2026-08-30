@@ -37,18 +37,35 @@ const SDK_CLIENTS = [
   "google-cloud-sdk vscode/1.96.0",
 ];
 
+/** The IDE identity a request claims, which the upstream validates. */
 export interface ClientMetadata {
+  /** Which IDE it claims to be. */
   ideType: string;
+  /** Which platform it claims to run on. */
   platform: string;
+  /** Which plugin it claims to be. */
   pluginType: string;
 }
 
+/**
+ * One account's stable device identity.
+ *
+ * @remarks
+ * Minted once per account and persisted, so an account presents the same machine every time rather
+ * than a fresh one per request.
+ */
 export interface Fingerprint {
+  /** What identifies the machine. */
   deviceId: string;
+  /** What identifies this install's session. */
   sessionToken: string;
+  /** What the account's requests claim to be. */
   userAgent: string;
+  /** Which client library they claim to use. */
   apiClient: string;
+  /** The IDE identity they claim. */
   clientMetadata: ClientMetadata;
+  /** When the fingerprint was minted, in epoch milliseconds. */
   createdAt: number;
   /** The Antigravity version embedded in userAgent; drifts forward over time. */
   version?: string;
