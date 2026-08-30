@@ -2,7 +2,7 @@
 // (v1internal:fetchAvailableModels). Catalog assembly from the response now lives in Java
 // (AntigravityCatalog.buildAntigravityCatalog, called via driver/javaHandle.ts's buildCatalogViaJava).
 
-import { ANTIGRAVITY_ENDPOINT_FALLBACKS, getAntigravityHeaders } from "../constants";
+import { ANTIGRAVITY_ENDPOINT_FALLBACKS, getAntigravityHeaders } from "../constants.js";
 
 interface FetchedModelInfo {
   displayName?: string;

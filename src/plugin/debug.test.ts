@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DEFAULT_CONFIG } from "./config"
+import { DEFAULT_CONFIG } from "./config/index.js"
 
 const { ensureGitignoreSyncMock } = vi.hoisted(() => ({
   ensureGitignoreSyncMock: vi.fn(),
@@ -37,7 +37,7 @@ describe("debug sink policy", () => {
   })
 
   it("keeps debug_tui independent from debug in config", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug.js")
 
     initializeDebug({
       ...DEFAULT_CONFIG,
@@ -53,14 +53,14 @@ describe("debug sink policy", () => {
     process.env.ANTIGRAVITY_DEBUG = "0"
     process.env.ANTIGRAVITY_DEBUG_TUI = "1"
 
-    const { isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
+    const { isDebugEnabled, isDebugTuiEnabled } = await import("./debug.js")
 
     expect(isDebugEnabled()).toBe(false)
     expect(isDebugTuiEnabled()).toBe(true)
   })
 
   it("keeps file debug enabled without TUI when only debug is true", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled } = await import("./debug.js")
 
     initializeDebug({
       ...DEFAULT_CONFIG,

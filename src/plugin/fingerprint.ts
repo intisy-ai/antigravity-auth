@@ -10,7 +10,8 @@
 
 import * as crypto from "node:crypto";
 import * as os from "node:os";
-import { getVersionList } from "./versions";
+import { getVersionList } from "./versions.js";
+import { orchestrator } from "../driver/java.js";
 
 const OS_VERSIONS: Record<string, string[]> = {
   darwin: ["10.15.7", "11.6.8", "12.6.3", "13.5.2", "14.2.1", "14.5"],
@@ -88,8 +89,6 @@ export async function generateFingerprint(): Promise<Fingerprint> {
   const arch = randomFrom(ARCHITECTURES);
   const osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
   // weighted toward newer real versions, AntigravityVersions.pickVersion (Java), real jsRandom.
-  const { loadOrchestrator } = await import("../driver/javaHandle.js");
-  const orchestrator = await loadOrchestrator();
   const version = orchestrator.pickVersionProd(JSON.stringify(getVersionList()), "", () => Math.random());
 
   return {

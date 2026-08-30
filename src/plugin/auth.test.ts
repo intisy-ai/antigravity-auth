@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isOAuthAuth, parseRefreshParts, formatRefreshParts, accessTokenExpired } from "./auth";
-import type { OAuthAuthDetails, ApiKeyAuthDetails } from "./types";
+import { isOAuthAuth, parseRefreshParts, formatRefreshParts, accessTokenExpired } from "./auth.js";
+import type { OAuthAuthDetails, ApiKeyAuthDetails } from "./types.js";
 import { initCoreAuth } from "@intisy-ai/basekit/auth";
 
 describe("isOAuthAuth", () => {

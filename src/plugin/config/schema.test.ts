@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CONFIG } from "./schema";
+import { DEFAULT_CONFIG } from "./schema.js";
 
 // Config defaults are the source of truth (the standalone assets/*.schema.json
 // file was dropped when the model catalog went live, so the old "documents … in

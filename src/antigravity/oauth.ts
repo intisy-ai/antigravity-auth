@@ -9,9 +9,9 @@ import {
   ANTIGRAVITY_LOAD_ENDPOINTS,
   getAntigravityHeaders,
   GEMINI_CLI_HEADERS,
-} from "../constants";
-import { createLogger } from "../plugin/logger";
-import { calculateTokenExpiry } from "../plugin/auth";
+} from "../constants.js";
+import { createLogger } from "../plugin/logger.js";
+import { calculateTokenExpiry } from "../plugin/auth.js";
 import { encodeState as coreEncodeState, decodeState as coreDecodeState, timeoutFetch } from "@intisy-ai/basekit/auth";
 
 const log = createLogger("oauth");

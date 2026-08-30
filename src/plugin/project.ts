@@ -1,28 +1,19 @@
 // Host I/O for project-context discovery: the two network fetch loops (loadManagedProject /
 // onboardManagedProject, used by both Java paths via the jsLoad/jsOnboard seams) plus
-// buildMetadata/detectCodeAssistPlatform, the local body formatting those loops call directly. The
+// buildMetadata, the local body formatting those loops call directly. The
 // project-id discovery decision itself is owned by the Java orchestrator.
-import { getAntigravityHeaders, ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_LOAD_ENDPOINTS } from "../constants";
-import { createLogger } from "./logger";
+import { getAntigravityHeaders, ANTIGRAVITY_ENDPOINT_FALLBACKS, ANTIGRAVITY_LOAD_ENDPOINTS } from "../constants.js";
+import { createLogger } from "./logger.js";
+import { orchestrator } from "../driver/java.js";
 
 const log = createLogger("project");
 
 // The loadCodeAssist/onboardUser request body validates metadata.platform against
-// ClientMetadata.Platform. "WINDOWS"/"MACOS" are NOT valid enum values (they 400 the request); it must
-// be e.g. LINUX_AMD64 / DARWIN_ARM64 / WINDOWS_AMD64.
-function detectCodeAssistPlatform(): string {
-  const arch = process.arch === "arm64" ? "ARM64" : "AMD64";
-  switch (process.platform) {
-    case "win32": return `WINDOWS_${arch}`;
-    case "darwin": return `DARWIN_${arch}`;
-    case "linux": return `LINUX_${arch}`;
-    default: return "PLATFORM_UNSPECIFIED";
-  }
-}
-
+// ClientMetadata.Platform, where "WINDOWS"/"MACOS" are not valid values and 400 the request. Which
+// value a host maps to is the Java's to decide, like every other decision this provider makes.
 const CODE_ASSIST_METADATA = {
   ideType: "ANTIGRAVITY",
-  platform: detectCodeAssistPlatform(),
+  platform: orchestrator.detectCodeAssistPlatform(process.platform, process.arch),
   pluginType: "GEMINI",
 } as const;
 

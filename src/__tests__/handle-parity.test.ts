@@ -1,4 +1,3 @@
-// @ts-nocheck
 // JAVA-PATH REGRESSION: the provider's Gemini upstream core (`runGeminiViaJava`) delegates to the
 // TeaVM-compiled Java orchestrator, so there is no second TS path to diff against. Instead this
 // asserts runGeminiViaJava's output: final Response (status/headers/streamed body), the ordered

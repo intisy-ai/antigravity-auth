@@ -1,31 +1,40 @@
-// @ts-nocheck
 // Tests for two of the wired config features (the third, signature_cache, is covered in
 // plugin/cache.test.ts):
 //
 //   - cli_first: prepareViaJava threads the configured value through to the Java resolver's cliFirst
 //     param as its 14th positional argument (after claudeToolHardening/claudePromptAutoCaching, before
 //     the jsRandom/jsUuid/... host seams). These tests prove the configured value reaches that call,
-//     without needing the full TeaVM orchestrator (a fake orchestrator captures the args).
+//     without needing the full TeaVM orchestrator (a mocked seam module captures the args).
 //
 //   - request_jitter_max_ms: a pre-fetch random delay in jsExec's transport. applyRequestJitter is
 //     exported so it can be exercised directly against a mocked config, without standing up the
 //     full account/orchestrator harness handle-parity.test.ts uses.
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { prepareViaJava } from "./javaHandle.js";
 
-function fakeOrchestrator() {
-  const calls: any[] = [];
+// The seam onto the Java is a static import, so the capture replaces the seam module rather than
+// being threaded in as an argument. Everything but the one export under test stays the real Java,
+// because other modules in this graph call the seam as they load.
+const captured = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+
+vi.mock("./java.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./java.js")>();
   return {
-    calls,
-    prepareAntigravityRequestProd(...args: any[]) {
-      calls.push(args);
-      return JSON.stringify({
-        request: "https://example.invalid/", headers: {}, body: null, streaming: false,
-        effectiveModel: "m", projectId: "p", sessionId: "s", headerStyle: "antigravity",
-      });
+    ...actual,
+    orchestrator: {
+      ...actual.orchestrator,
+      prepareAntigravityRequestProd(...args: unknown[]) {
+        captured.calls.push(args);
+        return JSON.stringify({
+          request: "https://example.invalid/", headers: {}, body: null, streaming: false,
+          effectiveModel: "m", projectId: "p", sessionId: "s", headerStyle: "antigravity",
+        });
+      },
     },
   };
-}
+});
+
+beforeEach(() => { captured.calls.length = 0; });
 
 // Positional index of `cliFirst` in the orchestrator.prepareAntigravityRequestProd call built by
 // prepareViaJava: url,method,headersJson,body,accessToken,projectId,headerStyle,fingerprintJson,
@@ -34,33 +43,30 @@ const CLI_FIRST_ARG_INDEX = 13;
 
 describe("cli_first: threaded into prepareAntigravityRequestProd", () => {
   it("passes an explicit true cliFirst through to the Java call", () => {
-    const orchestrator = fakeOrchestrator();
     prepareViaJava(
-      orchestrator, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      "POST", "{}", "{}", "tok", "proj", null, "antigravity", null,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "POST", "{}", "{}", "tok", "proj", undefined, "antigravity", null,
       /* claudeToolHardening */ true, /* claudePromptAutoCaching */ false, /* cliFirst */ true,
     );
-    expect(orchestrator.calls).toHaveLength(1);
-    expect(orchestrator.calls[0][CLI_FIRST_ARG_INDEX]).toBe(true);
+    expect(captured.calls).toHaveLength(1);
+    expect(captured.calls[0][CLI_FIRST_ARG_INDEX]).toBe(true);
   });
 
   it("passes an explicit false cliFirst through unchanged", () => {
-    const orchestrator = fakeOrchestrator();
     prepareViaJava(
-      orchestrator, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      "POST", "{}", "{}", "tok", "proj", null, "antigravity", null,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "POST", "{}", "{}", "tok", "proj", undefined, "antigravity", null,
       true, false, false,
     );
-    expect(orchestrator.calls[0][CLI_FIRST_ARG_INDEX]).toBe(false);
+    expect(captured.calls[0][CLI_FIRST_ARG_INDEX]).toBe(false);
   });
 
   it("defaults to DEFAULT_CONFIG.cli_first (false) when the caller omits it, the pre-wiring behavior", () => {
-    const orchestrator = fakeOrchestrator();
     prepareViaJava(
-      orchestrator, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      "POST", "{}", "{}", "tok", "proj", null, "antigravity", null,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "POST", "{}", "{}", "tok", "proj", undefined, "antigravity", null,
     );
-    expect(orchestrator.calls[0][CLI_FIRST_ARG_INDEX]).toBe(false);
+    expect(captured.calls[0][CLI_FIRST_ARG_INDEX]).toBe(false);
   });
 });
 

@@ -32,3 +32,13 @@ export interface RefreshParts {
   projectId?: string;
   managedProjectId?: string;
 }
+
+/**
+ * A fetch init this runtime also honours a per-request proxy on.
+ *
+ * @remarks
+ * basekit's `proxiedFetch` declares this shape inline while `timeoutFetch` takes a plain
+ * `RequestInit`, though both honour the field. Naming it once here keeps every call site in this
+ * provider agreeing about it.
+ */
+export type ProxiedInit = RequestInit & { proxy?: string };

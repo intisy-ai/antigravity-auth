@@ -1,10 +1,18 @@
-// @ts-nocheck
 // Thin host TransformStream shells driving the Java-side stateful stream mappers. Each shell decodes
 // upstream bytes to text and forwards them; the Java mapper owns SSE line-buffering, JSON parsing,
 // and every per-line decision.
 
-// Real Date.now/Math.random id minting, injected into the Java stream mapper so it never bakes entropy.
-export const jsIds = {
+import type {
+  AntigravityIrStreamMapperHandle,
+  AntigravitySseTransformHandle,
+  AntigravityStreamIdsShape,
+} from "../generated/antigravity-orchestrator.teavm.js";
+import type { IrStreamEvent } from "@intisy-ai/basekit/ir";
+
+/**
+ * Real id minting, injected into the Java stream mapper so it never bakes entropy into the bundle.
+ */
+export const jsIds: AntigravityStreamIdsShape = {
   newMessageId() {
     return "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   },
@@ -13,38 +21,66 @@ export const jsIds = {
   },
 };
 
-// handleIr's stream-decode half: the Java newIrStreamMapper returns a JSON array of enriched
-// (id-minted, model-overwritten) IrStreamEvents, so this shell decodes bytes to text and parses the
-// array. No wire-format knowledge here.
-export function makeIrStream(newIrStreamMapperFn, model, ids) {
+/**
+ * The stream-decode half of `handleIr`: upstream bytes in, canonical IR events out.
+ *
+ * @remarks
+ * The Java mapper answers with the enriched events as a JSON array, so this shell only decodes
+ * bytes to text and parses what comes back. No wire-format knowledge lives here.
+ *
+ * @param newIrStreamMapperFn - the Java factory for one stream's mapper
+ * @param model - the model to stamp on every event
+ * @param ids - the host's id minting
+ * @returns the transform to pipe the upstream body through
+ */
+export function makeIrStream(
+  newIrStreamMapperFn: (model: string, ids: AntigravityStreamIdsShape) => AntigravityIrStreamMapperHandle,
+  model: string,
+  ids: AntigravityStreamIdsShape,
+): TransformStream<Uint8Array, IrStreamEvent> {
   const mapper = newIrStreamMapperFn(model, ids);
-  const dec = new TextDecoder();
+  const decoder = new TextDecoder();
 
-  return new TransformStream({
-    transform(chunk, ctrl) {
-      const events = JSON.parse(mapper.handle(dec.decode(chunk, { stream: true })));
-      for (const ev of events) ctrl.enqueue(ev);
+  return new TransformStream<Uint8Array, IrStreamEvent>({
+    transform(chunk, controller) {
+      const events: IrStreamEvent[] = JSON.parse(mapper.handle(decoder.decode(chunk, { stream: true })));
+      for (const event of events) controller.enqueue(event);
     },
-    flush(ctrl) {
-      const events = JSON.parse(mapper.finish());
-      for (const ev of events) ctrl.enqueue(ev);
+    flush(controller) {
+      const events: IrStreamEvent[] = JSON.parse(mapper.finish());
+      for (const event of events) controller.enqueue(event);
     },
   });
 }
 
-// The streaming half of SERVE's response transform. This shell owns the host-side framing: the
-// TextEncoder/TextDecoder, the '\n'-buffering loop, the 45s silence watchdog, and the synthetic-usage
-// flush when no usageMetadata was seen. Every line's dedup/signature-cache/debug-inject/
-// thinking-transform decision runs in Java via sseHandle.
-export function makeResponseTransformStream(sseHandle, onComplete, onWatchdogTimeout) {
+const WATCHDOG_MS = 45000;
+
+/**
+ * The streaming half of a served response's transform.
+ *
+ * @remarks
+ * This shell owns the host-side framing: the encoder pair, the newline-buffering loop, the silence
+ * watchdog, and the synthetic usage record emitted when the upstream sent none. Every line's dedup,
+ * signature-cache, debug-inject and thinking-transform decision runs in Java behind `sseHandle`.
+ *
+ * @param sseHandle - the Java transformer for this one response
+ * @param onComplete - run once the stream is finished, however it finished
+ * @param onWatchdogTimeout - run when the upstream falls silent, before the stream is terminated
+ * @returns the transform to pipe the upstream body through
+ */
+export function makeResponseTransformStream(
+  sseHandle: AntigravitySseTransformHandle,
+  onComplete?: () => void,
+  onWatchdogTimeout?: () => unknown,
+): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
   let hasSeenUsageMetadata = false;
 
-  let watchdogTimer = null;
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   let isDone = false;
-  let controllerRef = null;
+  let controllerRef: TransformStreamDefaultController<Uint8Array> | null = null;
 
   const resetWatchdog = () => {
     if (isDone || !controllerRef) return;
@@ -58,10 +94,10 @@ export function makeResponseTransformStream(sseHandle, onComplete, onWatchdogTim
       };
       if (onWatchdogTimeout) Promise.resolve(onWatchdogTimeout()).finally(finish);
       else finish();
-    }, 45000);
+    }, WATCHDOG_MS);
   };
 
-  return new TransformStream({
+  return new TransformStream<Uint8Array, Uint8Array>({
     start(controller) {
       controllerRef = controller;
       resetWatchdog();
@@ -73,8 +109,7 @@ export function makeResponseTransformStream(sseHandle, onComplete, onWatchdogTim
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (line.includes("usageMetadata")) hasSeenUsageMetadata = true;
-        const transformedLine = sseHandle.handle(line);
-        controller.enqueue(encoder.encode(transformedLine + "\n"));
+        controller.enqueue(encoder.encode(sseHandle.handle(line) + "\n"));
       }
     },
     flush(controller) {
@@ -83,8 +118,7 @@ export function makeResponseTransformStream(sseHandle, onComplete, onWatchdogTim
       buffer += decoder.decode();
       if (buffer) {
         if (buffer.includes("usageMetadata")) hasSeenUsageMetadata = true;
-        const transformedLine = sseHandle.handle(buffer);
-        controller.enqueue(encoder.encode(transformedLine));
+        controller.enqueue(encoder.encode(sseHandle.handle(buffer)));
       }
       if (!hasSeenUsageMetadata) {
         const syntheticUsage = {

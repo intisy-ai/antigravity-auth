@@ -1,11 +1,10 @@
-// @ts-nocheck
 // Verifies jsPreparer's Java-driven prepare (prepareAntigravityRequestProd, via javaHandle.ts's
 // exported prepareViaJava) produces the frozen output (prepare-scenarios.expected.json) for a
 // representative Gemini body and a representative Claude (thinking) body.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
 import { getPluginSessionId } from "../plugin/request.js";
-import { prepareViaJava, loadOrchestrator } from "../driver/javaHandle.js";
+import { prepareViaJava } from "../driver/javaHandle.js";
 import expected from "./prepare-scenarios.expected.json";
 
 const SESSION_PLACEHOLDER = "<PLUGIN_SESSION_ID>";
@@ -72,9 +71,8 @@ afterEach(() => { vi.restoreAllMocks(); });
 describe("prepare parity: Java prepareAntigravityRequestProd vs the frozen TS fixture", () => {
   for (const [name, sc] of Object.entries(scenarios)) {
     it(`${name}: Java jsPreparer output (prepareViaJava) byte-matches the frozen TS fixture`, async () => {
-      const orchestrator = await loadOrchestrator();
       const javaResult = prepareViaJava(
-        orchestrator, sc.url, sc.method, JSON.stringify(sc.headers), sc.body,
+        sc.url, sc.method, JSON.stringify(sc.headers), sc.body,
         sc.accessToken, sc.projectId, sc.endpointOverride, sc.headerStyle, FIXED_FP,
       );
       expect(normalize(comparable(javaResult))).toEqual(expected[name]);

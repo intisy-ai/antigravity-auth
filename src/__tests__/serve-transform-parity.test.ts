@@ -4,7 +4,7 @@
 // (serve-transform-scenarios.expected.json) for non-streaming JSON, streaming SSE, the image
 // (inlineData -> processImageData) case, and the Gemini-3 SSE-reconnect thought-dedup gate.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { transformServeViaJava, loadOrchestrator } from "../driver/javaHandle.js";
+import { transformServeViaJava } from "../driver/javaHandle.js";
 import rawExpected from "./serve-transform-scenarios.expected.json";
 
 // The real processImageData sink writes under the runner's home dir, so the saved-image path in the
@@ -70,8 +70,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
     const makeResponse = () =>
       new Response(JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "hello there" }] }, finishReason: "STOP" }] } }), { status: 200, headers: jsonHeaders });
 
-    const orchestrator = await loadOrchestrator();
-    const jvSnap = await snapshotResponse(await transformServeViaJava(orchestrator, makeResponse(), {
+    const jvSnap = await snapshotResponse(await transformServeViaJava(makeResponse(), {
       requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
       effectiveModel: "claude-sonnet-4-6", sessionId: "sess-1", streaming: false,
     }));
@@ -89,8 +88,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
         },
       }), { status: 200, headers: jsonHeaders });
 
-    const orchestrator = await loadOrchestrator();
-    const jvSnap = await snapshotResponse(await transformServeViaJava(orchestrator, makeResponse(), {
+    const jvSnap = await snapshotResponse(await transformServeViaJava(makeResponse(), {
       requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
       effectiveModel: "claude-sonnet-4-6-thinking", sessionId: "sess-2", streaming: false,
     }));
@@ -106,8 +104,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
         },
       }), { status: 200, headers: jsonHeaders });
 
-    const orchestrator = await loadOrchestrator();
-    const jvSnap = await snapshotResponse(await transformServeViaJava(orchestrator, makeResponse(), {
+    const jvSnap = await snapshotResponse(await transformServeViaJava(makeResponse(), {
       requestedModel: "antigravity-claude-opus-4", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
       effectiveModel: "claude-opus-4", sessionId: "sess-3", streaming: false,
     }));
@@ -130,8 +127,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
           },
         }), { status: 200, headers: jsonHeaders });
 
-      const orchestrator = await loadOrchestrator();
-      const jvSnap = await snapshotResponse(await transformServeViaJava(orchestrator, makeResponse(), {
+      const jvSnap = await snapshotResponse(await transformServeViaJava(makeResponse(), {
         requestedModel: "antigravity-gemini-3-pro-image", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
         effectiveModel: "gemini-3-pro-image", sessionId: "sess-4", streaming: false,
       }));
@@ -153,8 +149,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
 
         const makeResponse = () => new Response(sseBody, { status: 200, headers: sseHeaders });
 
-        const orchestrator = await loadOrchestrator();
-        const jvSnap = await snapshotResponse(await transformServeViaJava(orchestrator, makeResponse(), {
+        const jvSnap = await snapshotResponse(await transformServeViaJava(makeResponse(), {
           requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
           effectiveModel: "claude-sonnet-4-6-thinking", sessionId: "sess-5", streaming: true,
         }));
@@ -184,12 +179,11 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
         requestedModel: "antigravity-gemini-3-pro", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
         effectiveModel: "gemini-3-pro", sessionId: "sess-6",
       };
-      const orchestrator = await loadOrchestrator();
 
       // Stream 1 (first occurrence): the thinking text is new to the process-lifetime dedup set, so it
       // passes through unchanged.
       const jvSnap1 = await snapshotResponse(
-        await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+        await transformServeViaJava(makeResponse(), { ...params, streaming: true }),
       );
       expect(expected.gemini3Stream1.body).toContain(thinkingText);
       expect(jvSnap1).toEqual(expected.gemini3Stream1);
@@ -198,7 +192,7 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
       // EXACT same thinking text. Only the process-lifetime hash set (populated by stream 1) can catch
       // this -- the per-stream delta buffers alone would treat it as brand new.
       const jvSnap2 = await snapshotResponse(
-        await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+        await transformServeViaJava(makeResponse(), { ...params, streaming: true }),
       );
       expect(expected.gemini3Stream2.body).not.toContain(thinkingText);
       expect(jvSnap2).toEqual(expected.gemini3Stream2);
@@ -214,12 +208,11 @@ describe("SERVE-transform parity: Java-driven transformServeViaJava vs the froze
         requestedModel: "antigravity-claude-sonnet-4-6", projectId: "proj-1", endpoint: "https://cloudcode-pa.googleapis.com",
         effectiveModel: "claude-sonnet-4-6-thinking", sessionId: "sess-7",
       };
-      const orchestrator = await loadOrchestrator();
       const expectedPasses = [expected.nonGemini3Pass1, expected.nonGemini3Pass2];
 
       for (let i = 0; i < 2; i++) {
         const jvSnap = await snapshotResponse(
-          await transformServeViaJava(orchestrator, makeResponse(), { ...params, streaming: true }),
+          await transformServeViaJava(makeResponse(), { ...params, streaming: true }),
         );
         expect(expectedPasses[i].body).toContain(thinkingText);
         expect(jvSnap).toEqual(expectedPasses[i]);

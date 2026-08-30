@@ -1,12 +1,12 @@
 import { createWriteStream, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { env } from "node:process";
-import type { AntigravityConfig } from "./config";
+import type { AntigravityConfig } from "./config/index.js";
 import {
   deriveDebugPolicy,
   isTruthyFlag,
-} from "./logging-utils";
-import { ensureGitignoreSync } from "./storage";
+} from "./logging-utils.js";
+import { ensureGitignoreSync } from "./storage.js";
 import { getAppConfigDir } from "@intisy-ai/basekit";
 
 interface DebugState {

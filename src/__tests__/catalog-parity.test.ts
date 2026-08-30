@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Verifies buildCatalogViaJava (javaHandle.ts, calling AntigravityProviderJs's buildCatalog export ->
 // AntigravityCatalog.buildAntigravityCatalog) produces the frozen output
 // (catalog-scenarios.expected.json) for a representative fetchAvailableModels payload: effort-variant

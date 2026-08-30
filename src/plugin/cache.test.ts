@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { cacheSignature, getCachedSignature, getDiskCacheForTesting, initSignatureCache } from "./cache";
+import { cacheSignature, getCachedSignature, getDiskCacheForTesting, initSignatureCache } from "./cache.js";
 
 describe("Signature Cache", () => {
   beforeEach(() => {

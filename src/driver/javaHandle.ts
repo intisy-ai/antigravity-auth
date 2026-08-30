@@ -1,9 +1,7 @@
-// @ts-nocheck
 // The delegation shell that runs antigravity-auth's `handleIr` decision loop (and the account-view
 // quota/catalog helpers below) through the TeaVM-compiled Java orchestrator
-// (`AntigravityHandleOrchestrator` plus `AntigravityProviderJs`'s other exports). The driver's
-// `handleIr` dynamically imports this module on the first request; the TeaVM ESM loads via the
-// lazily-memoized `loadOrchestrator()` below, so the ~MB compiled bundle only evaluates once needed.
+// (`AntigravityHandleOrchestrator` plus `AntigravityProviderJs`'s other exports), reached through
+// the statically imported seam in `java.ts`.
 //
 // Split of responsibility (mirrors AntigravityHandleOrchestrator's javadoc):
 //   - The Java orchestrator owns EVERY decision: model resolve + Auto candidate walk, the
@@ -24,13 +22,23 @@
 // `makeResponseTransformStream`.
 
 import crypto from "node:crypto";
-import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, lazyModule, initCoreAuth } from "@intisy-ai/basekit/auth";
+import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch, safeJsonParse, initCoreAuth, type CoreAccount } from "@intisy-ai/basekit/auth";
+import type { HandlerCtx, IrRequest, IrStreamEvent } from "@intisy-ai/basekit/ir";
+import type {
+  AntigravityAccountOpsShape,
+  AntigravitySignatureStoreShape,
+  AntigravityThoughtDedupShape,
+} from "../generated/antigravity-orchestrator.teavm.js";
+import { orchestrator, jsRandom, jsUuid } from "./java.js";
+import { diagnostic } from "./diagnostics.js";
+import type { ProxiedInit } from "../plugin/types.js";
+import type { AntigravityConfig } from "../plugin/config/schema.js";
 // Re-exported at this same path (not just imported) so `instanceof HandleIrError` still holds for
 // callers that import it from here: esbuild bundles dist/index.js and dist/handler.js independently,
 // so a class imported fresh in each bundle stays a single, shared identity only if every importer
 // reaches it through the same module graph, which this re-export preserves.
 export { HandleIrError };
-import { manager } from "./index.js";
+import { manager, type ProviderCatalog } from "./index.js";
 import { getPluginSessionId, SYNTHETIC_THINKING_PLACEHOLDER, shouldCacheThinkingSignatures } from "../plugin/request.js";
 import { loadManagedProject, onboardManagedProject } from "../plugin/project.js";
 import { getKeepThinking, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
@@ -40,59 +48,94 @@ import { processImageData } from "../plugin/image-saver.js";
 import { isGemini3Model } from "../plugin/transform-java.js";
 import { makeIrStream, jsIds, makeResponseTransformStream } from "./javaStream.js";
 
+/** One attempt's prepared request: what the host will send, plus what its response transform needs. */
+interface PreparedAttempt {
+  request: string;
+  init: ProxiedInit;
+  streaming: boolean;
+  requestedModel?: string;
+  effectiveModel: string;
+  projectId: string;
+  endpoint: string;
+  sessionId: string;
+  headerStyle: string;
+}
+
+/** What a served response's transform needs to know about the request that produced it. */
+interface TransformParams {
+  requestedModel?: string;
+  projectId?: string;
+  endpoint?: string;
+  effectiveModel?: string;
+  sessionId?: string;
+  streaming?: boolean;
+}
+
+/** The lane-accurate terminal failure the orchestrator ends on when no account can serve. */
+interface TerminalError {
+  kind: string;
+  messagePrefix: string;
+  messageSuffix: string;
+  resetEpochMs: number;
+  retryAfterMs?: number;
+}
+
+/** What the orchestrator decided the host should answer with, discriminated by `kind`. */
+interface HandleDecision {
+  kind: string;
+  attemptRef?: number;
+  params?: TransformParams;
+  status?: number;
+  headers?: Record<string, string>;
+  body?: string;
+  terminal?: TerminalError | null;
+}
+
+/** The account manager surface this shell drives, which is the one the driver exports. */
+type AntigravityManager = typeof manager;
+
 // Cached once at module load; a runtime config edit needs a process restart.
-let config;
+let config: AntigravityConfig;
 try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 
 const PROVIDER_ID = "antigravity";
 const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
+// What a caller that named no model is served as; every real caller names one.
+const DEFAULT_MODEL = "antigravity-claude-sonnet-4-6";
 
 // The gemini-cli provider forces the free CLI quota lane for the request; the antigravity
 // provider (or a legacy caller with no HandlerCtx.provider) keeps the config default, so
 // existing antigravity serving is unchanged.
-export function laneCliFirstFor(ctx) {
+export function laneCliFirstFor(ctx?: Pick<HandlerCtx, "handlerId">): boolean {
   if (ctx && ctx.handlerId === GEMINI_CLI_PROVIDER_ID) return true;
   return !!config.cli_first;
 }
 
-// Lazily-memoized dynamic import of the TeaVM ESM, staged to src/generated/ by core/teavm-build.mjs
-// at build time and bundled (deferred) by esbuild. loadOrchestrator/getLoadedOrchestrator are kept as
-// named exports (the parity tests and other host modules import them directly) backed by basekit/auth's
-// shared lazyModule memoization.
-const orchestratorModule = lazyModule(() => import("../generated/antigravity-orchestrator.teavm.js"));
-export function loadOrchestrator() {
-  return orchestratorModule.load();
-}
-// For callback contracts that can't await (accounts-controller.ts's synchronous status/availableAt/
-// quota view); null until the first loadOrchestrator() resolves.
-export function getLoadedOrchestrator() {
-  return orchestratorModule.getLoaded();
-}
-
-// Routes fetchModels' catalog build through the Java buildCatalog export
-// (AntigravityCatalog.buildAntigravityCatalog).
-export async function buildCatalogViaJava(payload) {
-  const orchestrator = await loadOrchestrator();
+/**
+ * The model catalog, built from what the upstream listed.
+ *
+ * @param payload - the upstream model payload
+ * @returns the catalog a surface renders
+ */
+export function buildCatalogViaJava(payload: unknown): ProviderCatalog {
   return JSON.parse(orchestrator.buildCatalog(JSON.stringify(payload)));
-}
-
-// Synthetic (ad-hoc, unpersisted) project id for login.ts's checkAntigravityAccess verify-ping and
-// accounts-controller.ts's verify() diagnostic.
-export async function generateSyntheticProjectIdViaJava() {
-  const orchestrator = await loadOrchestrator();
-  return orchestrator.generateSyntheticProjectIdProd(jsRandom, jsUuid);
 }
 
 // fetchModels' project-id resolution, routed through the same AntigravityHandleOrchestrator.resolveProjectId
 // the serve path uses. Fixed to one pre-selected `proxy` (fetchModels picks a proxy up front), unlike
 // the per-attempt-account proxy the serve loop resolves via a closure.
-export async function resolveProjectIdViaJava(manager, account, access, log, proxy) {
-  const orchestrator = await loadOrchestrator();
-  const jsLoad = async (accessToken, projectId) => {
+export async function resolveProjectIdViaJava(
+  manager: AntigravityManager,
+  account: CoreAccount,
+  access: string,
+  log: (message: string) => void,
+  proxy?: string,
+): Promise<string> {
+  const jsLoad = async (accessToken: string, projectId: string) => {
     const payload = await loadManagedProject(accessToken, projectId || undefined, proxy || undefined);
     return payload ? JSON.stringify(payload) : null;
   };
-  const jsOnboard = async (accessToken, tierId, projectId) => {
+  const jsOnboard = async (accessToken: string, tierId: string, projectId: string) => {
     const managedId = await onboardManagedProject(accessToken, tierId, projectId || undefined, undefined, undefined, proxy || undefined);
     return managedId ? JSON.stringify(managedId) : null;
   };
@@ -100,8 +143,8 @@ export async function resolveProjectIdViaJava(manager, account, access, log, pro
   const resultJson = await orchestrator.resolveProjectIdProd(
     JSON.stringify(account), access, jsRandom, jsUuid, jsLoad, jsOnboard, configJson,
   );
-  const result = JSON.parse(resultJson);
-  const meta = result.meta || {};
+  const result: { projectId: string; meta?: Record<string, unknown> } = JSON.parse(resultJson);
+  const meta = result.meta ?? {};
   // Mirrors runGeminiViaJava's jsAccountOps.mutate: the orchestrator only ever sets these two fields.
   manager.mutate(account.id, (a) => {
     a.meta = a.meta || {};
@@ -112,14 +155,14 @@ export async function resolveProjectIdViaJava(manager, account, access, log, pro
 }
 
 // The antigravity rate-limit statuses.
-function isRateLimitStatus(status) {
+function isRateLimitStatus(status: number): boolean {
   return status === 429 || status === 503 || status === 529;
 }
 
 // config.request_jitter_max_ms: a small random pre-request delay to desynchronize concurrent requests
 // across accounts/sessions. Default 0 disables it. Exported so request-jitter.test.ts can exercise it
 // with a mocked config without standing up the full orchestrator harness.
-export function sleepMs(ms) {
+export function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 export async function applyRequestJitter() {
@@ -129,71 +172,87 @@ export async function applyRequestJitter() {
 }
 
 // ---- real host seams for prepareAntigravityRequestProd / cacheSignaturesFromResponse -------------
-// Real production entropy: Math.random / crypto.randomUUID, never baked.
-const jsRandom = () => Math.random();
-const jsUuid = () => crypto.randomUUID();
 // sha256 returning full hex; Java truncates to 16 hex chars itself (AntigravityRequestKeys.Hasher).
-const jsHasher = (input) => crypto.createHash("sha256").update(input, "utf8").digest("hex");
+const jsHasher = (input: string) => crypto.createHash("sha256").update(input, "utf8").digest("hex");
 // getCachedSignature adapted to JsCacheLookupFn (null, not undefined, on a miss).
-const jsCacheLookup = (sessionId, text) => getCachedSignature(sessionId, text) ?? null;
+const jsCacheLookup = (sessionId: string, text: string) => getCachedSignature(sessionId, text) ?? null;
 
 // Adapter: defaultSignatureStore (stores/signature-store.ts) is object-shaped
 // (get(key)->SignedThinking|undefined, set(key,{text,signature}), has, delete); JsSignatureStoreFns
 // needs get(key)->JSON string|null, set(key,text,signature) (3-arg). This bridges the two shapes
 // without changing the underlying store.
-function makeJsSignatureStore(store) {
+function makeJsSignatureStore(store: typeof defaultSignatureStore): AntigravitySignatureStoreShape {
   return {
-    get(key) {
-      const v = store.get(key);
-      return v ? JSON.stringify(v) : null;
+    get(key: string) {
+      const stored = store.get(key);
+      return stored ? JSON.stringify(stored) : null;
     },
-    has(key) { return store.has(key); },
-    delete(key) { store.delete(key); },
-    set(sessionKey, text, signature) { store.set(sessionKey, { text, signature }); },
+    has(key: string) { return store.has(key); },
+    delete(key: string) { store.delete(key); },
+    set(sessionKey: string, text: string, signature: string) { store.set(sessionKey, { text, signature }); },
   };
 }
 const jsSignatureStore = makeJsSignatureStore(defaultSignatureStore);
 
 // The response-transform seams (counterparts to the prepare seams above).
 // cacheSignature adapted to JsCacheSignatureFn: the on-disk signature-cache WRITE (jsCacheLookup is the READ).
-const jsCacheSignatureFn = (sessionKey, text, signature) => cacheSignature(sessionKey, text, signature);
+const jsCacheSignatureFn = (sessionKey: string, text: string, signature: string) => { cacheSignature(sessionKey, text, signature); };
 // processImageData adapted to JsImageSinkFn: real fs write to ~/.opencode|.claude/generated-images/,
 // returning a markdown link. A missing mimeType/data arrives as "" (Java's bridge never sends raw null
 // across the boundary); processImageData's `mimeType || 'image/png'` / `if (!data) return null` treat
 // "" and undefined identically.
-const jsImageSink = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
+const jsImageSink = (mimeType: string, base64Data: string) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
 
 // The Gemini-3 SSE-reconnect thought-dedup seam: a process-lifetime `Set<string>` (created once, never
 // reset) feeding the Java SERVE streaming transform.
-const javaSessionDisplayedThinkingHashes = new Set();
-const jsThoughtDedup = {
-  has(hash) { return javaSessionDisplayedThinkingHashes.has(hash); },
-  add(hash) { javaSessionDisplayedThinkingHashes.add(hash); },
+const javaSessionDisplayedThinkingHashes = new Set<string>();
+const jsThoughtDedup: AntigravityThoughtDedupShape = {
+  has(hash: string) { return javaSessionDisplayedThinkingHashes.has(hash); },
+  add(hash: string) { javaSessionDisplayedThinkingHashes.add(hash); },
 };
 
 // The debug-only `requestedModel` field. The Java export returns only the driver-relevant fields, so
 // it's re-derived here from the same url the export parses. Substring extraction, not decision logic.
-function extractRequestedModel(url) {
-  const m = typeof url === "string" ? url.match(/\/models\/([^:]+):(\w+)/) : null;
-  return m ? m[1] : undefined;
+function extractRequestedModel(url: string): string | undefined {
+  const matched = typeof url === "string" ? url.match(/\/models\/([^:]+):(\w+)/) : null;
+  return matched ? matched[1] : undefined;
 }
 
 // debugText resolution for the SERVE transform. materializeDecision never passes a debug-TUI
 // transcript, so this is just the getKeepThinking() fallback. Returns "" (not undefined) for "no debug
 // text"; the Java exports treat an empty string as "none", matching JS truthiness.
-function computeDebugText() {
+function computeDebugText(): string {
   return getKeepThinking() ? SYNTHETIC_THINKING_PLACEHOLDER : "";
 }
 
-// Calls the Java prepare export and reassembles the result shape the driver's callers (jsPreparer plus
-// the parity test) expect. `orchestrator` is the already-resolved loadOrchestrator() module.
+/**
+ * One request, prepared for one account and endpoint by the Java preparer.
+ *
+ * @remarks
+ * Reassembles what the Java answers into the shape the attempt loop and the parity test both read.
+ *
+ * @param url - the request url
+ * @param method - the request method
+ * @param headersJson - the caller's headers, as JSON
+ * @param bodyText - the request body
+ * @param accessToken - the account's access token
+ * @param projectId - the project the request is billed to
+ * @param endpointOverride - the endpoint this attempt must use, or empty for the default
+ * @param headerStyle - which header set the endpoint expects
+ * @param fingerprint - the account's device fingerprint
+ * @param claudeToolHardening - whether Claude tool schemas are hardened
+ * @param claudePromptAutoCaching - whether prompt caching markers are added
+ * @param cliFirst - whether the free CLI quota lane is tried first
+ * @returns what to send, and what the response transform will need
+ */
 export function prepareViaJava(
-  orchestrator, url, method, headersJson, bodyText,
-  accessToken, projectId, endpointOverride, headerStyle, fingerprint,
-  claudeToolHardening = DEFAULT_CONFIG.claude_tool_hardening,
-  claudePromptAutoCaching = DEFAULT_CONFIG.claude_prompt_auto_caching,
-  cliFirst = DEFAULT_CONFIG.cli_first,
-) {
+  url: string, method: string, headersJson: string, bodyText: string | undefined,
+  accessToken: string, projectId: string, endpointOverride: string | undefined, headerStyle: string,
+  fingerprint: unknown,
+  claudeToolHardening: boolean = DEFAULT_CONFIG.claude_tool_hardening,
+  claudePromptAutoCaching: boolean = DEFAULT_CONFIG.claude_prompt_auto_caching,
+  cliFirst: boolean = DEFAULT_CONFIG.cli_first,
+): PreparedAttempt {
   const fingerprintJson = JSON.stringify(fingerprint ?? null);
   const resultJson = orchestrator.prepareAntigravityRequestProd(
     url, method, headersJson, bodyText ?? "",
@@ -202,17 +261,17 @@ export function prepareViaJava(
     !!claudeToolHardening, !!claudePromptAutoCaching, !!cliFirst,
     jsRandom, jsUuid, jsHasher, jsCacheLookup, jsSignatureStore,
   );
-  const r = JSON.parse(resultJson);
+  const prepared = JSON.parse(resultJson);
   return {
-    request: r.request,
-    init: { method, headers: new Headers(r.headers || {}), body: r.body },
-    streaming: !!r.streaming,
+    request: prepared.request,
+    init: { method, headers: new Headers(prepared.headers || {}), body: prepared.body },
+    streaming: !!prepared.streaming,
     requestedModel: extractRequestedModel(url),
-    effectiveModel: r.effectiveModel,
-    projectId: r.projectId,
-    endpoint: r.request,
-    sessionId: r.sessionId,
-    headerStyle: r.headerStyle,
+    effectiveModel: prepared.effectiveModel,
+    projectId: prepared.projectId,
+    endpoint: prepared.request,
+    sessionId: prepared.sessionId,
+    headerStyle: prepared.headerStyle,
   };
 }
 
@@ -221,17 +280,16 @@ export function prepareViaJava(
 // provider's IR<->upstream transport core: handleIrViaJavaOrchestrator encodes the decoded IR to a
 // Gemini request and hands it here. Exported so the regression harness can drive the SAME upstream
 // decision loop (quota rotation, terminal-error, synthetic project id) directly.
-export async function runGeminiViaJava(request, ctx, laneCliFirst) {
-  const log = (ctx && ctx.log) || (() => {});
+export async function runGeminiViaJava(request: Request, ctx?: HandlerCtx, laneCliFirst?: boolean | null): Promise<Response> {
+  const log = diagnostic(ctx);
   const cliFirst = laneCliFirst == null ? laneCliFirstFor(ctx) : laneCliFirst;
   // The sync jsAccountOps callbacks below (reportError/reportRateLimit/reportSuccess/
   // nextAvailableAt) call getCoreAuth(), which throws unless initCoreAuth() has already
   // resolved; ensure that before the orchestrator can reach them.
   await initCoreAuth();
-  const orchestrator = await loadOrchestrator();
   const { handleAntigravityRequestAsync } = orchestrator;
 
-  let bodyText;
+  let bodyText: string | undefined;
   try { bodyText = await request.clone().text(); } catch { bodyText = undefined; }
 
   const inputsJson = JSON.stringify({
@@ -248,23 +306,23 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   const autoCandidatesJson = JSON.stringify(getAutoCandidates(PROVIDER_ID) || []);
 
   // ---- per-request host state (isolated to this call) ----------------------------------------
-  const responses = [];                 // retained live Response objects, indexed by attemptRef
-  const preparedRequests = [];          // retained prepared {request, init, ...}, indexed by requestRef
-  const proxyByAccount = new Map();     // proxy URL selected for each account this request
-  let currentAccountId = null;          // set on acquire; project seams read it to select the account's proxy
+  const responses: Response[] = [];                       // retained live Responses, indexed by attemptRef
+  const preparedRequests: PreparedAttempt[] = [];         // retained prepared requests, indexed by requestRef
+  const proxyByAccount = new Map<string, string | null>(); // proxy URL selected for each account this request
+  let currentAccountId = "";                              // set on acquire; the project seams select that account's proxy
 
   // Proxy selected once per account (memoized), used for project resolution and every endpoint fetch
   // (one selectForAccount per acquired account).
-  function proxyForAccount(accountId) {
+  function proxyForAccount(accountId: string): string | null {
     if (!proxyByAccount.has(accountId)) {
       proxyByAccount.set(accountId, proxyManager.selectForAccount(accountId, PROVIDER_ID) || null);
     }
-    return proxyByAccount.get(accountId);
+    return proxyByAccount.get(accountId) ?? null;
   }
 
   // jsAcquire: await manager.acquire(lane), null when nothing is acquired. Carries the full account
   // object so the orchestrator's resolveProjectId/syntheticProjectFor can read and mutate account.meta.
-  const jsAcquire = async (lane) => {
+  const jsAcquire = async (lane: string) => {
     const acquired = await manager.acquire(lane);
     if (!acquired || !acquired.account) return null;
     currentAccountId = acquired.account.id;
@@ -276,13 +334,16 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   // response-transform params. A prepare throw returns null, which the JsRequestPreparerBridge
   // re-raises so the orchestrator skips the endpoint. Threads config.claude_tool_hardening /
   // claude_prompt_auto_caching / cli_first through to the model resolver.
-  const jsPreparer = (url, bodyText2, method, headersJson, access, projectId, endpoint, headerStyle, accountJson) => {
-    const account = safeJsonParse(accountJson, {});
-    const fingerprint = (account.meta && account.meta.fingerprint) ?? null;
-    let prepared;
+  const jsPreparer = (
+    url: string, attemptBody: string, method: string, headersJson: string, access: string,
+    projectId: string, endpoint: string, headerStyle: string, accountJson: string,
+  ) => {
+    const account = safeJsonParse<Partial<CoreAccount>>(accountJson, {});
+    const fingerprint = account.meta?.fingerprint ?? null;
+    let prepared: PreparedAttempt;
     try {
       prepared = prepareViaJava(
-        orchestrator, url, method, headersJson, bodyText2, access, projectId, endpoint, headerStyle, fingerprint,
+        url, method, headersJson, attemptBody, access, projectId, endpoint, headerStyle, fingerprint,
         config.claude_tool_hardening, config.claude_prompt_auto_caching, cliFirst,
       );
     } catch (error) {
@@ -309,8 +370,8 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   // pre-fetch delay, then on a rate-limit response extracts {errorMessage, errorReason} (unwrapping the
   // cloudcode-pa [{error}] array). Retains the live Response host-side; no body bytes cross to Java. The
   // rate-limit reset regex, classification, and reporting stay the orchestrator's.
-  const jsExec = async (accountId, preparedRefJson) => {
-    const requestRef = safeJsonParse(preparedRefJson, -1);
+  const jsExec = async (accountId: string, preparedRefJson: string) => {
+    const requestRef = safeJsonParse<number>(preparedRefJson, -1);
     const prepared = preparedRequests[requestRef];
     if (!prepared) return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: false });
 
@@ -319,12 +380,12 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
 
     const shimProxyManager = {
       selectForAccount: () => proxyUrl,
-      reportResult: (url, ok, elapsedMs) => proxyManager.reportResult(url, ok, elapsedMs),
+      reportResult: (url: string, ok: boolean, elapsedMs?: number) => proxyManager.reportResult(url, ok, elapsedMs),
     };
     const { response, proxyUsed: proxiedUsed, transportFailed } = await proxiedFetch(prepared.request, prepared.init, {
       proxyManager: shimProxyManager, log,
     });
-    if (transportFailed) {
+    if (transportFailed || !response) {
       return JSON.stringify({ status: 0, ok: false, transportFailed: true, attemptRef: -1, proxyUsed: proxiedUsed });
     }
 
@@ -338,12 +399,13 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
     const proxyUsed = proxiedUsed; // gates the proxy rate-limit re-fire
 
     if (isRateLimitStatus(response.status)) {
-      let message, reason;
+      let message: string | undefined;
+      let reason: string | undefined;
       try {
-        let j = await response.clone().json();
-        if (Array.isArray(j)) j = j[0]; // cloudcode-pa returns [{error}] for capacity 429s
-        message = j && j.error && j.error.message;
-        reason = j && j.error && (j.error.status || j.error.reason);
+        let parsed = await response.clone().json() as { error?: { message?: string; status?: string; reason?: string } } | Array<{ error?: { message?: string; status?: string; reason?: string } }>;
+        if (Array.isArray(parsed)) parsed = parsed[0]; // cloudcode-pa returns [{error}] for capacity 429s
+        message = parsed?.error?.message;
+        reason = parsed?.error?.status || parsed?.error?.reason;
       } catch {}
       return JSON.stringify({
         status: response.status, ok: false, transportFailed: false, attemptRef,
@@ -360,11 +422,11 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
 
   // jsLoad / jsOnboard: the host project-context fetch loops (project.ts). The orchestrator's
   // resolveProjectId passes proxy=null (host-owned), so select the acquired account's proxy here.
-  const jsLoad = async (accessToken, projectId, _proxy) => {
+  const jsLoad = async (accessToken: string, projectId: string, _proxy: string) => {
     const payload = await loadManagedProject(accessToken, projectId || undefined, proxyForAccount(currentAccountId) || undefined);
     return payload ? JSON.stringify(payload) : null;
   };
-  const jsOnboard = async (accessToken, tierId, projectId, _proxy) => {
+  const jsOnboard = async (accessToken: string, tierId: string, projectId: string, _proxy: string) => {
     const managedId = await onboardManagedProject(accessToken, tierId, projectId || undefined, undefined, undefined, proxyForAccount(currentAccountId) || undefined);
     return managedId ? JSON.stringify(managedId) : null;
   };
@@ -372,29 +434,29 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
   // jsAccountOps: the synchronous account-reporting callbacks over the shared `manager`. The proxy
   // reportRateLimit re-fire lives here: the orchestrator computes ipSuspected (accountHasQuota over the
   // fresh list()); the host applies it to the proxy it chose.
-  const jsAccountOps = {
-    nextAvailableAt(lane) {
+  const jsAccountOps: AntigravityAccountOpsShape = {
+    nextAvailableAt(lane: string) {
       const next = manager.nextAvailableAt(lane);
       return JSON.stringify(next == null ? null : next);
     },
-    reportError(accountId, lane, attempt, message) {
+    reportError(accountId: string, lane: string, attempt: number, message: string) {
       manager.reportError(accountId, lane, attempt, message);
     },
-    reportRateLimit(accountId, lane, resetMs) {
+    reportRateLimit(accountId: string, lane: string, resetMs: number) {
       manager.reportRateLimit(accountId, lane, resetMs);
     },
-    reportSuccess(accountId) {
+    reportSuccess(accountId: string) {
       manager.reportSuccess(accountId);
     },
-    reportProxyRateLimit(accountId, ipSuspected) {
+    reportProxyRateLimit(accountId: string, ipSuspected: boolean) {
       const proxyUrl = proxyByAccount.get(accountId);
       if (proxyUrl) proxyManager.reportRateLimit(proxyUrl, { ipSuspected });
     },
     list() {
       return JSON.stringify(manager.list());
     },
-    mutate(accountId, updatedAccountJson) {
-      const updated = safeJsonParse(updatedAccountJson, null);
+    mutate(accountId: string, updatedAccountJson: string) {
+      const updated = safeJsonParse<Partial<CoreAccount> | null>(updatedAccountJson, null);
       if (!updated) return;
       // The orchestrator only ever sets meta.syntheticProjectId / meta.managedProjectId; copy exactly
       // those so nothing else is disturbed.
@@ -416,14 +478,14 @@ export async function runGeminiViaJava(request, ctx, laneCliFirst) {
     inputsJson, configJson, jsExec, jsAcquire, jsAccountOps, jsLoad, jsOnboard, jsPreparer, autoCandidatesJson,
     jsRandom, jsUuid,
   );
-  const decision = JSON.parse(decisionJson);
-  return materializeDecision(decision, responses, log, orchestrator);
+  const decision: HandleDecision = JSON.parse(decisionJson);
+  return materializeDecision(decision, responses);
 }
 
 // Routes SERVE's response transform through Java. response.ok is always true here (the orchestrator
 // only ever emits SERVE on a 2xx attempt), so the non-ok error-body branch is intentionally not
 // reproduced.
-export async function transformServeViaJava(orchestrator, response, p) {
+export async function transformServeViaJava(response: Response, p: TransformParams): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";
   const isJsonResponse = contentType.includes("application/json");
   const isEventStreamResponse = contentType.includes("text/event-stream");
@@ -458,31 +520,26 @@ export async function transformServeViaJava(orchestrator, response, p) {
 
 // Build the final Response from a HandleDecision, one per decision kind. NO response bytes crossed
 // into Java: SERVE/SERVE_RAW/BRIDGE_STREAM return the host-retained live Response.
-async function materializeDecision(decision, responses, log, orchestrator) {
+async function materializeDecision(decision: HandleDecision, responses: Response[]): Promise<Response> {
+  const retained = decision.attemptRef == null ? undefined : responses[decision.attemptRef];
   switch (decision.kind) {
     case "SERVE": {
       // ok upstream response through the Java-driven transform, SSE/stream intact.
-      const retained = responses[decision.attemptRef];
       if (!retained) return serveRefError();
-      const p = decision.params || {};
-      return await transformServeViaJava(orchestrator, retained, p);
+      return await transformServeViaJava(retained, decision.params ?? {});
     }
-    case "SERVE_RAW": {
+    case "SERVE_RAW":
       // A real 429/non-ok fallback, or the transient-limit passthrough, served verbatim.
-      const retained = responses[decision.attemptRef];
       return retained || serveRefError();
-    }
     case "SYNTHETIC":
       // errorResponse: the no-account 503 / exhausted 502.
       return new Response(decision.body, { status: decision.status, headers: decision.headers });
     case "TERMINAL_ERROR":
       return buildTerminalError(decision.terminal);
-    case "BRIDGE_STREAM": {
+    case "BRIDGE_STREAM":
       // The async orchestrator surface never emits BRIDGE_STREAM (app-wire re-encoding is the
       // front-door's job). Defensive only: serve the retained response verbatim.
-      const retained = responses[decision.attemptRef];
       return retained || serveRefError();
-    }
     default:
       return serveRefError();
   }
@@ -490,7 +547,7 @@ async function materializeDecision(decision, responses, log, orchestrator) {
 
 // The two lane-accurate terminal chatErrors. Java owns the branch, the static message text, and the
 // epoch; the host owns the Date.toLocaleString formatting and the chatError call.
-function buildTerminalError(terminal) {
+function buildTerminalError(terminal: TerminalError | null | undefined): Response {
   if (!terminal) return chatError("request failed", { format: "gemini", rateLimited: true });
   if (terminal.kind === "GEMINI_CLI_EXHAUSTED") {
     return chatError(terminal.messagePrefix, { format: "gemini", rateLimited: true });
@@ -503,7 +560,7 @@ function buildTerminalError(terminal) {
   return chatError(message, { format: "gemini", rateLimited: true, retryAfterMs: terminal.resetEpochMs - Date.now() });
 }
 
-function serveRefError() {
+function serveRefError(): Response {
   // Defensive: a SERVE/RAW/BRIDGE ref with no retained response should be impossible (every ref comes
   // from a jsExec success). Surface a 502 rather than throwing into the host.
   return new Response(JSON.stringify({ error: { message: "internal: serve ref not retained" } }), {
@@ -515,9 +572,9 @@ function serveRefError() {
 // the real status/headers/body so the front door can reconstruct an equivalent Response (rate-limit
 // fallback / verbatim 4xx still work). The error body is error-shaped JSON, not app-wire content: the
 // front-door owns app<->IR translation.
-function anthropicHandleIrError(status, errorType, message, retryAfterMs) {
+function anthropicHandleIrError(status: number, errorType: string, message: string, retryAfterMs?: number): HandleIrError {
   const body = JSON.stringify({ type: "error", error: { type: errorType, message } });
-  const headers = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json" };
   if (errorType === "rate_limit_error") headers["x-hub-rate-limited"] = "1";
   return new HandleIrError({ status, headers, body, retryAfterMs: retryAfterMs || undefined });
 }
@@ -534,10 +591,9 @@ function anthropicHandleIrError(status, errorType, message, retryAfterMs) {
 // return, so they are thrown as the canonical HandleIrError (via anthropicHandleIrError) instead of
 // encoded into a Response, matching the handleIr contract, so the front door can reconstruct the real
 // status/headers/body.
-export async function handleIrViaJavaOrchestrator(ir, ctx) {
-  const log = (ctx && ctx.log) || (() => {});
-  const orchestrator = await loadOrchestrator();
-  const model = (ctx && ctx.model) || "antigravity-claude-sonnet-4-6";
+export async function handleIrViaJavaOrchestrator(ir: IrRequest, ctx?: HandlerCtx): Promise<ReadableStream<IrStreamEvent>> {
+  const log = diagnostic(ctx);
+  const model = (ctx && ctx.model) || DEFAULT_MODEL;
   const geminiBody = orchestrator.resolveThinkingBudgetAndEncodeGemini(JSON.stringify(ir), model);
   const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
   const geminiReq = new Request(geminiUrl, { method: "POST", headers: { "content-type": "application/json" }, body: geminiBody });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Antigravity driver configuration; secrets are env-first with public-installed-app constants as fallback so the repo stays secret-free.
 
 import {

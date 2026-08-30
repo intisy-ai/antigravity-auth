@@ -2,14 +2,14 @@ export {
   DEFAULT_CONFIG,
   type AntigravityConfig,
   type SignatureCacheConfig,
-} from "./schema";
+} from "./schema.js";
 
 export {
   loadConfig,
   getKeepThinking,
-} from "./loader";
+} from "./loader.js";
 
 export {
   getConfigValue,
   setConfigValue,
-} from "./edit";
+} from "./edit.js";

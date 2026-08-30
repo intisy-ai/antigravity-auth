@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DEFAULT_CONFIG } from "./config"
+import { DEFAULT_CONFIG } from "./config/index.js"
 
 // Capture what the logger hands to core's shared writeLog. debug.ts also reaches into core for
 // getAppConfigDir (app-aware config dir resolution), stubbed here since these tests don't care
@@ -19,13 +19,13 @@ describe("logger routing (core makeWriteLog)", () => {
   })
 
   afterEach(async () => {
-    const { initializeDebug } = await import("./debug")
+    const { initializeDebug } = await import("./debug.js")
     initializeDebug(DEFAULT_CONFIG)
   })
 
   it("suppresses debug lines when file debug is disabled", async () => {
-    const { initializeDebug } = await import("./debug")
-    const { createLogger } = await import("./logger")
+    const { initializeDebug } = await import("./debug.js")
+    const { createLogger } = await import("./logger.js")
 
     initializeDebug({ ...DEFAULT_CONFIG, debug: false, debug_tui: true })
     createLogger("request").debug("thinking-resolution", { status: 429 })
@@ -34,8 +34,8 @@ describe("logger routing (core makeWriteLog)", () => {
   })
 
   it("writes debug lines through core when file debug is enabled", async () => {
-    const { initializeDebug } = await import("./debug")
-    const { createLogger } = await import("./logger")
+    const { initializeDebug } = await import("./debug.js")
+    const { createLogger } = await import("./logger.js")
 
     initializeDebug({ ...DEFAULT_CONFIG, debug: true, log_dir: "/tmp/opencode-antigravity-logger-tests" })
     createLogger("request").debug("thinking-resolution", { status: 429 })
@@ -44,7 +44,7 @@ describe("logger routing (core makeWriteLog)", () => {
   })
 
   it("always writes info/warn/error; error flags isError=true", async () => {
-    const { createLogger } = await import("./logger")
+    const { createLogger } = await import("./logger.js")
     const log = createLogger("request")
 
     log.info("started")

@@ -5,7 +5,7 @@ import {
   appendFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createLogger } from "./logger";
+import { createLogger } from "./logger.js";
 
 const log = createLogger("storage");
 

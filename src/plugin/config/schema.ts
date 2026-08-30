@@ -37,8 +37,15 @@ export interface SignatureCacheConfig {
   write_interval_seconds: number;
 }
 
-/** Main configuration for the Antigravity OAuth provider. */
-export interface AntigravityConfig {
+/**
+ * Main configuration for the Antigravity OAuth provider.
+ *
+ * @remarks
+ * A type alias rather than an interface, because basekit's shared account-manager and
+ * retry-backoff helpers take a `Record<string, unknown>` and TypeScript gives only an alias the
+ * implicit index signature that makes one assignable.
+ */
+export type AntigravityConfig = {
   /** JSON Schema reference for IDE support. */
   $schema?: string;
 
@@ -71,7 +78,7 @@ export interface AntigravityConfig {
   max_backoff_seconds: number;
   /** Max random delay (ms) before each API request (0 = disabled). */
   request_jitter_max_ms: number;
-}
+};
 
 /**
  * Default configuration values.

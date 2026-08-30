@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { timeoutFetch } from "@intisy-ai/basekit/auth";
 
 // Antigravity version pool for the User-Agent. A real user runs one of many released versions (mostly
@@ -26,7 +25,7 @@ let fetching = false;
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
-function cmpSemver(a, b) {
+function cmpSemver(a: string, b: string): number {
   const pa = String(a).split(".").map(Number);
   const pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) {
@@ -37,8 +36,8 @@ function cmpSemver(a, b) {
 }
 
 // merge fetched + fallback, keep valid semver, dedupe, sort newest-first
-function normalize(versions) {
-  const set = new Set();
+function normalize(versions: string[]): string[] {
+  const set = new Set<string>();
   for (const v of versions) if (SEMVER.test(v)) set.add(v);
   for (const v of FALLBACK_VERSIONS) set.add(v);
   return [...set].sort((a, b) => cmpSemver(b, a));
@@ -58,7 +57,7 @@ export function getNewestVersion() {
 
 // Best-effort, throttled, non-blocking refresh of the pool from the release feed.
 // Never throws; on any failure the existing (curated) list stays in place.
-export async function refreshVersions(log) {
+export async function refreshVersions(log?: (message: string) => void) {
   const now = Date.now();
   if (fetching || now - lastFetchAt < REFRESH_TTL_MS) return;
   fetching = true;
@@ -71,8 +70,8 @@ export async function refreshVersions(log) {
     const data = await res.json();
     if (!Array.isArray(data)) return;
     const fetched = data
-      .map((r) => String(r && r.tag_name || "").replace(/^v/, "").trim())
-      .filter((v) => SEMVER.test(v));
+      .map((r: { tag_name?: string }) => String(r && r.tag_name || "").replace(/^v/, "").trim())
+      .filter((v: string) => SEMVER.test(v));
     if (fetched.length) {
       versionList = normalize(fetched);
       if (log) log("antigravity versions refreshed: " + versionList.slice(0, 5).join(", ") + " (" + versionList.length + " total)");

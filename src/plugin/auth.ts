@@ -1,4 +1,4 @@
-import type { AuthDetails, OAuthAuthDetails, RefreshParts } from "./types";
+import type { AuthDetails, OAuthAuthDetails, RefreshParts } from "./types.js";
 import {
   isOAuthAuth as coreIsOAuthAuth,
   accessTokenExpired as coreAccessTokenExpired,

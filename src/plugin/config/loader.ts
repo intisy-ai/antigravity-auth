@@ -7,7 +7,7 @@
  */
 
 import { loadConfig as coreLoadConfig, getConfigValue as coreGetConfigValue } from "@intisy-ai/basekit";
-import { DEFAULT_CONFIG, type AntigravityConfig } from "./schema";
+import { DEFAULT_CONFIG, type AntigravityConfig } from "./schema.js";
 
 export function loadConfig(): AntigravityConfig {
   return { ...DEFAULT_CONFIG, ...(coreLoadConfig("antigravity") as Partial<AntigravityConfig>) };

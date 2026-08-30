@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { SignatureCache, createSignatureCache } from "./cache/signature-cache";
-import type { SignatureCacheConfig } from "./config";
+import { SignatureCache, createSignatureCache } from "./cache/signature-cache.js";
+import type { SignatureCacheConfig } from "./config/index.js";
 
 interface SignatureEntry {
   signature: string;
@@ -142,5 +142,5 @@ export function getCachedSignature(sessionId: string, text: string): string | un
   return undefined;
 }
 
-export { SignatureCache, createSignatureCache } from "./cache/signature-cache";
-export type { SignatureCacheConfig } from "./config";
+export { SignatureCache, createSignatureCache } from "./cache/signature-cache.js";
+export type { SignatureCacheConfig } from "./config/index.js";

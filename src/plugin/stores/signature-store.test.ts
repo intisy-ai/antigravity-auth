@@ -3,7 +3,7 @@ import {
   createSignatureStore,
   createThoughtBuffer,
   defaultSignatureStore,
-} from "./signature-store";
+} from "./signature-store.js";
 
 // ─── createSignatureStore ─────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ describe("defaultSignatureStore", () => {
   });
 
   it("is a module-level singleton (same reference on re-import)", async () => {
-    const { defaultSignatureStore: imported } = await import("./signature-store");
+    const { defaultSignatureStore: imported } = await import("./signature-store.js");
     expect(imported).toBe(defaultSignatureStore);
   });
 });

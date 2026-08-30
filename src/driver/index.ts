@@ -1,10 +1,12 @@
-// @ts-nocheck
 // The antigravity driver: a thin object on top of basekit/auth. basekit/auth owns
 // account storage, selection, token refresh, and rate-limit/cooldown state; this
 // driver owns only the antigravity-specific request transform + endpoint dispatch,
 // reusing the existing plugin/request + plugin/project + plugin/transform code.
 
-import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderSettingsSchema, type SettingsMenuGroup, type ProviderSort } from "@intisy-ai/basekit/auth";
+import { AccountManager, proxyManager, commonManagerOptions, retryBackoffMs, toSettingsGroups, retryBackoffSettingsGroups, type ProviderDef, type ProviderModel, type ProviderSettingsSchema, type SettingsMenuGroup, type ProviderSort } from "@intisy-ai/basekit/auth";
+import type { HandlerCtx, IrRequest } from "@intisy-ai/basekit/ir";
+import { orchestrator } from "./java.js";
+import { diagnostic } from "./diagnostics.js";
 import { fetchAvailableModels } from "../plugin/models-fetch.js";
 import { refreshVersions, getVersionList } from "../plugin/versions.js";
 import { models } from "./models.js";
@@ -14,20 +16,66 @@ import { createAntigravityAccounts } from "./accounts-controller.js";
 import { getConfigValue, setConfigValue, loadConfig, DEFAULT_CONFIG } from "../plugin/config/index.js";
 import { initializeDebug } from "../plugin/debug.js";
 import { initSignatureCache } from "../plugin/cache.js";
+import type { AntigravityConfig } from "../plugin/config/schema.js";
+
+/** The catalog shape a provider live model fetch answers with. */
+export type ProviderCatalog = NonNullable<Awaited<ReturnType<NonNullable<ProviderDef["fetchModels"]>>>>;
+
+/** What the fetch hook is handed, which says whether asking upstream is worth it at all. */
+type FetchModelsCtx = Parameters<NonNullable<ProviderDef["fetchModels"]>>[0];
+
+/**
+ * This provider's driver: the shared contract, plus what the free Gemini CLI lane needs.
+ *
+ * @remarks
+ * The second lane is a descriptor built from these fields rather than a second driver, because the
+ * two lanes share one account pool and one upstream catalog fetch.
+ */
+export interface AntigravityDriver extends ProviderDef {
+  /** The account operations every surface reaches this provider through. */
+  accounts: NonNullable<ProviderDef["accounts"]>;
+  /** The all-in-one login the account CLI drives, which opens the browser itself. */
+  login: typeof login;
+  /** The provider id the free Gemini CLI lane is registered under. */
+  geminiCliProviderId: string;
+  /** What a surface calls that lane. */
+  geminiCliLabel: string;
+  /** The lane static catalog, empty because both lanes come out of the one live fetch. */
+  geminiCliModels: Record<string, ProviderModel>;
+  /** The lane half of the live catalog fetch. */
+  fetchGeminiCliModels: (ctx: FetchModelsCtx) => Promise<ProviderCatalog | null>;
+}
+
+/** One account User-Agent version drift, as the Java scheduler decides it. */
+interface VersionDrift {
+  accountId: string;
+  scheduleOnly: boolean;
+  nextVersionDriftAt: number;
+  userAgent: string;
+  version: string;
+  versionPickedAt: number;
+}
+
+/** An account stored device fingerprint, of which only the version fields drift. */
+interface DriftingFingerprint {
+  userAgent?: string;
+  version?: string;
+  versionPickedAt?: number;
+  nextVersionDriftAt?: number;
+}
 
 const PROVIDER_ID = "antigravity";
 // The free Gemini CLI quota pool, exposed as a second first-class provider sharing the
 // antigravity account pool. Its provider id, arriving as HandlerCtx.provider, forces the
 // gemini-cli lane per request (see javaHandle's laneCliFirst).
 export const GEMINI_CLI_PROVIDER_ID = "gemini-cli";
-const lastAccountByLane = {};   // lane -> last account id, to notify only on real rotation
 
 // User config, loaded once at startup (changes apply on restart). Only the handful
 // of keys actually consumed by this provider are wired below, account selection
 // (basekit/auth's engine), the Claude request flags passed into prepareAntigravityRequest,
 // and keep_thinking (read fresh by the request transform via getKeepThinking). The other
 // historical AntigravityConfig keys have no consumer here, so the settings UI omits them.
-let config;
+let config: AntigravityConfig;
 try { config = loadConfig(); } catch { config = DEFAULT_CONFIG; }
 initializeDebug(config);     // enables the log.debug(...) calls in request/project (debug, debug_tui, log_dir)
 initSignatureCache(config.signature_cache); // constructs the disk-backed SignatureCache when enabled (inert otherwise)
@@ -58,29 +106,29 @@ export { manager };
 // off the old hardcoded version. Never downgrades; platform/arch preserved.
 // The DECISION (Java decides, host applies) is AntigravityHandleRouting.driftAccountVersions
 // (real jsRandom); this just applies the returned mutations + logs.
-async function driftAccountVersions(log) {
-  const { loadOrchestrator } = await import("./javaHandle.js");
-  const orchestrator = await loadOrchestrator();
+function driftAccountVersions(log: (message: string) => void): void {
   const now = Date.now();
   const accounts = manager.list();
-  const drifts = JSON.parse(orchestrator.driftAccountVersionsProd(
+  const drifts: VersionDrift[] = JSON.parse(orchestrator.driftAccountVersionsProd(
     JSON.stringify(accounts), now, JSON.stringify(getVersionList()), () => Math.random(),
   ));
-  for (const d of drifts) {
-    const account = accounts.find((a) => a.id === d.accountId);
-    const fp = account && account.meta && account.meta.fingerprint;
-    const current = fp ? (fp.version || (String(fp.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "") : "";
-    manager.mutate(d.accountId, (a) => {
-      const f = a.meta && a.meta.fingerprint;
-      if (!f) return;
-      if (d.scheduleOnly) { f.nextVersionDriftAt = d.nextVersionDriftAt; return; }
-      f.userAgent = d.userAgent;
-      f.version = d.version;
-      f.versionPickedAt = d.versionPickedAt;
-      f.nextVersionDriftAt = d.nextVersionDriftAt;
+  for (const drift of drifts) {
+    const account = accounts.find((a) => a.id === drift.accountId);
+    const fingerprint = account?.meta?.fingerprint as DriftingFingerprint | undefined;
+    const current = fingerprint
+      ? (fingerprint.version || (String(fingerprint.userAgent).match(/antigravity\/([^ ]+)/) || [])[1] || "")
+      : "";
+    manager.mutate(drift.accountId, (a) => {
+      const stored = a.meta?.fingerprint as DriftingFingerprint | undefined;
+      if (!stored) return;
+      if (drift.scheduleOnly) { stored.nextVersionDriftAt = drift.nextVersionDriftAt; return; }
+      stored.userAgent = drift.userAgent;
+      stored.version = drift.version;
+      stored.versionPickedAt = drift.versionPickedAt;
+      stored.nextVersionDriftAt = drift.nextVersionDriftAt;
     });
-    if (!d.scheduleOnly && log && d.version !== current) {
-      log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + d.version);
+    if (!drift.scheduleOnly && account && drift.version !== current) {
+      log("antigravity UA version drift " + (account.email || account.id) + ": " + (current || "?") + " -> " + drift.version);
     }
   }
 }
@@ -88,10 +136,11 @@ async function driftAccountVersions(log) {
 // Refresh the version pool from the release feed + drift accounts, triggered from
 // the serving path (throttled), so CLI/command invocations never hit the network.
 // Fire-and-forget; never blocks a request.
+const VERSION_MAINTENANCE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 let versionMaintenanceAt = 0;
-function maybeMaintainVersions(log) {
+function maybeMaintainVersions(log: (message: string) => void): void {
   const now = Date.now();
-  if (now - versionMaintenanceAt < 6 * 60 * 60 * 1000) return;
+  if (now - versionMaintenanceAt < VERSION_MAINTENANCE_INTERVAL_MS) return;
   versionMaintenanceAt = now;
   refreshVersions(log).then(() => driftAccountVersions(log)).catch(() => {});
 }
@@ -102,8 +151,8 @@ function maybeMaintainVersions(log) {
 // app<->IR translation) and returns an IR event stream; no app-wire (Anthropic) format code lives
 // in this provider. The dynamic import keeps the ~MB TeaVM ESM out of the module graph until the
 // first request.
-async function handleIr(ir, ctx) {
-  const log = (ctx && ctx.log) || (() => {});
+async function handleIr(ir: IrRequest, ctx: HandlerCtx) {
+  const log = diagnostic(ctx);
   maybeMaintainVersions(log);
   const { handleIrViaJavaOrchestrator } = await import("./javaHandle.js");
   return handleIrViaJavaOrchestrator(ir, ctx);
@@ -113,8 +162,8 @@ async function handleIr(ir, ctx) {
 // account's real available models, and build the catalog (+ ranking/default for
 // Auto). Returns null when no account exists or the fetch fails -> basekit/auth then
 // falls back to the cache (or an empty catalog before first login).
-async function fetchWholeCatalog(ctx) {
-  const log = (ctx && ctx.log) || (() => {});
+async function fetchWholeCatalog(ctx: FetchModelsCtx): Promise<ProviderCatalog | null> {
+  const log = diagnostic(ctx);
   const account = manager.list().find((a) => a.enabled !== false && a.refresh);
   if (!account) return null;
   let access;
@@ -122,8 +171,8 @@ async function fetchWholeCatalog(ctx) {
   if (!access) return null;
   const proxyUrl = proxyManager.selectForAccount(account.id, PROVIDER_ID);
   const { resolveProjectIdViaJava, buildCatalogViaJava } = await import("./javaHandle.js");
-  const projectId = await resolveProjectIdViaJava(manager, account, access, log, proxyUrl);
-  const payload = await fetchAvailableModels(access, projectId, proxyUrl, log);
+  const projectId = await resolveProjectIdViaJava(manager, account, access, log, proxyUrl ?? undefined);
+  const payload = await fetchAvailableModels(access, projectId, proxyUrl ?? undefined, log);
   if (!payload) return null;
   return buildCatalogViaJava(payload);
 }
@@ -131,9 +180,9 @@ async function fetchWholeCatalog(ctx) {
 // One upstream fetch serves both lanes, and basekit/auth resolves each provider's catalog
 // separately, so the result is held briefly rather than fetched twice in a row.
 const CATALOG_MEMO_MS = 60 * 1000;
-let catalogMemo = null;
+let catalogMemo: { at: number; catalog: ProviderCatalog } | null = null;
 
-async function wholeCatalog(ctx) {
+async function wholeCatalog(ctx: FetchModelsCtx): Promise<ProviderCatalog | null> {
   if (catalogMemo && Date.now() - catalogMemo.at < CATALOG_MEMO_MS) return catalogMemo.catalog;
   const catalog = await fetchWholeCatalog(ctx);
   if (catalog) catalogMemo = { at: Date.now(), catalog };
@@ -144,27 +193,27 @@ async function wholeCatalog(ctx) {
 // this provider meters carries its own id prefix, and what is left is the free gemini-cli
 // pool. Splitting here is what keeps each provider's model count its own, instead of filing
 // every model under whichever lane happened to do the fetch.
-export function laneOf(modelId) {
+export function laneOf(modelId: string): string {
   return modelId.startsWith(PROVIDER_ID + "-") ? PROVIDER_ID : GEMINI_CLI_PROVIDER_ID;
 }
 
-export function catalogForLane(catalog, lane) {
+export function catalogForLane(catalog: ProviderCatalog | null, lane: string): ProviderCatalog | null {
   if (!catalog) return null;
-  const models = {};
+  const models: Record<string, ProviderModel> = {};
   for (const [id, model] of Object.entries(catalog.models || {})) {
     if (laneOf(id) === lane) models[id] = model;
   }
   if (Object.keys(models).length === 0) return null;
-  const ranking = (catalog.ranking || Object.keys(catalog.models || {})).filter((id) => id in models);
+  const ranking = (catalog.ranking || Object.keys(catalog.models || {})).filter((id: string) => id in models);
   const defaultModelId = catalog.defaultModelId && models[catalog.defaultModelId] ? catalog.defaultModelId : undefined;
   return { models, ranking, defaultModelId };
 }
 
-async function fetchModels(ctx) {
+async function fetchModels(ctx: FetchModelsCtx): Promise<ProviderCatalog | null> {
   return catalogForLane(await wholeCatalog(ctx), PROVIDER_ID);
 }
 
-async function fetchGeminiCliModels(ctx) {
+async function fetchGeminiCliModels(ctx: FetchModelsCtx): Promise<ProviderCatalog | null> {
   return catalogForLane(await wholeCatalog(ctx), GEMINI_CLI_PROVIDER_ID);
 }
 
@@ -235,7 +284,7 @@ export const ANTIGRAVITY_SETTINGS_SCHEMA: ProviderSettingsSchema = [
   },
 ];
 
-export const driver = {
+export const driver: AntigravityDriver = {
   id: PROVIDER_ID,
   label: "Antigravity",
   geminiCliProviderId: GEMINI_CLI_PROVIDER_ID,
