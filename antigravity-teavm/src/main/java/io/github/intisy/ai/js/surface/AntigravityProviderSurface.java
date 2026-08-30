@@ -2,7 +2,6 @@ package io.github.intisy.ai.js.surface;
 
 import io.github.intisy.ai.tsemit.TsModule;
 import io.github.intisy.ai.tsemit.TsNullable;
-import io.github.intisy.ai.tsemit.TsRaw;
 
 import java.util.concurrent.CompletionStage;
 import java.util.function.BiFunction;
@@ -21,12 +20,10 @@ import java.util.function.Supplier;
  * driven only from the Java-side harness, and have no TypeScript caller; declaring them would claim
  * a consumer surface nobody consumes and would then have to be kept in step with a proof.
  *
- * <p>Seven functor shapes carry a {@code TsRaw} escape, ten uses in all, because four of them are
- * taken by more than one export. Each is a functor the emitter has no vocabulary for:
- * {@code java.util.function} stops at two arguments, and no annotation makes a type argument
- * nullable inside a functional-interface parameter. All ten would go if the emitter grew a way to
- * say "emit this interface as a TypeScript function type", which is what a TeaVM JSFunctor already
- * is on the JavaScript side.
+ * <p>A functor the standard {@code java.util.function} types can say is written with one of them;
+ * the seven that reach past what those can say are declared beside this module and annotated
+ * {@code TsFn}, which emits an interface as a TypeScript function type. Those seven were ten
+ * {@code TsRaw} escapes until bayonet 1.8.0 grew the annotation.
  */
 @TsModule
 public interface AntigravityProviderSurface {
@@ -129,15 +126,11 @@ public interface AntigravityProviderSurface {
             String inputsJson,
             String configJson,
             BiFunction<String, String, CompletionStage<String>> jsExec,
-            @TsRaw("((lane: string) => Promise<string | null>)")
-            Function<String, CompletionStage<String>> jsAcquire,
+            AntigravityAcquireFn jsAcquire,
             AntigravityAccountOpsShape jsAccountOps,
-            @TsRaw("((accessToken: string, projectId: string, proxy: string) => Promise<string | null>)")
-            Object jsProjectLoader,
-            @TsRaw("((accessToken: string, tierId: string, projectId: string, proxy: string) => Promise<string | null>)")
-            Object jsProjectOnboarder,
-            @TsRaw("((url: string, bodyText: string, method: string, headersJson: string, access: string, projectId: string, endpoint: string, headerStyle: string, accountJson: string) => string | null)")
-            Object jsPreparer,
+            AntigravityProjectLoadFn jsProjectLoader,
+            AntigravityProjectOnboardFn jsProjectOnboarder,
+            AntigravityPrepareFn jsPreparer,
             String autoCandidatesJson,
             Supplier<Double> jsRandom,
             Supplier<String> jsUuid);
@@ -169,10 +162,8 @@ public interface AntigravityProviderSurface {
             String debugText,
             boolean cacheSignatures,
             AntigravitySignatureStoreShape jsSignatureStore,
-            @TsRaw("((sessionKey: string, text: string, signature: string) => void)")
-            Object jsCacheSignature,
-            @TsRaw("((mimeType: string, base64Data: string) => string | null)")
-            Object jsImageSink,
+            AntigravityCacheSignatureFn jsCacheSignature,
+            AntigravityImageSinkFn jsImageSink,
             @TsNullable AntigravityThoughtDedupShape jsThoughtDedup);
 
     /**
@@ -217,8 +208,7 @@ public interface AntigravityProviderSurface {
             boolean claudeToolHardening, boolean claudePromptAutoCaching, boolean cliFirst,
             Supplier<Double> jsRandom, Supplier<String> jsUuid,
             Function<String, String> jsHasher,
-            @TsRaw("((sessionId: string, text: string) => string | null)")
-            Object jsCacheLookup,
+            AntigravityCacheLookupFn jsCacheLookup,
             AntigravitySignatureStoreShape jsSignatureStore);
 
     /**
@@ -239,10 +229,8 @@ public interface AntigravityProviderSurface {
             String access,
             Supplier<Double> jsRandom,
             Supplier<String> jsUuid,
-            @TsRaw("((accessToken: string, projectId: string, proxy: string) => Promise<string | null>)")
-            Object jsProjectLoader,
-            @TsRaw("((accessToken: string, tierId: string, projectId: string, proxy: string) => Promise<string | null>)")
-            Object jsProjectOnboarder,
+            AntigravityProjectLoadFn jsProjectLoader,
+            AntigravityProjectOnboardFn jsProjectOnboarder,
             String configJson);
 
     /**
@@ -269,6 +257,5 @@ public interface AntigravityProviderSurface {
     String transformServeBodyProd(
             String bodyText, int status, String headersJson, String requestedModel,
             String debugText,
-            @TsRaw("((mimeType: string, base64Data: string) => string | null)")
-            Object jsImageSink);
+            AntigravityImageSinkFn jsImageSink);
 }

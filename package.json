@@ -62,7 +62,7 @@
     "@openauthjs/openauth": "^0.4.3"
   },
   "devDependencies": {
-    "@intisy/bayonet": "^1.7.0",
+    "@intisy/bayonet": "^1.8.0",
     "@types/node": "^25.9.1",
     "esbuild": "^0.25.12",
     "typescript": "^5.0.0",

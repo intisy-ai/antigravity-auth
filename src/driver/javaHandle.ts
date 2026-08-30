@@ -26,6 +26,9 @@ import { proxyManager, getAutoCandidates, chatError, HandleIrError, proxiedFetch
 import type { HandlerCtx, IrRequest, IrStreamEvent } from "@intisy-ai/basekit/ir";
 import type {
   AntigravityAccountOpsShape,
+  AntigravityCacheLookupFn,
+  AntigravityCacheSignatureFn,
+  AntigravityImageSinkFn,
   AntigravitySignatureStoreShape,
   AntigravityThoughtDedupShape,
 } from "../generated/antigravity-orchestrator.teavm.js";
@@ -207,7 +210,7 @@ export async function applyRequestJitter() {
 // sha256 returning full hex; Java truncates to 16 hex chars itself (AntigravityRequestKeys.Hasher).
 const jsHasher = (input: string) => crypto.createHash("sha256").update(input, "utf8").digest("hex");
 // getCachedSignature adapted to JsCacheLookupFn (null, not undefined, on a miss).
-const jsCacheLookup = (sessionId: string, text: string) => getCachedSignature(sessionId, text) ?? null;
+const jsCacheLookup: AntigravityCacheLookupFn = (sessionId, text) => getCachedSignature(sessionId, text) ?? null;
 
 // Adapter: defaultSignatureStore (stores/signature-store.ts) is object-shaped
 // (get(key)->SignedThinking|undefined, set(key,{text,signature}), has, delete); JsSignatureStoreFns
@@ -228,12 +231,12 @@ const jsSignatureStore = makeJsSignatureStore(defaultSignatureStore);
 
 // The response-transform seams (counterparts to the prepare seams above).
 // cacheSignature adapted to JsCacheSignatureFn: the on-disk signature-cache WRITE (jsCacheLookup is the READ).
-const jsCacheSignatureFn = (sessionKey: string, text: string, signature: string) => { cacheSignature(sessionKey, text, signature); };
+const jsCacheSignatureFn: AntigravityCacheSignatureFn = (sessionKey, text, signature) => { cacheSignature(sessionKey, text, signature); };
 // processImageData adapted to JsImageSinkFn: real fs write to ~/.opencode|.claude/generated-images/,
 // returning a markdown link. A missing mimeType/data arrives as "" (Java's bridge never sends raw null
 // across the boundary); processImageData's `mimeType || 'image/png'` / `if (!data) return null` treat
 // "" and undefined identically.
-const jsImageSink = (mimeType: string, base64Data: string) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
+const jsImageSink: AntigravityImageSinkFn = (mimeType, base64Data) => processImageData({ mimeType: mimeType || undefined, data: base64Data || undefined }) ?? null;
 
 // The Gemini-3 SSE-reconnect thought-dedup seam: a process-lifetime `Set<string>` (created once, never
 // reset) feeding the Java SERVE streaming transform.

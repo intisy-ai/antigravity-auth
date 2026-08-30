@@ -210,7 +210,7 @@ export declare function generateSyntheticProjectIdProd(jsRandom: (() => number),
  * @param jsUuid - the host's id minting
  * @returns the decision as JSON: which attempt to serve, or a synthetic response to answer with
  */
-export declare function handleAntigravityRequestAsync(inputsJson: string, configJson: string, jsExec: ((a: string, b: string) => Promise<string>), jsAcquire: ((lane: string) => Promise<string | null>), jsAccountOps: AntigravityAccountOpsShape, jsProjectLoader: ((accessToken: string, projectId: string, proxy: string) => Promise<string | null>), jsProjectOnboarder: ((accessToken: string, tierId: string, projectId: string, proxy: string) => Promise<string | null>), jsPreparer: ((url: string, bodyText: string, method: string, headersJson: string, access: string, projectId: string, endpoint: string, headerStyle: string, accountJson: string) => string | null), autoCandidatesJson: string, jsRandom: (() => number), jsUuid: (() => string)): Promise<string>;
+export declare function handleAntigravityRequestAsync(inputsJson: string, configJson: string, jsExec: ((a: string, b: string) => Promise<string>), jsAcquire: AntigravityAcquireFn, jsAccountOps: AntigravityAccountOpsShape, jsProjectLoader: AntigravityProjectLoadFn, jsProjectOnboarder: AntigravityProjectOnboardFn, jsPreparer: AntigravityPrepareFn, autoCandidatesJson: string, jsRandom: (() => number), jsUuid: (() => string)): Promise<string>;
 /**
  * Opens one upstream stream's decode into canonical IR events.
  *
@@ -232,7 +232,7 @@ export declare function newIrStreamMapper(model: string, jsIds: AntigravityStrea
  * not reconnect mid-thought
  * @returns the handle to feed the response's lines through
  */
-export declare function newResponseSseTransformer(signatureSessionKey: string, debugText: string, cacheSignatures: boolean, jsSignatureStore: AntigravitySignatureStoreShape, jsCacheSignature: ((sessionKey: string, text: string, signature: string) => void), jsImageSink: ((mimeType: string, base64Data: string) => string | null), jsThoughtDedup: AntigravityThoughtDedupShape | null): AntigravitySseTransformHandle;
+export declare function newResponseSseTransformer(signatureSessionKey: string, debugText: string, cacheSignatures: boolean, jsSignatureStore: AntigravitySignatureStoreShape, jsCacheSignature: AntigravityCacheSignatureFn, jsImageSink: AntigravityImageSinkFn, jsThoughtDedup: AntigravityThoughtDedupShape | null): AntigravitySseTransformHandle;
 /**
  * The client version a new account presents, weighted toward the newest.
  *
@@ -267,7 +267,7 @@ export declare function pickVersionProd(versionListJson: string, min: string, js
  * @param jsSignatureStore - the host's signature store
  * @returns the prepared request as JSON: url, headers, body, and the transform parameters
  */
-export declare function prepareAntigravityRequestProd(url: string, method: string, headersJson: string, body: string, accessToken: string, projectId: string, headerStyle: string, fingerprintJson: string, keepThinking: boolean, pluginSessionId: string, endpointOverride: string, claudeToolHardening: boolean, claudePromptAutoCaching: boolean, cliFirst: boolean, jsRandom: (() => number), jsUuid: (() => string), jsHasher: ((value: string) => string), jsCacheLookup: ((sessionId: string, text: string) => string | null), jsSignatureStore: AntigravitySignatureStoreShape): string;
+export declare function prepareAntigravityRequestProd(url: string, method: string, headersJson: string, body: string, accessToken: string, projectId: string, headerStyle: string, fingerprintJson: string, keepThinking: boolean, pluginSessionId: string, endpointOverride: string, claudeToolHardening: boolean, claudePromptAutoCaching: boolean, cliFirst: boolean, jsRandom: (() => number), jsUuid: (() => string), jsHasher: ((value: string) => string), jsCacheLookup: AntigravityCacheLookupFn, jsSignatureStore: AntigravitySignatureStoreShape): string;
 /**
  * The project id one account's requests are billed to, discovering and minting one where the
  * account has none yet.
@@ -281,7 +281,7 @@ export declare function prepareAntigravityRequestProd(url: string, method: strin
  * @param configJson - the platform and architecture, as a JSON object
  * @returns the id and what to persist on the account, as JSON
  */
-export declare function resolveProjectIdProd(accountJson: string, access: string, jsRandom: (() => number), jsUuid: (() => string), jsProjectLoader: ((accessToken: string, projectId: string, proxy: string) => Promise<string | null>), jsProjectOnboarder: ((accessToken: string, tierId: string, projectId: string, proxy: string) => Promise<string | null>), configJson: string): Promise<string>;
+export declare function resolveProjectIdProd(accountJson: string, access: string, jsRandom: (() => number), jsUuid: (() => string), jsProjectLoader: AntigravityProjectLoadFn, jsProjectOnboarder: AntigravityProjectOnboardFn, configJson: string): Promise<string>;
 /**
  * The already-decoded IR request, with this provider's thinking budget resolved, encoded for
  * the upstream.
@@ -302,7 +302,7 @@ export declare function resolveThinkingBudgetAndEncodeGemini(irJson: string, mod
  * @param jsImageSink - the host's image writer, answering with a markdown link or null
  * @returns the status, headers and body to answer with, as JSON
  */
-export declare function transformServeBodyProd(bodyText: string, status: number, headersJson: string, requestedModel: string, debugText: string, jsImageSink: ((mimeType: string, base64Data: string) => string | null)): string;
+export declare function transformServeBodyProd(bodyText: string, status: number, headersJson: string, requestedModel: string, debugText: string, jsImageSink: AntigravityImageSinkFn): string;
 
 /**
  * What the orchestrator tells the host about the accounts it is rotating through.
@@ -364,4 +364,25 @@ export interface AntigravityAccountOpsShape {
    */
   reportSuccess(accountId: string): void;
 }
+
+/** The host's account rotation, which answers with the account it picked or with nothing. */
+export type AntigravityAcquireFn = (lane: string) => Promise<string | null>;
+
+/** The host's image writer, which answers with what should stand in the image's place. */
+export type AntigravityImageSinkFn = (mimeType: string, base64Data: string) => string | null;
+
+/** The host's managed-project fetch. */
+export type AntigravityProjectLoadFn = (accessToken: string, projectId: string, proxy: string) => Promise<string | null>;
+
+/** The host's managed-project provisioning. */
+export type AntigravityProjectOnboardFn = (accessToken: string, tierId: string, projectId: string, proxy: string) => Promise<string | null>;
+
+/** The host's on-disk signature-cache write. */
+export type AntigravityCacheSignatureFn = (sessionKey: string, text: string, signature: string) => void;
+
+/** The host's request preparation, which answers with an opaque handle or refuses the endpoint. */
+export type AntigravityPrepareFn = (url: string, bodyText: string, method: string, headersJson: string, access: string, projectId: string, endpoint: string, headerStyle: string, accountJson: string) => string | null;
+
+/** The host's signature-cache read. */
+export type AntigravityCacheLookupFn = (sessionId: string, text: string) => string | null;
 
