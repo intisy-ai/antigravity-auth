@@ -50,7 +50,8 @@
     ]
   },
   "scripts": {
-    "build": "node node_modules/@intisy/bayonet/scripts/teavm-build.mjs --java-dir . --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && node build.mjs",
+    "emit:teavm": "node node_modules/@intisy/bayonet/scripts/emit-dts.mjs --java-dir . --module :antigravity-teavm --out src/generated",
+    "build": "npm run emit:teavm && node node_modules/@intisy/bayonet/scripts/teavm-build.mjs --java-dir . --module :antigravity-teavm --out src/generated/antigravity-orchestrator.teavm.js && node build.mjs",
     "postbuild": "node dist/index.js readme",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run build && vitest run",
